@@ -1,22 +1,23 @@
 /*
  * moonflared -- Moon Flare collector daemon.
  *
- * Phase-1 skeleton (PR-1): bind --listen, 50 ms select() tick, one
- * idle accept protothread. HTTP is PR-2; config load is PR-3; plugins
- * are PR-4. Default bind 0.0.0.0:5250 (not 5252/5253).
+ * PR-2: bind --listen, 50 ms select() tick, picohttpparser HTTP on
+ * accepted fds. GET /api/v1/health is in-memory. Plugins/config apply
+ * are later PRs. Default bind 0.0.0.0:5250 (not 5252/5253).
  *
  * Concurrency: Larry Ruane protothreads (protothread.h) + select().
- * Device step() / HTTP conn PTs (later) run on fd-ready or tick;
- * always pt_wait on g_chan_tick. Listen fd is O_NONBLOCK.
+ * HTTP conn PTs run on fd-ready or tick; always pt_wait on g_chan_tick.
+ * Listen and accepted fds are O_NONBLOCK.
  *
  * CLI:
  *   moonflared [--listen [HOST:]PORT] [--foreground] [--config PATH]
- *              [--help]
+ *              [--http-idle-s SEC] [--debug] [--help]
  */
 
 #define _POSIX_C_SOURCE 200809L
 #define _DEFAULT_SOURCE          /* daemon() */
 
+#include "http_pt.h"
 #include "protothread.h"
 
 #include <arpa/inet.h>
@@ -41,7 +42,7 @@
 static bool g_foreground = false;
 static bool g_debug      = false;
 
-static void daemon_log(int prio, const char *fmt, ...)
+void mf_log(int prio, const char *fmt, ...)
 {
     char buf[1024];
     va_list ap;
@@ -55,14 +56,15 @@ static void daemon_log(int prio, const char *fmt, ...)
     }
 }
 
-#define LOG_I(...) daemon_log(LOG_INFO,    __VA_ARGS__)
-#define LOG_W(...) daemon_log(LOG_WARNING, __VA_ARGS__)
-#define LOG_E(...) daemon_log(LOG_ERR,     __VA_ARGS__)
+#define LOG_I(...) mf_log(LOG_INFO,    __VA_ARGS__)
+#define LOG_W(...) mf_log(LOG_WARNING, __VA_ARGS__)
+#define LOG_E(...) mf_log(LOG_ERR,     __VA_ARGS__)
 
 static state_t               g_pts;
 static int                   g_listen_fd = -1;
 static char                  g_chan_tick;
 static volatile sig_atomic_t g_quit = 0;
+static mf_http_t             g_http;
 
 static void on_quit(int sig)
 {
@@ -119,7 +121,9 @@ static int listen_tcp(const char *spec)
 
     int fd = -1;
     for (struct addrinfo *p = ai; p; p = p->ai_next) {
-        fd = socket(p->ai_family, p->ai_socktype | SOCK_NONBLOCK, p->ai_protocol);
+        fd = socket(p->ai_family,
+                    p->ai_socktype | SOCK_NONBLOCK | SOCK_CLOEXEC,
+                    p->ai_protocol);
         if (fd < 0) continue;
         int one = 1;
         (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
@@ -138,43 +142,6 @@ static int listen_tcp(const char *spec)
     return fd;
 }
 
-/* Drain the accept queue. HTTP request handling is PR-2; until then
- * drop the connection so the backlog cannot fill. */
-static void accept_drain(void)
-{
-    for (;;) {
-        int cfd = accept(g_listen_fd, NULL, NULL);
-        if (cfd < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
-                return;
-            LOG_W("accept: %s", strerror(errno));
-            return;
-        }
-        if (g_debug)
-            LOG_I("accept fd=%d (closed; HTTP is PR-2)", cfd);
-        close(cfd);
-    }
-}
-
-typedef struct {
-    pt_func_t pt_func;
-} accept_env_t;
-
-static accept_env_t g_accept_env;
-static pt_thread_t  g_accept_thr;
-
-static pt_t accept_pt(env_t e_)
-{
-    accept_env_t *env = e_;
-    pt_resume(env);
-    while (!g_quit) {
-        pt_wait(env, &g_chan_tick);
-        if (g_quit) break;
-        accept_drain();
-    }
-    return PT_DONE;
-}
-
 /* ------------------------------------------------------------------ */
 /* CLI                                                                */
 /* ------------------------------------------------------------------ */
@@ -185,29 +152,39 @@ static void usage(const char *prog)
         "moonflared -- Moon Flare collector daemon\n"
         "\n"
         "Usage: %s [--listen [HOST:]PORT] [--foreground] [--config PATH]\n"
-        "          [--debug] [--help]\n"
+        "          [--http-idle-s SEC] [--debug] [--help]\n"
         "\n"
-        "  --listen     bind address (default %s)\n"
-        "  --foreground do not daemonize; log to stderr\n"
-        "  --config     path to moonflared.json (load is PR-3; accepted now)\n"
-        "  --debug      extra accept logging\n"
+        "  --listen      bind address (default %s)\n"
+        "  --foreground  do not daemonize; log to stderr\n"
+        "  --config      path to moonflared.json (load is PR-3; accepted now)\n"
+        "  --http-idle-s idle close seconds (default %.0f)\n"
+        "  --debug       extra accept/idle logging\n"
         "\n"
         "Does not bind 5252 or 5253 (xd_bmsd / jkbmsd soak ports).\n"
         "Example:\n"
         "  %s --listen 127.0.0.1:5250 --foreground\n",
-        prog, DEFAULT_LISTEN, prog);
+        prog, DEFAULT_LISTEN, MF_HTTP_IDLE_S, prog);
 }
 
 int main(int argc, char **argv)
 {
     const char *listen_spec = DEFAULT_LISTEN;
     const char *config_path = NULL;
+    double http_idle_s = MF_HTTP_IDLE_S;
 
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--listen") && i + 1 < argc) {
             listen_spec = argv[++i];
         } else if (!strcmp(argv[i], "--config") && i + 1 < argc) {
             config_path = argv[++i];
+        } else if (!strcmp(argv[i], "--http-idle-s") && i + 1 < argc) {
+            http_idle_s = atof(argv[++i]);
+            if (http_idle_s <= 0.0)
+                http_idle_s = MF_HTTP_IDLE_S;
+        } else if (!strncmp(argv[i], "--http-idle-s=", 14)) {
+            http_idle_s = atof(argv[i] + 14);
+            if (http_idle_s <= 0.0)
+                http_idle_s = MF_HTTP_IDLE_S;
         } else if (!strcmp(argv[i], "--foreground")) {
             g_foreground = true;
         } else if (!strcmp(argv[i], "--debug")) {
@@ -239,9 +216,16 @@ int main(int argc, char **argv)
         }
     }
 
-    signal(SIGINT,  on_quit);
-    signal(SIGTERM, on_quit);
-    signal(SIGPIPE, SIG_IGN);
+    {
+        struct sigaction sa;
+        memset(&sa, 0, sizeof(sa));
+        sa.sa_handler = on_quit;
+        sigemptyset(&sa.sa_mask);
+        /* no SA_RESTART: select() must return so g_quit is observed */
+        sigaction(SIGINT, &sa, NULL);
+        sigaction(SIGTERM, &sa, NULL);
+        signal(SIGPIPE, SIG_IGN);
+    }
 
     g_pts = protothread_create();
     if (!g_pts) {
@@ -249,28 +233,33 @@ int main(int argc, char **argv)
         close(g_listen_fd);
         return 1;
     }
-    pt_create(g_pts, &g_accept_thr, accept_pt, &g_accept_env);
+
+    mf_http_init(&g_http, g_pts, &g_chan_tick, &g_quit, g_listen_fd,
+                 http_idle_s, g_debug);
+    mf_http_start(&g_http);
     while (protothread_run(g_pts))
-        ; /* park accept_pt on g_chan_tick before the first select */
+        ; /* park accept PT on g_chan_tick before the first select */
 
     while (!g_quit) {
-        fd_set rset;
+        fd_set rset, wset;
         FD_ZERO(&rset);
-        FD_SET(g_listen_fd, &rset);
-        int maxfd = g_listen_fd;
+        FD_ZERO(&wset);
+        int maxfd = -1;
+        mf_http_prepare_fds(&g_http, &rset, &wset, &maxfd);
 
         struct timeval tv;
         tv.tv_sec  = 0;
         tv.tv_usec = (suseconds_t)TICK_US;
 
-        int n = select(maxfd + 1, &rset, NULL, NULL, &tv);
+        int n = select(maxfd + 1, &rset, &wset, NULL, &tv);
         if (n < 0 && errno != EINTR) {
             LOG_E("select: %s", strerror(errno));
             break;
         }
 
-        /* Tick-or-fd: always broadcast the 50 ms tick. Listen-ready
-         * also wakes the same channel (KD 10). */
+        /* Tick-or-fd: always broadcast. Listen- or conn-ready also
+         * wakes the same channel (KD 10 / 18). */
+        (void)n;
         pt_broadcast(g_pts, &g_chan_tick);
         while (protothread_run(g_pts))
             ;
@@ -281,6 +270,7 @@ int main(int argc, char **argv)
     pt_broadcast(g_pts, &g_chan_tick);
     while (protothread_run(g_pts))
         ;
+    mf_http_close_all(&g_http);
     if (g_listen_fd >= 0)
         close(g_listen_fd);
     protothread_free(g_pts);

@@ -40,12 +40,21 @@ add_library(mf_cjson STATIC third_party/cJSON/cJSON.c)
 target_include_directories(mf_cjson PUBLIC ${CMAKE_SOURCE_DIR}/third_party/cJSON)
 target_compile_options(mf_cjson PRIVATE -w)
 
+# Vendored picohttpparser (Kazuho Oku et al., MIT).
+add_library(mf_phr STATIC third_party/picohttpparser/picohttpparser.c)
+target_include_directories(mf_phr PUBLIC ${CMAKE_SOURCE_DIR}/third_party/picohttpparser)
+target_compile_options(mf_phr PRIVATE -w)
+
 enable_testing()
 
-add_executable(moonflared src/moonflared.c)
-target_include_directories(moonflared PRIVATE ${CMAKE_SOURCE_DIR})
+add_executable(moonflared src/moonflared.c src/http/http_pt.c)
+target_include_directories(moonflared PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/http)
 target_compile_definitions(moonflared PRIVATE _GNU_SOURCE)
 target_compile_options(moonflared PRIVATE ${MF_WARN_PT})
+target_link_libraries(moonflared PRIVATE mf_phr)
 
 add_executable(moonflare src/moonflare.c)
 target_compile_options(moonflare PRIVATE ${MF_WARN})
@@ -71,6 +80,10 @@ add_executable(test_config
 target_include_directories(test_config PRIVATE src third_party/cJSON)
 target_link_libraries(test_config PRIVATE mf_cjson)
 add_test(NAME config COMMAND test_config)
+
+add_executable(test_http_core tests/test_http_core.c)
+target_compile_options(test_http_core PRIVATE ${MF_WARN})
+add_test(NAME http_core COMMAND test_http_core $<TARGET_FILE:moonflared>)
 
 add_test(NAME moonflared_help COMMAND moonflared --help)
 add_test(NAME moonflare_help COMMAND moonflare --help)
