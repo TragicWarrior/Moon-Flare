@@ -15,3 +15,12 @@ add_executable(test_jk_proto
 target_include_directories(test_jk_proto PRIVATE src/jk src)
 
 add_test(NAME jk_proto COMMAND test_jk_proto)
+
+add_executable(test_classic_codec
+    src/classic/classic_codec.c
+    tests/test_classic_codec.c
+)
+
+target_include_directories(test_classic_codec PRIVATE src/classic src)
+
+add_test(NAME classic_codec COMMAND test_classic_codec)
