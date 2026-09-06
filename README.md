@@ -2,7 +2,7 @@
 
 Linux C11 daemon + libviper/VDK TUI for a mixed energy site: batteries, chargers, and (later) inverters.
 
-This repository is new. The design for phase 1 is in [`docs/design.md`](docs/design.md). **No application code yet.**
+Phase-1 design: [`docs/design.md`](docs/design.md). Skeleton (PR-1) is in-tree; REST, plugins, and the TUI land in later PRs.
 
 Existing prototypes stay running until soak is done:
 
@@ -11,11 +11,17 @@ Existing prototypes stay running until soak is done:
 
 Moon Flare’s daemon listens on **:5250** (plain HTTP REST). The TUI is a VDK app (llama-chess menubar pattern). All views must render at **80×25**.
 
-## Binaries (planned)
+## Build
+
+```
+cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on-failure
+```
+
+## Binaries
 
 | Name | Role |
 | --- | --- |
-| `moonflared` | daemon, plugins, SQLite capture |
-| `moonflare` | TUI client |
+| `moonflared` | daemon (`--listen 127.0.0.1:5250 --foreground`) |
+| `moonflare` | TUI client (`--help` stub until PR-7) |
 
-Config: `/etc/moonflare/` (override `~/.config/moonflare/`).
+Config: `/etc/moonflare/` (override `~/.config/moonflare/`). Examples in `etc/`. systemd unit: `contrib/moonflared.service` (`User=bryanc`; does not replace `xd_bmsd` / `jkbmsd`).

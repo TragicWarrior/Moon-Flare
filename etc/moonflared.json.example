@@ -1,0 +1,61 @@
+{
+  "listen": "0.0.0.0:5250",
+  "plugin_dir": "/usr/local/lib/moon-flare",
+  "gatt_bin": "/usr/local/libexec/mf_gatt",
+  "history": {
+    "path": "/var/lib/moonflare/history.sqlite",
+    "enabled": true
+  },
+  "devices": [
+    {
+      "uuid": "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0001",
+      "name": "pack-xd",
+      "kind": "battery",
+      "driver": "xd",
+      "enabled": true,
+      "poll_interval_s": 2.0,
+      "bus": "usb-serial",
+      "usb": {
+        "path": "/dev/ttyUSB0",
+        "serial_id": "",
+        "auto_port": true,
+        "baud": 9600,
+        "addr": 1
+      }
+    },
+    {
+      "uuid": "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0002",
+      "name": "pack-jk",
+      "kind": "battery",
+      "driver": "jk",
+      "enabled": true,
+      "poll_interval_s": 2.0,
+      "bus": "ble",
+      "ble": {
+        "address": "28:D4:1E:A7:23:39",
+        "adapter": "hci0",
+        "protocol": "JK02_32S",
+        "password": "",
+        "write_response": false,
+        "connect_timeout_s": 20
+      }
+    },
+    {
+      "uuid": "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0003",
+      "name": "classic-1",
+      "kind": "charger",
+      "driver": "classic",
+      "enabled": true,
+      "poll_interval_s": 5.0,
+      "bus": "modbus-tcp",
+      "modbus": {
+        "ip": "172.16.0.20",
+        "port": 502,
+        "unit_id": 10,
+        "mac": "",
+        "unit_device_id": 0,
+        "auto_net": true
+      }
+    }
+  ]
+}

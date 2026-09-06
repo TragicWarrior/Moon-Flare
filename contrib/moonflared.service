@@ -1,0 +1,20 @@
+[Unit]
+Description=Moon Flare collector (moonflared)
+After=network.target bluetooth.service
+Wants=bluetooth.service
+
+[Service]
+Type=simple
+User=bryanc
+SupplementaryGroups=dialout bluetooth
+StateDirectory=moonflare
+ExecStart=/usr/local/bin/moonflared --foreground --config /etc/moonflare/moonflared.json
+Restart=always
+RestartSec=5
+TimeoutStopSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=moonflared
+
+[Install]
+WantedBy=multi-user.target
