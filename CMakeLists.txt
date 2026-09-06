@@ -64,6 +64,14 @@ add_executable(test_classic_codec
 target_include_directories(test_classic_codec PRIVATE src/classic src)
 add_test(NAME classic_codec COMMAND test_classic_codec)
 
+add_executable(test_config
+    src/config/config.c
+    tests/test_config.c
+)
+target_include_directories(test_config PRIVATE src third_party/cJSON)
+target_link_libraries(test_config PRIVATE mf_cjson)
+add_test(NAME config COMMAND test_config)
+
 add_test(NAME moonflared_help COMMAND moonflared --help)
 add_test(NAME moonflare_help COMMAND moonflare --help)
 
