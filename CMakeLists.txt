@@ -35,6 +35,11 @@ set(MF_WARN -Wall -Wextra -Wpedantic -Wshadow -Wconversion)
 # -Wno-unused-parameter silences protothread_deinit when NDEBUG is set.
 set(MF_WARN_PT -Wall -Wextra -Wshadow -Wconversion -Wno-unused-parameter)
 
+# Vendored cJSON (Dave Gamble). Used by config (PR-3) and REST generate/parse.
+add_library(mf_cjson STATIC third_party/cJSON/cJSON.c)
+target_include_directories(mf_cjson PUBLIC ${CMAKE_SOURCE_DIR}/third_party/cJSON)
+target_compile_options(mf_cjson PRIVATE -w)
+
 enable_testing()
 
 add_executable(moonflared src/moonflared.c)
