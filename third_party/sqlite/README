@@ -1,0 +1,3 @@
+Ubuntu noble libsqlite3 3.45.1 extracted from the distro .deb (no sudo
+on this host). Header + shared lib for test_history / later moonflared.
+Replace with system libsqlite3-dev when available.

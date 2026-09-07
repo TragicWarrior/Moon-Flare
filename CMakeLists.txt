@@ -89,6 +89,17 @@ target_include_directories(mf_stub PRIVATE ${CMAKE_SOURCE_DIR}/include)
 set_target_properties(mf_stub PROPERTIES PREFIX "lib" OUTPUT_NAME "mf_stub")
 target_compile_options(mf_stub PRIVATE ${MF_WARN})
 
+set(MF_SQLITE_INC ${CMAKE_SOURCE_DIR}/third_party/sqlite/include)
+set(MF_SQLITE_LIB ${CMAKE_SOURCE_DIR}/third_party/sqlite/lib/libsqlite3.so)
+
+add_executable(test_history tests/test_history.c src/history/history.c)
+target_include_directories(test_history PRIVATE
+    ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/history ${MF_SQLITE_INC})
+target_link_libraries(test_history PRIVATE ${MF_SQLITE_LIB})
+set_target_properties(test_history PROPERTIES BUILD_RPATH
+    ${CMAKE_SOURCE_DIR}/third_party/sqlite/lib)
+add_test(NAME history COMMAND test_history)
+
 add_executable(test_routes tests/test_routes.c src/rest/routes.c)
 target_include_directories(test_routes PRIVATE
     ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/rest ${CMAKE_SOURCE_DIR}/include)
