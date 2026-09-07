@@ -19,8 +19,6 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
 endif()
 
 include(GNUInstallDirs)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(SQLITE3 REQUIRED IMPORTED_TARGET sqlite3)
 
 # libviper/VDK drives the TUI (PR-7). Point at a sibling ../libviper by
 # default; override with -DLIBVIPER_SOURCE_DIR=/path at configure time.
