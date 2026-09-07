@@ -84,9 +84,22 @@ target_include_directories(test_config PRIVATE src third_party/cJSON)
 target_link_libraries(test_config PRIVATE mf_cjson)
 add_test(NAME config COMMAND test_config)
 
+add_library(mf_demo SHARED src/plugins/demo/plugin.c)
+target_include_directories(mf_demo PRIVATE ${CMAKE_SOURCE_DIR}/include)
+set_target_properties(mf_demo PROPERTIES PREFIX "lib" OUTPUT_NAME "mf_demo")
+target_compile_options(mf_demo PRIVATE ${MF_WARN})
+target_link_libraries(mf_demo PRIVATE m)
+
+add_executable(test_demo_plugin tests/test_demo_plugin.c src/plugins/demo/plugin.c)
+target_include_directories(test_demo_plugin PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(test_demo_plugin PRIVATE m)
+add_test(NAME demo_plugin COMMAND test_demo_plugin)
+
 add_library(mf_stub SHARED tests/stub_plugin.c)
 target_include_directories(mf_stub PRIVATE ${CMAKE_SOURCE_DIR}/include)
-set_target_properties(mf_stub PROPERTIES PREFIX "lib" OUTPUT_NAME "mf_stub")
+set_target_properties(mf_stub PROPERTIES
+    PREFIX "lib" OUTPUT_NAME "mf_stub"
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/stub_plugins)
 target_compile_options(mf_stub PRIVATE ${MF_WARN})
 
 set(MF_SQLITE_INC ${CMAKE_SOURCE_DIR}/third_party/sqlite/include)
