@@ -1,0 +1,323 @@
+#define _POSIX_C_SOURCE 200809L
+
+#include "rest.h"
+#include <cJSON.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+static int g_fail = 0;
+
+static void check(int cond, const char *desc)
+{
+    if (cond) {
+        printf("  PASS: %s\n", desc);
+    } else {
+        fprintf(stderr, "  FAIL: %s\n", desc);
+        g_fail++;
+    }
+}
+
+static void test_status(void)
+{
+    printf("1. GET /api/v1/status\n");
+
+    mf_rest_request_t req;
+    memset(&req, 0, sizeof(req));
+    req.method = "GET";
+    req.path   = "/api/v1/status";
+    req.body   = NULL;
+    req.body_len = 0;
+
+    mf_rest_response_t resp;
+    memset(&resp, 0, sizeof(resp));
+    int rc = mf_rest_dispatch(&req, &resp);
+
+    check(rc == 0, "dispatch returned 0");
+    check(resp.status == 200, "status 200");
+
+    /* Check server header */
+    cJSON *root = cJSON_Parse(resp.body);
+    check(root != NULL, "response parses as JSON");
+    if (root) {
+        cJSON *server = cJSON_GetObjectItem(root, "server");
+        check(server != NULL && strcmp(server->valuestring, "moonflared/0.1.0") == 0,
+              "server is moonflared/0.1.0");
+
+        cJSON *inverters = cJSON_GetObjectItem(root, "inverters");
+        check(inverters != NULL && cJSON_IsArray(inverters) &&
+              cJSON_GetArraySize(inverters) == 0,
+              "inverters is empty array");
+
+        cJSON *phantoms = cJSON_GetObjectItem(root, "phantoms");
+        check(phantoms != NULL && cJSON_IsArray(phantoms) &&
+              cJSON_GetArraySize(phantoms) == 0,
+              "phantoms is empty array");
+
+        cJSON *batteries = cJSON_GetObjectItem(root, "batteries");
+        check(batteries != NULL && cJSON_IsArray(batteries),
+              "batteries array present");
+
+        cJSON *chargers = cJSON_GetObjectItem(root, "chargers");
+        check(chargers != NULL && cJSON_IsArray(chargers),
+              "chargers array present");
+
+        cJSON_Delete(root);
+    }
+}
+
+static void test_drivers(void)
+{
+    printf("2. GET /api/v1/drivers\n");
+
+    mf_rest_request_t req;
+    memset(&req, 0, sizeof(req));
+    req.method = "GET";
+    req.path   = "/api/v1/drivers";
+    req.body   = NULL;
+    req.body_len = 0;
+
+    mf_rest_response_t resp;
+    memset(&resp, 0, sizeof(resp));
+    int rc = mf_rest_dispatch(&req, &resp);
+
+    check(rc == 0, "dispatch returned 0");
+    check(resp.status == 200, "status 200");
+
+    cJSON *root = cJSON_Parse(resp.body);
+    check(root != NULL, "response parses as JSON");
+    if (root) {
+        cJSON *drivers = cJSON_GetObjectItem(root, "drivers");
+        check(drivers != NULL && cJSON_IsArray(drivers), "drivers array present");
+        if (drivers) {
+            int sz = cJSON_GetArraySize(drivers);
+            check(sz == 2, "2 drivers");
+
+            /* Find battery/demo */
+            bool found_battery = false, found_charger = false;
+            for (int i = 0; i < sz; i++) {
+                cJSON *d = cJSON_GetArrayItem(drivers, i);
+                cJSON *kind = cJSON_GetObjectItem(d, "kind");
+                cJSON *driver = cJSON_GetObjectItem(d, "driver");
+                if (kind && driver) {
+                    if (strcmp(kind->valuestring, "battery") == 0 &&
+                        strcmp(driver->valuestring, "demo") == 0)
+                        found_battery = true;
+                    if (strcmp(kind->valuestring, "charger") == 0 &&
+                        strcmp(driver->valuestring, "demo") == 0)
+                        found_charger = true;
+                }
+            }
+            check(found_battery, "kind=battery driver=demo present");
+            check(found_charger, "kind=charger driver=demo present");
+        }
+        cJSON_Delete(root);
+    }
+}
+
+static void test_404(void)
+{
+    printf("3. GET /api/v1/nope\n");
+
+    mf_rest_request_t req;
+    memset(&req, 0, sizeof(req));
+    req.method = "GET";
+    req.path   = "/api/v1/nope";
+    req.body   = NULL;
+    req.body_len = 0;
+
+    mf_rest_response_t resp;
+    memset(&resp, 0, sizeof(resp));
+    int rc = mf_rest_dispatch(&req, &resp);
+
+    check(rc == 0, "dispatch returned 0");
+    check(resp.status == 404, "status 404");
+
+    cJSON *root = cJSON_Parse(resp.body);
+    check(root != NULL, "response parses as JSON");
+    if (root) {
+        cJSON *err = cJSON_GetObjectItem(root, "error");
+        check(err != NULL && err->type == cJSON_String, "error field present");
+        cJSON_Delete(root);
+    }
+}
+
+static void test_405(void)
+{
+    printf("4. POST /api/v1/status\n");
+
+    mf_rest_request_t req;
+    memset(&req, 0, sizeof(req));
+    req.method = "POST";
+    req.path   = "/api/v1/status";
+    req.body   = NULL;
+    req.body_len = 0;
+
+    mf_rest_response_t resp;
+    memset(&resp, 0, sizeof(resp));
+    int rc = mf_rest_dispatch(&req, &resp);
+
+    check(rc == 0, "dispatch returned 0");
+    check(resp.status == 405, "status 405");
+
+    cJSON *root = cJSON_Parse(resp.body);
+    check(root != NULL, "response parses as JSON");
+    if (root) {
+        cJSON *err = cJSON_GetObjectItem(root, "error");
+        check(err != NULL && err->type == cJSON_String, "error field present");
+        cJSON_Delete(root);
+    }
+}
+
+static void test_create_device(void)
+{
+    printf("5. POST /api/v1/devices\n");
+
+    const char *json_body =
+        "{\"name\":\"test-battery\",\"kind\":\"battery\",\"driver\":\"demo\"}";
+
+    mf_rest_request_t req;
+    memset(&req, 0, sizeof(req));
+    req.method  = "POST";
+    req.path    = "/api/v1/devices";
+    req.body    = json_body;
+    req.body_len = strlen(json_body);
+
+    mf_rest_response_t resp;
+    memset(&resp, 0, sizeof(resp));
+    int rc = mf_rest_dispatch(&req, &resp);
+
+    check(rc == 0, "dispatch returned 0");
+    check(resp.status == 201, "status 201");
+
+    /* Check Location header */
+    check(strlen(resp.location) > 0, "Location header set");
+    if (strlen(resp.location) > 0) {
+        check(strncmp(resp.location, "/api/v1/devices/", 16) == 0,
+              "Location starts with /api/v1/devices/");
+    }
+
+    /* Check uuid in Location (36 char UUID at end) */
+    if (strlen(resp.location) > 0) {
+        const char *uuid_part = strrchr(resp.location, '/');
+        if (uuid_part) {
+            uuid_part++; /* skip '/' */
+            check(strlen(uuid_part) == 36, "uuid is 36-char");
+        }
+    }
+
+    /* Parse response body */
+    cJSON *root = cJSON_Parse(resp.body);
+    check(root != NULL, "response parses as JSON");
+    if (root) {
+        cJSON *id = cJSON_GetObjectItem(root, "id");
+        check(id != NULL && id->type == cJSON_String, "id field present in body");
+
+        cJSON *name = cJSON_GetObjectItem(root, "name");
+        check(name != NULL && strcmp(name->valuestring, "test-battery") == 0,
+              "name is test-battery");
+
+        cJSON *kind = cJSON_GetObjectItem(root, "kind");
+        check(kind != NULL && strcmp(kind->valuestring, "battery") == 0,
+              "kind is battery");
+
+        cJSON *driver = cJSON_GetObjectItem(root, "driver");
+        check(driver != NULL && strcmp(driver->valuestring, "demo") == 0,
+              "driver is demo");
+
+        /* Save uuid for test 6 */
+        char saved_uuid[37];
+        if (id && strlen(id->valuestring) == 36) {
+            strncpy(saved_uuid, id->valuestring, 36);
+            saved_uuid[36] = '\0';
+
+            printf("6. GET /api/v1/devices/%s\n", saved_uuid);
+            /* Test 6: GET device by id */
+            mf_rest_request_t req2;
+            memset(&req2, 0, sizeof(req2));
+            req2.method  = "GET";
+            req2.path    = "/api/v1/devices";
+            req2.body    = NULL;
+            req2.body_len = 0;
+
+            mf_rest_response_t resp2;
+            memset(&resp2, 0, sizeof(resp2));
+
+            /* Build path for the device */
+            char path[256];
+            snprintf(path, sizeof(path), "/api/v1/devices/%s", saved_uuid);
+            req2.path = path;
+
+            rc = mf_rest_dispatch(&req2, &resp2);
+            check(rc == 0, "dispatch returned 0");
+            check(resp2.status == 200, "status 200");
+
+            cJSON *root2 = cJSON_Parse(resp2.body);
+            check(root2 != NULL, "device response parses as JSON");
+            if (root2) {
+                cJSON *id2 = cJSON_GetObjectItem(root2, "id");
+                check(id2 != NULL && strcmp(id2->valuestring, saved_uuid) == 0,
+                      "id matches");
+                cJSON_Delete(root2);
+            }
+        }
+
+        cJSON_Delete(root);
+    }
+}
+
+static void test_malformed_json(void)
+{
+    printf("7. POST /api/v1/devices malformed JSON\n");
+
+    const char *bad_json = "not valid json {{{";
+
+    mf_rest_request_t req;
+    memset(&req, 0, sizeof(req));
+    req.method  = "POST";
+    req.path    = "/api/v1/devices";
+    req.body    = bad_json;
+    req.body_len = strlen(bad_json);
+
+    mf_rest_response_t resp;
+    memset(&resp, 0, sizeof(resp));
+    int rc = mf_rest_dispatch(&req, &resp);
+
+    check(rc == 0, "dispatch returned 0");
+    check(resp.status == 400, "status 400");
+
+    cJSON *root = cJSON_Parse(resp.body);
+    check(root != NULL, "response parses as JSON");
+    if (root) {
+        cJSON *err = cJSON_GetObjectItem(root, "error");
+        check(err != NULL && err->type == cJSON_String, "error field present");
+        cJSON_Delete(root);
+    }
+}
+
+int main(void)
+{
+    srand((unsigned)time(NULL));
+
+    /* Initialize the REST module */
+    mf_rest_init();
+
+    printf("=== route tests ===\n");
+
+    test_status();
+    test_drivers();
+    test_404();
+    test_405();
+    test_create_device();
+    test_malformed_json();
+
+    printf("\n");
+    if (g_fail > 0) {
+        printf("%d check(s) failed\n", g_fail);
+        return 1;
+    }
+    printf("ok\n");
+    return 0;
+}

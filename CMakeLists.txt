@@ -47,7 +47,7 @@ target_compile_options(mf_phr PRIVATE -w)
 
 enable_testing()
 
-add_executable(moonflared src/moonflared.c src/http/http_pt.c src/plugin/loader.c src/config/config.c)
+add_executable(moonflared src/moonflared.c src/http/http_pt.c src/plugin/loader.c src/config/config.c src/rest/routes.c)
 target_include_directories(moonflared PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
@@ -88,6 +88,12 @@ add_library(mf_stub SHARED tests/stub_plugin.c)
 target_include_directories(mf_stub PRIVATE ${CMAKE_SOURCE_DIR}/include)
 set_target_properties(mf_stub PROPERTIES PREFIX "lib" OUTPUT_NAME "mf_stub")
 target_compile_options(mf_stub PRIVATE ${MF_WARN})
+
+add_executable(test_routes tests/test_routes.c src/rest/routes.c)
+target_include_directories(test_routes PRIVATE
+    ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/rest ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(test_routes PRIVATE mf_cjson)
+add_test(NAME routes COMMAND test_routes)
 
 add_executable(test_loader tests/test_loader.c src/plugin/loader.c)
 target_include_directories(test_loader PRIVATE
