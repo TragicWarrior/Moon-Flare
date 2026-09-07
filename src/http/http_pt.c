@@ -8,6 +8,7 @@
 
 #include "http_pt.h"
 #include "picohttpparser.h"
+#include "rest/rest.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -113,8 +114,34 @@ static bool hdr_has_token(const struct phr_header *h, const char *tok)
     return false;
 }
 
+static const char *http_reason(int status)
+{
+    switch (status) {
+    case 200: return "OK";
+    case 201: return "Created";
+    case 202: return "Accepted";
+    case 400: return "Bad Request";
+    case 403: return "Forbidden";
+    case 404: return "Not Found";
+    case 405: return "Method Not Allowed";
+    case 409: return "Conflict";
+    case 413: return "Payload Too Large";
+    default:  return "Error";
+    }
+}
+
+/* Strong routes.c wins when linked; otherwise REST is a no-op. */
+__attribute__((weak)) void mf_rest_init(void) {}
+__attribute__((weak)) int mf_rest_dispatch(const mf_rest_request_t *req,
+                                           mf_rest_response_t *resp)
+{
+    (void)req;
+    (void)resp;
+    return -1;
+}
+
 static int http_reply(mf_http_conn_t *c, int status, const char *reason,
-                      const char *body, bool force_close)
+                      const char *body, bool force_close, const char *location)
 {
     size_t body_len = body ? strlen(body) : 0;
     bool close_c = force_close || c->req_close || c->minor < 1;
@@ -124,9 +151,13 @@ static int http_reply(mf_http_conn_t *c, int status, const char *reason,
                      "Content-Type: application/json\r\n"
                      "Content-Length: %zu\r\n"
                      "Connection: %s\r\n"
+                     "%s%s%s"
                      "\r\n",
                      c->minor >= 0 ? c->minor : 1,
-                     status, reason, body_len, conn);
+                     status, reason, body_len, conn,
+                     location && location[0] ? "Location: " : "",
+                     location && location[0] ? location : "",
+                     location && location[0] ? "\r\n" : "");
     if (n < 0 || (size_t)n + body_len >= sizeof(c->out))
         return -1;
     if (body_len > 0)
@@ -142,7 +173,7 @@ static int http_reply(mf_http_conn_t *c, int status, const char *reason,
 static void http_reply_or_close(mf_http_conn_t *c, int status, const char *reason,
                                 const char *body, bool force_close)
 {
-    if (http_reply(c, status, reason, body, force_close) < 0)
+    if (http_reply(c, status, reason, body, force_close, NULL) < 0)
         conn_close(c);
 }
 
@@ -182,6 +213,27 @@ static void handle_request(mf_http_t *h, mf_http_conn_t *c)
         }
         http_reply_or_close(c, 200, "OK", body, false);
         return;
+    }
+
+    {
+        mf_rest_request_t req;
+        mf_rest_response_t resp;
+        memset(&req, 0, sizeof(req));
+        memset(&resp, 0, sizeof(resp));
+        req.method = c->method;
+        req.path = c->path;
+        if (c->content_length > 0 &&
+            c->header_len + c->content_length <= c->in_len) {
+            req.body = c->in + c->header_len;
+            req.body_len = c->content_length;
+        }
+        if (mf_rest_dispatch(&req, &resp) == 0 && resp.status > 0) {
+            if (http_reply(c, resp.status, http_reason(resp.status),
+                           resp.body, false,
+                           resp.location[0] ? resp.location : NULL) < 0)
+                conn_close(c);
+            return;
+        }
     }
 
     http_reply_or_close(c, 404, "Not Found", "{\"error\":\"not found\"}", false);
@@ -498,6 +550,7 @@ void mf_http_init(mf_http_t *h, protothread_t pts, char *chan_tick,
     h->start_mono = mf_mono_now();
     h->debug = debug;
     h->accept_env.srv = h;
+    mf_rest_init();
 }
 
 void mf_http_start(mf_http_t *h)
