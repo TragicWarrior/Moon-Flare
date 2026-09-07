@@ -125,6 +125,13 @@ target_include_directories(test_loader PRIVATE
 target_link_libraries(test_loader PRIVATE ${CMAKE_DL_LIBS})
 add_test(NAME loader COMMAND test_loader $<TARGET_FILE_DIR:mf_stub>)
 
+add_executable(fake_classic tests/fake_classic.c)
+target_compile_options(fake_classic PRIVATE ${MF_WARN})
+
+add_executable(test_fake_classic tests/test_fake_classic.c src/classic/classic_codec.c)
+target_include_directories(test_fake_classic PRIVATE src/classic src)
+add_test(NAME fake_classic COMMAND test_fake_classic $<TARGET_FILE:fake_classic>)
+
 add_executable(test_http_core tests/test_http_core.c)
 target_compile_options(test_http_core PRIVATE ${MF_WARN})
 add_test(NAME http_core COMMAND test_http_core $<TARGET_FILE:moonflared>)
