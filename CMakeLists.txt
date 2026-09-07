@@ -90,7 +90,7 @@ set_target_properties(mf_stub PROPERTIES PREFIX "lib" OUTPUT_NAME "mf_stub")
 target_compile_options(mf_stub PRIVATE ${MF_WARN})
 
 set(MF_SQLITE_INC ${CMAKE_SOURCE_DIR}/third_party/sqlite/include)
-set(MF_SQLITE_LIB ${CMAKE_SOURCE_DIR}/third_party/sqlite/lib/libsqlite3.so)
+set(MF_SQLITE_LIB ${CMAKE_SOURCE_DIR}/third_party/sqlite/lib/libsqlite3.so.0.8.6)
 
 add_executable(test_history tests/test_history.c src/history/history.c)
 target_include_directories(test_history PRIVATE
