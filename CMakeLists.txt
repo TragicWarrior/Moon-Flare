@@ -47,16 +47,17 @@ target_compile_options(mf_phr PRIVATE -w)
 
 enable_testing()
 
-add_executable(moonflared src/moonflared.c src/http/http_pt.c src/plugin/loader.c)
+add_executable(moonflared src/moonflared.c src/http/http_pt.c src/plugin/loader.c src/config/config.c)
 target_include_directories(moonflared PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/http
-    ${CMAKE_SOURCE_DIR}/src/plugin)
+    ${CMAKE_SOURCE_DIR}/src/plugin
+    ${CMAKE_SOURCE_DIR}/src/config)
 target_compile_definitions(moonflared PRIVATE _GNU_SOURCE)
 target_compile_options(moonflared PRIVATE ${MF_WARN_PT})
-target_link_libraries(moonflared PRIVATE mf_phr ${CMAKE_DL_LIBS})
+target_link_libraries(moonflared PRIVATE mf_phr mf_cjson ${CMAKE_DL_LIBS})
 
 add_executable(moonflare src/moonflare.c)
 target_compile_options(moonflare PRIVATE ${MF_WARN})

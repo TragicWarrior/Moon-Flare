@@ -17,6 +17,7 @@
 #define _POSIX_C_SOURCE 200809L
 #define _DEFAULT_SOURCE          /* daemon() */
 
+#include "config.h"
 #include "http_pt.h"
 #include "loader.h"
 #include "protothread.h"
@@ -67,6 +68,7 @@ static char                  g_chan_tick;
 static volatile sig_atomic_t g_quit = 0;
 static mf_http_t             g_http;
 static mf_plugin_registry_t  g_plugins;
+static mf_daemon_config_t    g_cfg;
 
 static void on_quit(int sig)
 {
@@ -172,6 +174,7 @@ static void usage(const char *prog)
 int main(int argc, char **argv)
 {
     const char *listen_spec = DEFAULT_LISTEN;
+    int listen_from_cli = 0;
     const char *config_path = NULL;
     const char *plugin_dir = NULL;
     double http_idle_s = MF_HTTP_IDLE_S;
@@ -179,6 +182,7 @@ int main(int argc, char **argv)
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--listen") && i + 1 < argc) {
             listen_spec = argv[++i];
+            listen_from_cli = 1;
         } else if (!strcmp(argv[i], "--config") && i + 1 < argc) {
             config_path = argv[++i];
         } else if (!strcmp(argv[i], "--plugin-dir") && i + 1 < argc) {
@@ -208,8 +212,13 @@ int main(int argc, char **argv)
     if (!g_foreground)
         openlog("moonflared", LOG_PID, LOG_DAEMON);
 
-    if (config_path)
-        LOG_I("config path %s (load is PR-3; using built-in listen)", config_path);
+    mf_config_defaults(&g_cfg);
+    if (mf_config_load(config_path, &g_cfg) != 0)
+        LOG_W("config load failed; using defaults");
+    if (!listen_from_cli && g_cfg.listen[0])
+        listen_spec = g_cfg.listen;
+    if (!plugin_dir && g_cfg.plugin_dir[0])
+        plugin_dir = g_cfg.plugin_dir;
     if (plugin_dir)
         (void)mf_plugins_load_dir(&g_plugins, plugin_dir);
 
