@@ -18,6 +18,7 @@
 #define _DEFAULT_SOURCE          /* daemon() */
 
 #include "config.h"
+#include "device.h"
 #include "http_pt.h"
 #include "loader.h"
 #include "protothread.h"
@@ -251,6 +252,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    mf_devices_init(g_pts, &g_chan_tick, &g_quit, &g_plugins);
     mf_http_init(&g_http, g_pts, &g_chan_tick, &g_quit, g_listen_fd,
                  http_idle_s, g_debug);
     mf_http_start(&g_http);
@@ -263,6 +265,7 @@ int main(int argc, char **argv)
         FD_ZERO(&wset);
         int maxfd = -1;
         mf_http_prepare_fds(&g_http, &rset, &wset, &maxfd);
+        mf_devices_prepare_fds(&rset, &wset, &maxfd);
 
         struct timeval tv;
         tv.tv_sec  = 0;
@@ -284,6 +287,7 @@ int main(int argc, char **argv)
 
     LOG_I("shutting down");
     g_quit = 1;
+    mf_devices_request_stop_all();
     pt_broadcast(g_pts, &g_chan_tick);
     while (protothread_run(g_pts))
         ;

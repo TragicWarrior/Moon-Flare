@@ -47,14 +47,15 @@ target_compile_options(mf_phr PRIVATE -w)
 
 enable_testing()
 
-add_executable(moonflared src/moonflared.c src/http/http_pt.c src/plugin/loader.c src/config/config.c src/rest/routes.c)
+add_executable(moonflared src/moonflared.c src/http/http_pt.c src/plugin/loader.c src/config/config.c src/rest/routes.c src/device/device.c)
 target_include_directories(moonflared PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/http
     ${CMAKE_SOURCE_DIR}/src/plugin
-    ${CMAKE_SOURCE_DIR}/src/config)
+    ${CMAKE_SOURCE_DIR}/src/config
+    ${CMAKE_SOURCE_DIR}/src/device)
 target_compile_definitions(moonflared PRIVATE _GNU_SOURCE)
 target_compile_options(moonflared PRIVATE ${MF_WARN_PT})
 target_link_libraries(moonflared PRIVATE mf_phr mf_cjson ${CMAKE_DL_LIBS})
@@ -86,7 +87,9 @@ add_test(NAME config COMMAND test_config)
 
 add_library(mf_demo SHARED src/plugins/demo/plugin.c)
 target_include_directories(mf_demo PRIVATE ${CMAKE_SOURCE_DIR}/include)
-set_target_properties(mf_demo PROPERTIES PREFIX "lib" OUTPUT_NAME "mf_demo")
+set_target_properties(mf_demo PROPERTIES
+    PREFIX "lib" OUTPUT_NAME "mf_demo"
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/demo_plugins)
 target_compile_options(mf_demo PRIVATE ${MF_WARN})
 target_link_libraries(mf_demo PRIVATE m)
 
@@ -113,11 +116,18 @@ set_target_properties(test_history PROPERTIES BUILD_RPATH
     ${CMAKE_SOURCE_DIR}/third_party/sqlite/lib)
 add_test(NAME history COMMAND test_history)
 
-add_executable(test_routes tests/test_routes.c src/rest/routes.c)
+add_executable(test_routes tests/test_routes.c src/rest/routes.c src/device/device.c src/plugin/loader.c)
 target_include_directories(test_routes PRIVATE
-    ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/rest ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(test_routes PRIVATE mf_cjson)
+    ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/rest
+    ${CMAKE_SOURCE_DIR}/src/device ${CMAKE_SOURCE_DIR}/src/plugin
+    ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(test_routes PRIVATE mf_cjson ${CMAKE_DL_LIBS})
 add_test(NAME routes COMMAND test_routes)
+
+add_executable(test_http_devices tests/test_http_devices.c)
+target_compile_options(test_http_devices PRIVATE ${MF_WARN})
+add_test(NAME http_devices COMMAND test_http_devices
+    $<TARGET_FILE:moonflared> $<TARGET_FILE_DIR:mf_demo>)
 
 add_executable(test_loader tests/test_loader.c src/plugin/loader.c)
 target_include_directories(test_loader PRIVATE

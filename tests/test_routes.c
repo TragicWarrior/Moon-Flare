@@ -1,12 +1,20 @@
 #define _POSIX_C_SOURCE 200809L
 
+#include "device.h"
 #include "rest.h"
 #include <cJSON.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+void mf_log(int prio, const char *fmt, ...)
+{
+    (void)prio;
+    (void)fmt;
+}
 
 static int g_fail = 0;
 
@@ -297,11 +305,55 @@ static void test_malformed_json(void)
     }
 }
 
+static void test_delete(void)
+{
+    printf("8. DELETE three-state (sync slots)\n");
+
+    const char *json_body =
+        "{\"name\":\"to-remove\",\"kind\":\"battery\",\"driver\":\"demo\"}";
+    mf_rest_request_t req;
+    mf_rest_response_t resp;
+    char path[128];
+    const char *id;
+
+    memset(&req, 0, sizeof(req));
+    req.method = "POST";
+    req.path = "/api/v1/devices";
+    req.body = json_body;
+    req.body_len = strlen(json_body);
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 201, "POST for delete");
+    id = strrchr(resp.location, '/');
+    check(id && id[1], "location id");
+    if (!id)
+        return;
+    id++;
+    snprintf(path, sizeof(path), "/api/v1/devices/%s", id);
+
+    memset(&req, 0, sizeof(req));
+    req.method = "DELETE";
+    req.path = path;
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0, "DELETE dispatch");
+    check(resp.status == 202, "DELETE live → 202");
+
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0, "DELETE again");
+    check(resp.status == 404, "DELETE after free → 404");
+
+    memset(&req, 0, sizeof(req));
+    req.method = "DELETE";
+    req.path = "/api/v1/devices/00000000-0000-4000-8000-000000000000";
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 404,
+          "DELETE unknown → 404");
+}
+
 int main(void)
 {
     srand((unsigned)time(NULL));
 
-    /* Initialize the REST module */
+    mf_devices_init(NULL, NULL, NULL, NULL);
     mf_rest_init();
 
     printf("=== route tests ===\n");
@@ -312,6 +364,7 @@ int main(void)
     test_405();
     test_create_device();
     test_malformed_json();
+    test_delete();
 
     printf("\n");
     if (g_fail > 0) {
