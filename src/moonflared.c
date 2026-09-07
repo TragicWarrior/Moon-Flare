@@ -18,6 +18,7 @@
 #define _DEFAULT_SOURCE          /* daemon() */
 
 #include "http_pt.h"
+#include "loader.h"
 #include "protothread.h"
 
 #include <arpa/inet.h>
@@ -65,6 +66,7 @@ static int                   g_listen_fd = -1;
 static char                  g_chan_tick;
 static volatile sig_atomic_t g_quit = 0;
 static mf_http_t             g_http;
+static mf_plugin_registry_t  g_plugins;
 
 static void on_quit(int sig)
 {
@@ -152,11 +154,12 @@ static void usage(const char *prog)
         "moonflared -- Moon Flare collector daemon\n"
         "\n"
         "Usage: %s [--listen [HOST:]PORT] [--foreground] [--config PATH]\n"
-        "          [--http-idle-s SEC] [--debug] [--help]\n"
+        "          [--plugin-dir DIR] [--http-idle-s SEC] [--debug] [--help]\n"
         "\n"
         "  --listen      bind address (default %s)\n"
         "  --foreground  do not daemonize; log to stderr\n"
         "  --config      path to moonflared.json (load is PR-3; accepted now)\n"
+        "  --plugin-dir  directory of libmf_*.so (optional)\n"
         "  --http-idle-s idle close seconds (default %.0f)\n"
         "  --debug       extra accept/idle logging\n"
         "\n"
@@ -170,6 +173,7 @@ int main(int argc, char **argv)
 {
     const char *listen_spec = DEFAULT_LISTEN;
     const char *config_path = NULL;
+    const char *plugin_dir = NULL;
     double http_idle_s = MF_HTTP_IDLE_S;
 
     for (int i = 1; i < argc; i++) {
@@ -177,6 +181,8 @@ int main(int argc, char **argv)
             listen_spec = argv[++i];
         } else if (!strcmp(argv[i], "--config") && i + 1 < argc) {
             config_path = argv[++i];
+        } else if (!strcmp(argv[i], "--plugin-dir") && i + 1 < argc) {
+            plugin_dir = argv[++i];
         } else if (!strcmp(argv[i], "--http-idle-s") && i + 1 < argc) {
             http_idle_s = atof(argv[++i]);
             if (http_idle_s <= 0.0)
@@ -204,6 +210,8 @@ int main(int argc, char **argv)
 
     if (config_path)
         LOG_I("config path %s (load is PR-3; using built-in listen)", config_path);
+    if (plugin_dir)
+        (void)mf_plugins_load_dir(&g_plugins, plugin_dir);
 
     g_listen_fd = listen_tcp(listen_spec);
     if (g_listen_fd < 0)
@@ -271,6 +279,7 @@ int main(int argc, char **argv)
     while (protothread_run(g_pts))
         ;
     mf_http_close_all(&g_http);
+    mf_plugins_unload(&g_plugins);
     if (g_listen_fd >= 0)
         close(g_listen_fd);
     protothread_free(g_pts);
