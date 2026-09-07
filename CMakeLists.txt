@@ -83,6 +83,17 @@ target_include_directories(test_config PRIVATE src third_party/cJSON)
 target_link_libraries(test_config PRIVATE mf_cjson)
 add_test(NAME config COMMAND test_config)
 
+add_library(mf_stub SHARED tests/stub_plugin.c)
+target_include_directories(mf_stub PRIVATE ${CMAKE_SOURCE_DIR}/include)
+set_target_properties(mf_stub PROPERTIES PREFIX "lib" OUTPUT_NAME "mf_stub")
+target_compile_options(mf_stub PRIVATE ${MF_WARN})
+
+add_executable(test_loader tests/test_loader.c src/plugin/loader.c)
+target_include_directories(test_loader PRIVATE
+    ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src/plugin)
+target_link_libraries(test_loader PRIVATE ${CMAKE_DL_LIBS})
+add_test(NAME loader COMMAND test_loader $<TARGET_FILE_DIR:mf_stub>)
+
 add_executable(test_http_core tests/test_http_core.c)
 target_compile_options(test_http_core PRIVATE ${MF_WARN})
 add_test(NAME http_core COMMAND test_http_core $<TARGET_FILE:moonflared>)
