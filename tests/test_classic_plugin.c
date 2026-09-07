@@ -166,7 +166,8 @@ int main(int argc, char **argv)
     CHECK(ctx != NULL, "open unit 10");
     CHECK(drive(ops, ctx, 2000), "first FC3");
     CHECK(ops->get_reading(ctx, json, sizeof(json)) == 0, "get_reading");
-    CHECK(ops->caps && ops->caps(ctx) == MF_CAP_READ, "caps READ only");
+    CHECK(ops->caps && ops->caps(ctx) ==
+          (MF_CAP_READ | MF_CAP_PROBE | MF_CAP_AUTO_NET), "caps read+probe+auto_net");
     CHECK(json_num(json, "charging_watts") == 2500.0, "watts 2500");
     CHECK(json_num(json, "battery_voltage_v") > 127.4 &&
           json_num(json, "battery_voltage_v") < 127.6, "volts 127.5");

@@ -168,7 +168,7 @@ static void handle_client(int fd)
     close(fd);
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     int server_fd;
     int one = 1;
@@ -176,6 +176,9 @@ int main(void)
     socklen_t alen = (socklen_t)sizeof(addr);
 
     init_golden();
+    /* Optional wire-4209 override so discover tests can reject a type mismatch. */
+    if (argc >= 2 && argv[1] && argv[1][0])
+        golden_regs[4209] = (uint16_t)strtoul(argv[1], NULL, 0);
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd < 0) {
         perror("socket");

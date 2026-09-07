@@ -100,6 +100,7 @@ add_test(NAME demo_plugin COMMAND test_demo_plugin)
 
 add_library(mf_charger_classic SHARED
     src/plugins/charger_classic/plugin.c
+    src/plugins/charger_classic/probe.c
     src/classic/classic_codec.c)
 target_include_directories(mf_charger_classic PRIVATE
     ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src/classic)
@@ -115,6 +116,14 @@ target_link_libraries(test_classic_plugin PRIVATE ${CMAKE_DL_LIBS})
 set_target_properties(test_classic_plugin PROPERTIES
     BUILD_RPATH ${CMAKE_BINARY_DIR}/classic_plugins)
 add_test(NAME classic_plugin COMMAND test_classic_plugin
+    $<TARGET_FILE:fake_classic> $<TARGET_FILE:mf_charger_classic>)
+
+add_executable(test_classic_discover tests/test_classic_discover.c)
+target_include_directories(test_classic_discover PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(test_classic_discover PRIVATE ${CMAKE_DL_LIBS})
+set_target_properties(test_classic_discover PROPERTIES
+    BUILD_RPATH ${CMAKE_BINARY_DIR}/classic_plugins)
+add_test(NAME classic_discover COMMAND test_classic_discover
     $<TARGET_FILE:fake_classic> $<TARGET_FILE:mf_charger_classic>)
 
 add_library(mf_stub SHARED tests/stub_plugin.c)

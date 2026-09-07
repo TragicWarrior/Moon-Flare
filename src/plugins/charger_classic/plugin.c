@@ -1,6 +1,6 @@
 /*
  * libmf_charger_classic.so — non-blocking Modbus TCP FC3, keep-alive.
- * Phase 1 read-only. No libmodbus. Probe/autodetect is PR-14.
+ * Phase 1 read-only. No libmodbus. Probe: last-known then ≤8-wide TCP.
  */
 
 #include "classic_codec.h"
@@ -17,6 +17,13 @@
 #include <sys/socket.h>
 #include <time.h>
 #include <unistd.h>
+
+int  classic_probe_start(const char *args_json, void **job, char *err, size_t errsz);
+mf_step_t classic_probe_step(void *job);
+unsigned classic_probe_select_mask(void *job);
+void classic_probe_prepare_fds(void *job, fd_set *r, fd_set *w, int *maxfd);
+int  classic_probe_result(void *job, char *json, size_t cap);
+void classic_probe_close(void *job);
 
 #define REG_START     4100
 #define REG_QTY       113          /* 4100..4212 inclusive */
@@ -508,7 +515,7 @@ static mf_step_t classic_step(void *v)
 static unsigned classic_caps(void *v)
 {
     (void)v;
-    return MF_CAP_READ;
+    return MF_CAP_READ | MF_CAP_PROBE | MF_CAP_AUTO_NET;
 }
 
 static const char *classic_last_error(void *v)
@@ -593,12 +600,12 @@ static const mf_plugin_ops_t g_ops = {
     .get_settings = classic_get_settings,
     .put_settings = classic_put_settings,
     .action = classic_action,
-    .probe_start = NULL,
-    .probe_step = NULL,
-    .probe_select_mask = NULL,
-    .probe_prepare_fds = NULL,
-    .probe_result = NULL,
-    .probe_close = NULL,
+    .probe_start = classic_probe_start,
+    .probe_step = classic_probe_step,
+    .probe_select_mask = classic_probe_select_mask,
+    .probe_prepare_fds = classic_probe_prepare_fds,
+    .probe_result = classic_probe_result,
+    .probe_close = classic_probe_close,
 };
 
 size_t mf_plugin_entries(const mf_plugin_ops_t **out)
