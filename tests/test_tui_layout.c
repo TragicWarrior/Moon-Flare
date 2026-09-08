@@ -64,7 +64,9 @@ int main(void)
     CHECK(strstr(grid[0], "File"), "pack menubar");
     CHECK(strstr(grid[3], "Pack"), "pack frame");
     CHECK(strstr(grid[9], "Cells"), "cells frame");
+    CHECK(strstr(grid[6], "MOS") && strstr(grid[6], "T1"), "temp line");
     CHECK(strstr(grid[7], "CHG"), "MOSFET line");
+    CHECK(strstr(grid[10], "01 3.32"), "cell 1 voltage");
     CHECK(strstr(grid[24], "Esc dashboard"), "pack hints row 24");
     CHECK(strstr(grid[14], "dV") || strstr(grid[14], "mV"), "spread on row 14");
     {

@@ -641,7 +641,42 @@ static int jk_get_reading(void *v, char *json, size_t cap)
     for (i = 0; i < (int)r->cell_count; i++)
         js_append(json, cap, &off, "%s{\"index\":%d,\"voltage_v\":%.3f}",
                   i ? "," : "", i + 1, (double)r->cells[i].voltage_v);
-    js_append(json, cap, &off, "]}");
+    {
+        struct { const char *lab; float t; } ts[6];
+        int nt = 0;
+
+        if (r->mosfet_temp_c > (float)JK_TEMP_ABSENT * 0.5f) {
+            ts[nt].lab = "MOS";
+            ts[nt++].t = r->mosfet_temp_c;
+        }
+        if (r->temp1_c > (float)JK_TEMP_ABSENT * 0.5f) {
+            ts[nt].lab = "T1";
+            ts[nt++].t = r->temp1_c;
+        }
+        if (r->temp2_c > (float)JK_TEMP_ABSENT * 0.5f) {
+            ts[nt].lab = "T2";
+            ts[nt++].t = r->temp2_c;
+        }
+        if (r->temp3_c > (float)JK_TEMP_ABSENT * 0.5f) {
+            ts[nt].lab = "T3";
+            ts[nt++].t = r->temp3_c;
+        }
+        if (r->temp4_c > (float)JK_TEMP_ABSENT * 0.5f) {
+            ts[nt].lab = "T4";
+            ts[nt++].t = r->temp4_c;
+        }
+        if (r->temp5_c > (float)JK_TEMP_ABSENT * 0.5f) {
+            ts[nt].lab = "T5";
+            ts[nt++].t = r->temp5_c;
+        }
+        js_append(json, cap, &off, "],\"temperatures_c\":[");
+        for (i = 0; i < nt; i++)
+            js_append(json, cap, &off, "%s%.1f", i ? "," : "", (double)ts[i].t);
+        js_append(json, cap, &off, "],\"temp_labels\":[");
+        for (i = 0; i < nt; i++)
+            js_append(json, cap, &off, "%s\"%s\"", i ? "," : "", ts[i].lab);
+        js_append(json, cap, &off, "]}");
+    }
     return 0;
 }
 

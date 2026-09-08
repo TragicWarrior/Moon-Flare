@@ -264,6 +264,9 @@ int main(int argc, char **argv)
     va = json_num(json, "pack_voltage_v");
     CHECK(va > 52.7 && va < 52.9, "MAC A pack ~52.8 V");
     CHECK(json_true(json, "charge_mosfet_on"), "A charge on");
+    CHECK(strstr(json, "temperatures_c") != NULL, "A temps array");
+    CHECK(strstr(json, "\"MOS\"") != NULL, "A MOS label");
+    CHECK(strstr(json, "\"T1\"") != NULL, "A T1 label");
     CHECK(ops->get_reading(b, json, sizeof(json)) == 0, "read B");
     vb = json_num(json, "pack_voltage_v");
     CHECK(vb > 54.3 && vb < 54.5, "MAC B pack ~54.4 V");

@@ -181,7 +181,12 @@ static int battery_get_reading(void *v, char *json, size_t cap)
                   "%s{\"index\":%d,\"voltage_v\":%.4f}",
                   i ? "," : "", i + 1, ctx->cell_v[i]);
     }
-    js_append(json, cap, &off, "]}");
+    js_append(json, cap, &off,
+              "],\"temperatures_c\":[%.1f,%.1f,%.1f],"
+              "\"temp_labels\":[\"MOS\",\"T1\",\"T2\"]}",
+              ctx->mosfet_temp_c,
+              24.0 + 1.0 * sin(t / 17.0),
+              25.0 + 1.0 * sin(t / 19.0));
     return 0;
 }
 

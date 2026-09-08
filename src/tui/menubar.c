@@ -13,6 +13,9 @@
 #define COL_HI_FG COLOR_WHITE
 #define COL_HI_BG COLOR_BLUE
 #define COL_MENU_BG COLOR_CYAN
+#define COL_DROP_FG COLOR_WHITE
+#define COL_DROP_HI_FG COLOR_WHITE
+#define COL_DROP_HI_BG COLOR_BLACK
 
 enum { MB_FILE = 0, MB_SETTINGS, MB_DEVICES, MB_VIEW, MB_HELP, MB_COUNT };
 
@@ -172,8 +175,10 @@ static void open_dropdown(int idx)
 
     lb = vk_listbox_create(max_w, max_h);
     vk_listbox_set_wrap(lb, true);
-    vk_listbox_set_highlight(lb, COL_HI_FG, COL_HI_BG);
-    vk_widget_set_colors(VK_WIDGET(lb), COL_TEXT, COL_MENU_BG);
+    vk_listbox_set_highlight(lb, COL_DROP_HI_FG, COL_DROP_HI_BG);
+    vk_listbox_set_highlight_attrs(lb, A_BOLD);
+    vk_widget_set_colors(VK_WIDGET(lb), COL_DROP_FG, COL_MENU_BG);
+    vk_widget_set_attrs(VK_WIDGET(lb), A_BOLD);
     for (i = 0; !t[i].end; i++) {
         if (!t[i].label && !t[i].fn)
             vk_listbox_add_separator(lb, VK_SEPARATOR_SINGLE);
@@ -185,9 +190,10 @@ static void open_dropdown(int idx)
     snprintf(cap, sizeof(cap), " %s ", titles[idx]);
     win = vk_window_create(max_w + 2, max_h + 2);
     vk_window_set_title(win, cap);
-    vk_window_set_border_style(win, VK_BORDER_SINGLE);
-    vk_window_set_border_colors(win, COL_TEXT, COL_MENU_BG);
-    vk_widget_set_colors(VK_WIDGET(win), COL_TEXT, COL_MENU_BG);
+    vk_window_set_border_style(win, VK_BORDER_SINGLE | VK_RELIEF_RAISED);
+    vk_widget_set_relief_colors(VK_WIDGET(win), COLOR_WHITE, COLOR_BLACK);
+    vk_window_set_border_colors(win, COL_DROP_FG, COL_MENU_BG);
+    vk_widget_set_colors(VK_WIDGET(win), COL_DROP_FG, COL_MENU_BG);
     vk_window_set_child(win, VK_WIDGET(lb));
 
     vk_widget_get_position(VK_WIDGET(g_bar), &bar_x, &bar_y);

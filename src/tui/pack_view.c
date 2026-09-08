@@ -8,8 +8,10 @@
 
 #define COL_BG   COLOR_BLUE
 #define COL_TEXT COLOR_WHITE
-#define COL_TROUGH COLOR_CYAN
+#define COL_TROUGH COLOR_BLACK /* dark trough; 8-color has no gray */
 #define NCELL_SHOW 16
+#define CELL_LAB_W 8
+#define CELL_BAR_W 8
 
 static int g_kind; /* 0 pack, 1 charger */
 static vk_label_t *g_chrome1, *g_chrome2, *g_hints;
@@ -34,6 +36,14 @@ static int frame_caption(vk_object_t *obj, int event, void *anything)
     mvwprintw(canvas, 0, 2, " %s ", cap);
     wattroff(canvas, VDK_COLORS(COL_TEXT, COL_BG));
     return 0;
+}
+
+static void style_frame(vk_frame_t *f)
+{
+    vk_widget_set_colors(VK_WIDGET(f), COL_TEXT, COL_BG);
+    vk_widget_set_relief_colors(VK_WIDGET(f), COLOR_WHITE, COLOR_BLACK);
+    vk_frame_set_border_style(f, VK_BORDER_SINGLE | VK_RELIEF_RAISED);
+    vk_frame_set_border_colors(f, COL_TEXT, COL_BG);
 }
 
 static vk_label_t *mk_lab(int x, int y, int w)
@@ -99,9 +109,7 @@ void mf_pack_init(void)
     g_chrome1 = mk_lab(0, 1, cols);
     g_chrome2 = mk_lab(0, 2, cols);
     g_fr_pack = vk_frame_create(cols, 6);
-    vk_widget_set_colors(VK_WIDGET(g_fr_pack), COL_TEXT, COL_BG);
-    vk_frame_set_border_style(g_fr_pack, VK_BORDER_SINGLE);
-    vk_frame_set_border_colors(g_fr_pack, COL_TEXT, COL_BG);
+    style_frame(g_fr_pack);
     mf_ui_attach(VK_WIDGET(g_fr_pack), 0, 3);
     vk_object_register_event(VK_OBJECT(g_fr_pack), VK_EVENT_ON_FINALIZE,
                              frame_caption, "Pack");
@@ -120,9 +128,7 @@ void mf_pack_init(void)
     g_lb_mos = mk_lab(2, 7, iw);
 
     g_fr_cells = vk_frame_create(cols, 7);
-    vk_widget_set_colors(VK_WIDGET(g_fr_cells), COL_TEXT, COL_BG);
-    vk_frame_set_border_style(g_fr_cells, VK_BORDER_SINGLE);
-    vk_frame_set_border_colors(g_fr_cells, COL_TEXT, COL_BG);
+    style_frame(g_fr_cells);
     mf_ui_attach(VK_WIDGET(g_fr_cells), 0, 9);
     vk_object_register_event(VK_OBJECT(g_fr_cells), VK_EVENT_ON_FINALIZE,
                              frame_caption, "Cells");
@@ -131,16 +137,14 @@ void mf_pack_init(void)
         row = i / 4;
         ccx = 2 + col * (iw / 4);
         ccy = 10 + row;
-        g_mt_cell[i] = mk_meter(ccx + 3, ccy, 8, 2.80, 3.65);
+        g_mt_cell[i] = mk_meter(ccx + CELL_LAB_W, ccy, CELL_BAR_W, 2.80, 3.65);
         band_cell_v(g_mt_cell[i], 1.0);
-        g_lb_cell[i] = mk_lab(ccx, ccy, 3);
+        g_lb_cell[i] = mk_lab(ccx, ccy, CELL_LAB_W);
     }
     g_lb_spread = mk_lab(2, 14, iw);
 
     g_fr_classic = vk_frame_create(cols, 13);
-    vk_widget_set_colors(VK_WIDGET(g_fr_classic), COL_TEXT, COL_BG);
-    vk_frame_set_border_style(g_fr_classic, VK_BORDER_SINGLE);
-    vk_frame_set_border_colors(g_fr_classic, COL_TEXT, COL_BG);
+    style_frame(g_fr_classic);
     mf_ui_attach(VK_WIDGET(g_fr_classic), 0, 3);
     vk_object_register_event(VK_OBJECT(g_fr_classic), VK_EVENT_ON_FINALIZE,
                              frame_caption, "Classic");
@@ -258,6 +262,44 @@ static const char *jstr(cJSON *o, const char *k, const char *def)
     return (it && cJSON_IsString(it) && it->valuestring) ? it->valuestring : def;
 }
 
+static void fmt_temps(cJSON *data, char *line, size_t cap, const char *fallback)
+{
+    cJSON *temps, *labels, *tv, *lb;
+    int i, n, nlab, off = 0;
+
+    if (!line || cap == 0)
+        return;
+    temps = data ? cJSON_GetObjectItemCaseSensitive(data, "temperatures_c") : NULL;
+    labels = data ? cJSON_GetObjectItemCaseSensitive(data, "temp_labels") : NULL;
+    if (!temps || !cJSON_IsArray(temps) || cJSON_GetArraySize(temps) < 1) {
+        snprintf(line, cap, "%s", fallback);
+        return;
+    }
+    n = cJSON_GetArraySize(temps);
+    nlab = (labels && cJSON_IsArray(labels)) ? cJSON_GetArraySize(labels) : 0;
+    line[0] = '\0';
+    for (i = 0; i < n && off < (int)cap - 1; i++) {
+        const char *lab;
+        char piece[24];
+        int m;
+
+        tv = cJSON_GetArrayItem(temps, i);
+        lb = (i < nlab) ? cJSON_GetArrayItem(labels, i) : NULL;
+        lab = (lb && cJSON_IsString(lb) && lb->valuestring) ? lb->valuestring : "T";
+        if (tv && cJSON_IsNumber(tv))
+            snprintf(piece, sizeof(piece), "%s%s %.0f", i ? "  " : "", lab,
+                     tv->valuedouble);
+        else
+            snprintf(piece, sizeof(piece), "%s%s --", i ? "  " : "", lab);
+        m = snprintf(line + off, cap - (size_t)off, "%s", piece);
+        if (m < 0)
+            break;
+        off += m;
+    }
+    if (!line[0])
+        snprintf(line, cap, "%s", fallback);
+}
+
 static int caps_switch(cJSON *root)
 {
     cJSON *caps = cJSON_GetObjectItemCaseSensitive(root, "caps");
@@ -318,7 +360,8 @@ void mf_pack_update(const char *json)
         snprintf(line, sizeof(line), "%+.2f A", cur);
         vk_label_set_text(g_lb_cur, line);
         vk_label_update(g_lb_cur);
-        vk_label_set_text(g_lb_temp, "MOS --  T1 --  T2 --");
+        fmt_temps(data, line, sizeof(line), "MOS --  T1 --  T2 --");
+        vk_label_set_text(g_lb_temp, line);
         vk_label_update(g_lb_temp);
         if (g_has_switch) {
             int chg = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(data, "charge_mosfet_on"));
@@ -336,7 +379,7 @@ void mf_pack_update(const char *json)
             ncell = cJSON_GetArraySize(cells);
         for (i = 0; i < NCELL_SHOW; i++) {
             double v = 0;
-            char idx[4];
+            char lab[12];
             if (i < ncell) {
                 cJSON *cell = cJSON_GetArrayItem(cells, i);
                 v = jnum(cell, "voltage_v", 0);
@@ -345,8 +388,11 @@ void mf_pack_update(const char *json)
                 if (v > vmax)
                     vmax = v;
             }
-            snprintf(idx, sizeof(idx), "%02d", i + 1);
-            vk_label_set_text(g_lb_cell[i], idx);
+            if (v > 0)
+                snprintf(lab, sizeof(lab), "%02d %.3f", i + 1, v);
+            else
+                snprintf(lab, sizeof(lab), "%02d --", i + 1);
+            vk_label_set_text(g_lb_cell[i], lab);
             vk_label_update(g_lb_cell[i]);
             vk_progress_set_value(VK_PROGRESS(g_mt_cell[i]), v > 0 ? v : 2.80);
             vk_progress_update(VK_PROGRESS(g_mt_cell[i]));
@@ -378,7 +424,7 @@ void mf_pack_update(const char *json)
                  jnum(data, "kwh_today", 0), jnum(data, "ah_today", 0));
         vk_label_set_text(g_lb_energy, line);
         vk_label_update(g_lb_energy);
-        snprintf(line, sizeof(line), "FET --  Batt --  PCB --");
+        fmt_temps(data, line, sizeof(line), "FET --  Batt --  PCB --");
         vk_label_set_text(g_lb_ctemp, line);
         vk_label_update(g_lb_ctemp);
         vk_frame_update(g_fr_classic);

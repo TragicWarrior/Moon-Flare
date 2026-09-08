@@ -51,7 +51,8 @@ static vk_frame_t *mk_card(int x, int y, char *cap)
     if (!f)
         return NULL;
     vk_widget_set_colors(VK_WIDGET(f), COL_TEXT, COL_BG);
-    vk_frame_set_border_style(f, VK_BORDER_SINGLE);
+    vk_widget_set_relief_colors(VK_WIDGET(f), COLOR_WHITE, COLOR_BLACK);
+    vk_frame_set_border_style(f, VK_BORDER_SINGLE | VK_RELIEF_RAISED);
     vk_frame_set_border_colors(f, COL_TEXT, COL_BG);
     lb = vk_listbox_create(MF_CARD_W - 2, MF_CARD_H - 2);
     vk_widget_set_colors(VK_WIDGET(lb), COL_TEXT, COL_BG);

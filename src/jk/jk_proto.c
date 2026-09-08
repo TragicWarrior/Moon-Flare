@@ -452,6 +452,6 @@ float jk_temp_c(const uint8_t *data, size_t off)
 {
     int16_t raw = jk_i16(data, off);
     if (raw == JK_TEMP_ABSENT)
-        return 0.0f;
+        return (float)JK_TEMP_ABSENT;
     return raw * 0.1f;
 }
