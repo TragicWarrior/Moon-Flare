@@ -206,7 +206,7 @@ static int settings_key(wint_t c)
     vk_input_t *in;
     if (!g_settings_open)
         return 0;
-    if (c == 27) {
+    if (c == 27 || c == KEY_EXIT || c == KEY_CANCEL) {
         close_settings();
         return 1;
     }
@@ -384,6 +384,7 @@ int mf_tui_run(const char *connect, const char *config_path)
     noecho();
     keypad(stdscr, TRUE);
     nodelay(stdscr, TRUE);
+    set_escdelay(1);
     vk_screen_set_wallpaper(g_screen, wallpaper);
     g_kmio_fd = vk_screen_get_fd(g_screen);
     if (g_kmio_fd < 0)
@@ -395,7 +396,7 @@ int mf_tui_run(const char *connect, const char *config_path)
     mf_ui_front_clear();
     mf_ui_refresh();
 
-    signal(SIGINT, SIG_IGN);
+    signal(SIGINT, SIG_DFL);
     signal(SIGPIPE, SIG_IGN);
     mf_http_cli_init(&g_cli, g_host, g_port);
     mf_http_cli_start(&g_cli, mono_now());
@@ -454,6 +455,11 @@ int mf_tui_run(const char *connect, const char *config_path)
             g_cli.stale = 1;
 
         key = vk_kmio_fetch(&mev);
+        if (key <= 0) {
+            int ch = getch();
+            if (ch != ERR)
+                key = ch;
+        }
         if (key > 0) {
             if (g_help_win && (key == 27 || key == 'q')) {
                 close_help();
