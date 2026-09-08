@@ -25,7 +25,7 @@
 #define POLL_DEFAULT 1.0
 #define POLL_MIN     1.0
 #define LINE_CAP     4096
-#define HEX_CAP      128
+#define HEX_CAP      1024
 
 enum {
     ST_IDLE = 0,
@@ -363,14 +363,23 @@ static void on_line(jk_ctx_t *c, const char *line)
         return;
     }
     if (strcmp(type, "notify") == 0 && c->handshake_ok && hex[0]) {
-        uint8_t raw[64];
+        uint8_t raw[256];
         int n = hex_decode(hex, raw, sizeof(raw));
+        static unsigned nlog;
+        if (nlog < 8) {
+            fprintf(stderr, "jk: notify n=%d handshake=%d\n", n,
+                    c->handshake_ok);
+            nlog++;
+        }
         if (n > 0 &&
             jk_assembler_feed(&c->asm, raw, (size_t)n, c->frame, 1) > 0) {
-            if (jk_decode_cell_info(c->frame, JK_FRAME_SIZE, JK_PROTO_JK02_32S,
-                                    0, &c->cell) == JK_OK) {
+            int rc = jk_decode_cell_info(c->frame, JK_FRAME_SIZE,
+                                         JK_PROTO_JK02_32S, 0, &c->cell);
+            if (rc == JK_OK) {
                 c->have_data = 1;
                 c->last_cell_mono = mono_now();
+            } else {
+                fprintf(stderr, "jk: decode cell-info %d\n", rc);
             }
         }
     }

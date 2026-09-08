@@ -20,7 +20,8 @@
 
 #define MAX_CLI     8
 #define LINE_CAP    8192
-#define HEX_CAP     512
+#define HEX_CAP     1024
+#define NOTIFY_MAX  256
 #define CONNECT_S   20.0
 #define GATT_WAIT_S 4.0
 #define SCAN_S      8.0
@@ -429,10 +430,9 @@ static int on_notify(sd_bus_message *m, void *userdata, sd_bus_error *ret_err)
 {
     cli_t *c = userdata;
     const char *iface = NULL;
-    const uint8_t *bytes = NULL;
-    size_t n = 0;
+    static unsigned nlog;
     (void)ret_err;
-    if (!c || c->fd < 0 || !c->acked)
+    if (!c || c->fd < 0)
         return 0;
     if (sd_bus_message_read(m, "s", &iface) < 0)
         return 0;
@@ -445,27 +445,36 @@ static int on_notify(sd_bus_message *m, void *userdata, sd_bus_error *ret_err)
         const char *contents = NULL;
         sd_bus_message_read(m, "s", &key);
         sd_bus_message_peek_type(m, NULL, &contents);
-        sd_bus_message_enter_container(m, 'v', contents);
         if (key && strcmp(key, "Value") == 0 && contents &&
             strcmp(contents, "ay") == 0) {
-            sd_bus_message_read_array(m, 'y', (const void **)&bytes, &n);
-            if (bytes && n > 0 && n <= 64) {
+            const uint8_t *bytes = NULL;
+            size_t n = 0;
+            if (sd_bus_message_enter_container(m, 'v', "ay") >= 0) {
+                (void)sd_bus_message_read_array(m, 'y',
+                                                (const void **)&bytes, &n);
+                sd_bus_message_exit_container(m);
+            }
+            if (bytes && n > 0 && n <= NOTIFY_MAX) {
                 char hex[HEX_CAP];
-                char line[640];
+                char line[LINE_CAP];
                 hex_encode(bytes, n, hex, sizeof(hex));
                 snprintf(line, sizeof(line),
                          "{\"type\":\"notify\",\"address\":\"%s\",\"hex\":\"%s\"}",
                          c->mac, hex);
                 queue_line(c, line);
-                if (g_debug)
-                    log_msg("notify %s %zu", c->mac, n);
+                if (nlog < 8 || g_debug) {
+                    log_msg("notify %s n=%zu", c->mac, n);
+                    nlog++;
+                }
+            } else if (n > NOTIFY_MAX) {
+                log_msg("notify %s dropped n=%zu", c->mac, n);
             }
         } else if (contents) {
-            sd_bus_message_skip(m, contents);
+            sd_bus_message_skip(m, "v");
         }
         sd_bus_message_exit_container(m);
-        sd_bus_message_exit_container(m);
     }
+    sd_bus_message_exit_container(m);
     return 0;
 }
 
@@ -552,8 +561,17 @@ static int services_resolved(cli_t *c)
 static int start_notify(cli_t *c)
 {
     sd_bus_error err = SD_BUS_ERROR_NULL;
-    char match[384];
     int r;
+    /* Accept notifies that race StartNotify. */
+    c->acked = 1;
+    if (c->notify_slot) {
+        sd_bus_slot_unref(c->notify_slot);
+        c->notify_slot = NULL;
+    }
+    r = sd_bus_match_signal(g_bus, &c->notify_slot, BLUEZ, c->notify_path,
+                            PROPS_IF, "PropertiesChanged", on_notify, c);
+    if (r < 0)
+        log_msg("match_signal: %s", strerror(-r));
     r = sd_bus_call_method(g_bus, BLUEZ, c->notify_path, CHAR_IF,
                            "StartNotify", &err, NULL, NULL);
     if (r < 0) {
@@ -562,18 +580,8 @@ static int start_notify(cli_t *c)
         return -1;
     }
     sd_bus_error_free(&err);
-    snprintf(match, sizeof(match),
-             "type='signal',path='%s',"
-             "interface='org.freedesktop.DBus.Properties',"
-             "member='PropertiesChanged'",
-             c->notify_path);
-    if (c->notify_slot) {
-        sd_bus_slot_unref(c->notify_slot);
-        c->notify_slot = NULL;
-    }
-    r = sd_bus_add_match(g_bus, &c->notify_slot, match, on_notify, c);
-    if (r < 0)
-        log_msg("match: %s", strerror(-r));
+    (void)sd_bus_flush(g_bus);
+    log_msg("StartNotify ok %s", c->notify_path);
     return 0;
 }
 
@@ -605,6 +613,7 @@ static int gatt_write(cli_t *c, const uint8_t *data, size_t n, int response)
         return -1;
     }
     sd_bus_error_free(&err);
+    log_msg("WriteValue %s n=%zu", c->mac, n);
     return 0;
 }
 
@@ -1005,13 +1014,14 @@ int main(int argc, char **argv)
         busfd = sd_bus_get_fd(g_bus);
     for (;;) {
         struct pollfd p[MAX_CLI + 2];
-        int np = 0;
+        int np = 0, ev;
         p[np].fd = lfd;
         p[np].events = POLLIN;
         np++;
         if (busfd >= 0) {
+            ev = sd_bus_get_events(g_bus);
             p[np].fd = busfd;
-            p[np].events = POLLIN;
+            p[np].events = (short)(ev > 0 ? ev : POLLIN);
             np++;
         }
         for (i = 0; i < MAX_CLI; i++) {
@@ -1028,8 +1038,12 @@ int main(int argc, char **argv)
                 continue;
             break;
         }
-        if (g_bus)
-            sd_bus_process(g_bus, NULL);
+        if (g_bus) {
+            int pr;
+            do {
+                pr = sd_bus_process(g_bus, NULL);
+            } while (pr > 0);
+        }
         if (p[0].revents & POLLIN) {
             int fd = accept4(lfd, NULL, NULL, SOCK_NONBLOCK | SOCK_CLOEXEC);
             if (fd >= 0) {
