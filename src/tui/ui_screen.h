@@ -1,6 +1,7 @@
 #ifndef MF_UI_SCREEN_H
 #define MF_UI_SCREEN_H
 
+#include <ncursesw/curses.h>
 #include <vdk.h>
 
 vk_screen_t *mf_ui_screen(void);
@@ -14,6 +15,8 @@ int  mf_ui_cols(void);
 int  mf_ui_rows(void);
 void mf_ui_open_settings(void);
 void mf_ui_show_help(int about);
+int  mf_ui_help_open(void);
+int  mf_ui_settings_open(void);
 void mf_ui_save_config(void);
 void mf_ui_load_config(void);
 
@@ -22,12 +25,15 @@ void mf_menubar_on_resize(void);
 void mf_menubar_shutdown(void);
 int  mf_menubar_key(wint_t c);
 int  mf_menubar_active(void);
+int  mf_menubar_mouse(int x, int y, mmask_t bstate);
+int  mf_menubar_is_init(void);
 
 void mf_dash_init(void);
 void mf_dash_on_resize(void);
 void mf_dash_update(const char *hostport, const char *tag, const char *json);
 void mf_dash_shutdown(void);
 void mf_dash_set_visible(int vis);
+int  mf_dash_mouse(int x, int y, mmask_t bstate);
 int  mf_dash_catalog_n(void);
 const char *mf_dash_catalog_id(int i);
 const char *mf_dash_catalog_name(int i);
@@ -46,6 +52,7 @@ void mf_devset_show(const char *id, const char *name, double poll);
 void mf_devset_close(void);
 int  mf_devset_open(void);
 int  mf_devset_key(wint_t c);
+int  mf_devset_mouse(int x, int y, mmask_t bstate);
 const char *mf_devset_id(void);
 const char *mf_devset_poll_text(void);
 
@@ -53,6 +60,7 @@ void mf_confirm_show(const char *name, const char *action);
 void mf_confirm_close(void);
 int  mf_confirm_open(void);
 int  mf_confirm_handle(wint_t c);
+int  mf_confirm_mouse(int x, int y, mmask_t bstate);
 const char *mf_confirm_action(void);
 
 void mf_ui_open_device_view(int idx);
@@ -62,5 +70,9 @@ const char *mf_ui_poll_path(void);
 
 int  mf_tui_run(const char *connect, const char *config_path);
 int  mf_tui_dump_layout_main(const char *which);
+
+/* Mouse handlers for dialogs defined in ui_screen.c. */
+int  mf_help_mouse(int x, int y, mmask_t bstate);
+int  mf_settings_mouse(int x, int y, mmask_t bstate);
 
 #endif

@@ -2,6 +2,7 @@
 #include "ui_screen.h"
 #include "http_client.h"
 #include "layout.h"
+#include "mouse.h"
 
 #include <cJSON.h>
 #include <errno.h>
@@ -529,6 +530,21 @@ int mf_tui_run(const char *connect, const char *config_path)
             g_cli.stale = 1;
 
         key = vk_kmio_fetch(&mev);
+        if (key == KEY_MOUSE) {
+            int mr = mf_mouse_handle(&mev);
+            if (mr == 2 && g_view_idx >= 0) {
+                char path[192], payload[80];
+                snprintf(path, sizeof(path),
+                         "/api/v1/devices/%s/actions/set_switch",
+                         mf_dash_catalog_id(g_view_idx));
+                snprintf(payload, sizeof(payload),
+                         "{\"key\":\"%s\",\"value\":false}",
+                         mf_confirm_action());
+                mf_confirm_close();
+                (void)mf_http_cli_post(&g_cli, path, payload);
+            }
+            continue;
+        }
         if (key <= 0) {
             int ch = getch();
             if (ch != ERR)
@@ -622,3 +638,48 @@ int mf_tui_dump_layout_main(const char *which)
 {
     return dump_layout(which);
 }
+
+/* ---- Mouse helpers ---- */
+
+/* Left-press mask. */
+#define LEFT (BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON1_DOUBLE_CLICKED)
+
+int
+mf_help_mouse(int x, int y, mmask_t bstate)
+{
+    int win_x, win_y, win_w, win_h;
+
+    if (!g_help_win)
+        return 0;
+
+    vk_widget_get_position(VK_WIDGET(g_help_win), &win_x, &win_y);
+    vk_widget_get_metrics(VK_WIDGET(g_help_win), &win_w, &win_h);
+    if (x < win_x || y < win_y || x >= win_x + win_w || y >= win_y + win_h)
+        return 0;
+
+    /* Left-click on help window → dismiss (same as Esc). */
+    if (bstate & LEFT)
+        close_help();
+    return 1;
+}
+
+int
+mf_settings_mouse(int x, int y, mmask_t bstate)
+{
+    int win_x, win_y, win_w, win_h;
+
+    if (!g_settings_open || !g_set_win)
+        return 0;
+
+    vk_widget_get_position(VK_WIDGET(g_set_win), &win_x, &win_y);
+    vk_widget_get_metrics(VK_WIDGET(g_set_win), &win_w, &win_h);
+    if (x < win_x || y < win_y || x >= win_x + win_w || y >= win_y + win_h)
+        return 0;
+
+    /* Absorb clicks over settings dialog; keyboard still drives fields. */
+    (void)bstate;
+    return 1;
+}
+
+int mf_ui_help_open(void) { return g_help_win != NULL; }
+int mf_ui_settings_open(void) { return g_settings_open; }

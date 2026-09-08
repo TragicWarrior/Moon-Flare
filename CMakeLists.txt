@@ -75,6 +75,7 @@ add_executable(moonflare
     src/tui/device_settings.c
     src/tui/http_client.c
     src/tui/layout.c
+    src/tui/mouse.c
     src/config/config.c)
 target_include_directories(moonflare PRIVATE
     ${CMAKE_SOURCE_DIR}/src

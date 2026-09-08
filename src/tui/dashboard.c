@@ -314,3 +314,48 @@ void mf_dash_shutdown(void)
         g_small = NULL;
     }
 }
+
+/* Left-press mask. */
+#define LEFT (BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON1_DOUBLE_CLICKED)
+
+int mf_dash_mouse(int x, int y, mmask_t bstate)
+{
+    int i, k, seen, row, ly;
+    int fx, fy, fw, fh;
+    const char *want;
+    vk_listbox_t *lb;
+
+    if (!(bstate & LEFT))
+        return 0;
+    if (mf_pack_visible())
+        return 0;
+
+    for (i = 0; i < 2; i++) {
+        if (!g_fr[i] || !g_lb[i])
+            continue;
+        vk_widget_get_position(VK_WIDGET(g_fr[i]), &fx, &fy);
+        vk_widget_get_metrics(VK_WIDGET(g_fr[i]), &fw, &fh);
+        if (x < fx || x >= fx + fw || y < fy || y >= fy + fh)
+            continue;
+        lb = g_lb[i];
+        ly = y - fy - 1;
+        row = vk_listbox_get_scroll_pos(lb) + ly;
+        if (row < 0 || row >= vk_listbox_get_item_count(lb))
+            return 1;
+        want = (i == 0) ? "battery" : "charger";
+        seen = 0;
+        for (k = 0; k < g_ncat; k++) {
+            if (strcmp(g_cat[k].kind, want) != 0)
+                continue;
+            if (seen == row) {
+                if (!g_cat[k].id[0])
+                    return 1;
+                mf_ui_open_device_view(k);
+                return 1;
+            }
+            seen++;
+        }
+        return 1;
+    }
+    return 0;
+}

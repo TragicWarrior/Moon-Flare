@@ -352,3 +352,106 @@ int mf_menubar_key(wint_t c)
     }
     return 1;
 }
+
+int mf_menubar_is_init(void) { return g_bar != NULL; }
+
+/* Left-press mask (pressed / clicked / double-clicked). */
+#define LEFT (BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON1_DOUBLE_CLICKED)
+
+int
+mf_menubar_mouse(int x, int y, mmask_t bstate)
+{
+    int bar_x, bar_y, bar_w, bar_h;
+    int idx, lx;
+    int dx, dy, dw, dh;
+    vk_listbox_t *lb;
+    int ly, scroll, n, row;
+
+    /* Wheel over open dropdown → move selection. */
+    if (g_drop && (bstate & (BUTTON4_PRESSED | BUTTON5_PRESSED))) {
+        vk_widget_get_position(VK_WIDGET(g_drop), &dx, &dy);
+        vk_widget_get_metrics(VK_WIDGET(g_drop), &dw, &dh);
+        if (x >= dx && x < dx + dw && y >= dy && y < dy + dh) {
+            lb = VK_LISTBOX(vk_window_get_child(g_drop));
+            if (lb) {
+                if (bstate & BUTTON4_PRESSED)
+                    vk_listbox_set_prev(lb);
+                else
+                    vk_listbox_set_next(lb);
+                vk_listbox_update(lb);
+                vk_window_update(g_drop);
+                mf_ui_refresh();
+            }
+            return 1;
+        }
+    }
+
+    if (!(bstate & LEFT))
+        return 0;
+
+    /* Click on open dropdown list → select and activate. */
+    if (g_drop) {
+        vk_widget_get_position(VK_WIDGET(g_drop), &dx, &dy);
+        vk_widget_get_metrics(VK_WIDGET(g_drop), &dw, &dh);
+        if (x >= dx && x < dx + dw && y >= dy && y < dy + dh) {
+            lb = VK_LISTBOX(vk_window_get_child(g_drop));
+            /* Interior of window frame: inset 1 for border. */
+            ly = y - dy - 1;
+            if (lb && ly >= 0) {
+                n = vk_listbox_get_item_count(lb);
+                scroll = vk_listbox_get_scroll_pos(lb);
+                row = scroll + ly;
+                if (row >= 0 && row < n) {
+                    vk_listbox_set_curr(lb, row);
+                    vk_listbox_update(lb);
+                    vk_window_update(g_drop);
+                    vk_listbox_exec_curr(lb);
+                    return 1;
+                }
+            }
+            return 1;
+        }
+        /* Click outside dropdown while open → close it. */
+        close_dropdown();
+    }
+
+    /* Check if click lands on the menubar bar itself. */
+    if (!g_bar)
+        return 0;
+
+    vk_widget_get_position(VK_WIDGET(g_bar), &bar_x, &bar_y);
+    vk_widget_get_metrics(VK_WIDGET(g_bar), &bar_w, &bar_h);
+    if (y < bar_y || y >= bar_y + bar_h || x < bar_x || x >= bar_x + bar_w) {
+        if (mf_menubar_active()) {
+            g_focused = 0;
+            vk_menubar_set_focused(g_bar, false);
+            vk_menubar_update(g_bar);
+            mf_ui_refresh();
+            return 1;
+        }
+        return 0;
+    }
+
+    lx = x - bar_x;
+    idx = vk_menubar_hit_test(g_bar, lx);
+    if (idx < 0) {
+        if (!mf_menubar_active()) {
+            g_focused = 1;
+            vk_menubar_set_focused(g_bar, true);
+            if (vk_menubar_get_curr(g_bar) < 0)
+                vk_menubar_set_curr(g_bar, 0);
+            vk_menubar_update(g_bar);
+            mf_ui_refresh();
+        }
+        return 1;
+    }
+
+    if (!mf_menubar_active()) {
+        g_focused = 1;
+        vk_menubar_set_focused(g_bar, true);
+    }
+    vk_menubar_set_curr(g_bar, idx);
+    vk_menubar_update(g_bar);
+    open_dropdown(idx);
+    return 1;
+}

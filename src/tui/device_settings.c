@@ -5,6 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <vdk.h>
+#include <ncursesw/curses.h>
+
+#define COL_BG   COLOR_WHITE
 
 #define COL_BG   COLOR_WHITE
 #define COL_TEXT COLOR_BLACK
@@ -211,5 +214,58 @@ int mf_confirm_handle(wint_t c)
         mf_confirm_close();
         return 1;
     }
+    return 1;
+}
+
+/* Left-press mask. */
+#define LEFT (BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON1_DOUBLE_CLICKED)
+
+int
+mf_confirm_mouse(int x, int y, mmask_t bstate)
+{
+    int win_x, win_y, win_w, win_h;
+    int lx, ly;
+
+    if (!g_cf_open || !g_cf_win)
+        return 0;
+
+    vk_widget_get_position(VK_WIDGET(g_cf_win), &win_x, &win_y);
+    vk_widget_get_metrics(VK_WIDGET(g_cf_win), &win_w, &win_h);
+    if (x < win_x || y < win_y || x >= win_x + win_w || y >= win_y + win_h)
+        return 0;
+
+    /* Click inside confirm window: check if on "y / n" label row. */
+    if (bstate & LEFT) {
+        lx = x - win_x;
+        ly = y - win_y;
+        /* y / n label is at canvas y ≈ 4, spans interior width (win_w - 4). */
+        if (ly >= 3 && ly <= 5) {
+            int mid = win_w / 2;
+            if (lx < mid)
+                return 2;
+            mf_confirm_close();
+            return 1;
+        }
+    }
+
+    /* Absorb clicks over confirm dialog. */
+    return 1;
+}
+
+int
+mf_devset_mouse(int x, int y, mmask_t bstate)
+{
+    int win_x, win_y, win_w, win_h;
+
+    if (!g_open || !g_win)
+        return 0;
+
+    vk_widget_get_position(VK_WIDGET(g_win), &win_x, &win_y);
+    vk_widget_get_metrics(VK_WIDGET(g_win), &win_w, &win_h);
+    if (x < win_x || y < win_y || x >= win_x + win_w || y >= win_y + win_h)
+        return 0;
+
+    /* Absorb clicks over device settings dialog. */
+    (void)bstate;
     return 1;
 }
