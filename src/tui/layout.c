@@ -126,7 +126,7 @@ void mf_tui_paint_settings(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
     put_str(grid, y + 6, x + 2, "Refresh s");
     snprintf(line, sizeof(line), "[%.2f]", refresh_s);
     put_str(grid, y + 6, x + 16, line);
-    put_str(grid, y + h - 2, x + 2, "OK / Cancel");
+    put_str(grid, y + h - 2, x + 2, "OK                   Cancel");
 }
 
 void mf_tui_devsettings_geom(int cols, int rows, int *x, int *y, int *w, int *h)
@@ -211,7 +211,7 @@ void mf_tui_paint_devsettings(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
     draw_box(grid, y, x, w, h, cap);
     put_str(grid, y + 2, x + 2, "poll_interval_s");
     put_str(grid, y + 2, x + 22, "[2.0]");
-    put_str(grid, y + h - 2, x + 2, "Save / Esc");
+    put_str(grid, y + h - 2, x + 2, "Save                 Exit");
 }
 
 void mf_tui_paint_confirm(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],

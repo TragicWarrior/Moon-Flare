@@ -91,8 +91,8 @@ int main(void)
     CHECK(y == 2 && y + h <= 25, "device settings fits");
     mf_tui_paint_devsettings(grid, "pack-demo");
     CHECK(strstr(grid[y + 2], "poll_interval_s"), "poll first");
-    CHECK(strstr(grid[y + h - 2], "Save") && strstr(grid[y + h - 2], "Esc"),
-          "Save/Esc pinned");
+    CHECK(strstr(grid[y + h - 2], "Save") && strstr(grid[y + h - 2], "Exit"),
+          "Save/Exit pinned");
 
     mf_tui_confirm_geom(80, 25, &x, &y, &w, &h);
     CHECK(w == 50 && h == 7, "confirm 7x50");

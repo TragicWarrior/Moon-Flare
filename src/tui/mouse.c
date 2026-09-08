@@ -37,8 +37,8 @@ mf_mouse_handle(const MEVENT *mev)
         return 1;
     }
     if (mf_devset_open()) {
-        (void)mf_devset_mouse(x, y, bstate);
-        return 1;
+        int r = mf_devset_mouse(x, y, bstate);
+        return r == 2 ? 2 : 1;
     }
     if (mf_ui_settings_open()) {
         (void)mf_settings_mouse(x, y, bstate);

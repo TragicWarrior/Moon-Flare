@@ -49,13 +49,15 @@ int  mf_pack_is_charger(void);
 int  mf_pack_has_switch(void);
 int  mf_pack_switch_on(const char *key);
 
-void mf_devset_show(const char *id, const char *name, double poll);
+void mf_devset_show(const char *id, const char *name, const char *json);
+void mf_devset_apply_json(const char *json);
 void mf_devset_close(void);
 int  mf_devset_open(void);
 int  mf_devset_key(wint_t c);
 int  mf_devset_mouse(int x, int y, mmask_t bstate);
 const char *mf_devset_id(void);
 const char *mf_devset_poll_text(void);
+const char *mf_devset_payload(void);
 
 void mf_confirm_show(const char *name, const char *action);
 void mf_confirm_close(void);

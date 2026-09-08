@@ -38,14 +38,20 @@ static double g_refresh = 1.0;
 static double g_last_get;
 static int g_settings_open;
 static vk_window_t *g_set_win;
-static vk_label_t *g_set_lab[4];
+static vk_box_t *g_set_vbox, *g_set_form, *g_set_bar, *g_set_row[3];
+static vk_label_t *g_set_lab[3];
 static vk_input_t *g_set_in[3];
+static vk_button_t *g_set_ok, *g_set_cancel;
+static vk_filler_t *g_set_fill;
 static int g_set_focus;
+static void close_settings(void);
+static void apply_settings(void);
 static vk_window_t *g_help_win;
 static int g_view_idx = -1;
 static char g_view_path[192];
 static char g_view_json[65536];
 static char g_view_name[32];
+static int g_devset_fetch;
 
 static double mono_now(void)
 {
@@ -97,24 +103,81 @@ void mf_ui_resize(void)
     mf_ui_refresh();
 }
 
+static int on_set_ok(vk_widget_t *w, void *a)
+{
+    (void)w;
+    (void)a;
+    apply_settings();
+    return 1;
+}
+
+static int on_set_cancel(vk_widget_t *w, void *a)
+{
+    (void)w;
+    (void)a;
+    close_settings();
+    return 1;
+}
+
+static vk_button_t *mk_set_btn(const char *txt, VkWidgetFunc fn)
+{
+    vk_button_t *b = vk_button_create(txt);
+
+    if (!b)
+        return NULL;
+    vk_button_set_border_style(b, VK_BORDER_SINGLE);
+    vk_widget_set_colors(VK_WIDGET(b), COL_TEXT, COL_MENU);
+    vk_widget_set_attrs(VK_WIDGET(b), A_BOLD);
+    vk_button_set_pressed_colors(b, COLOR_WHITE, COLOR_BLUE);
+    vk_widget_set_relief_colors(VK_WIDGET(b), COLOR_WHITE, COLOR_BLACK);
+    vk_button_set_on_press(b, fn, NULL);
+    return b;
+}
+
 static void close_settings(void)
 {
     int i;
     if (!g_settings_open)
         return;
+    if (g_set_win)
+        vk_window_set_child(g_set_win, NULL);
     for (i = 0; i < 3; i++) {
         if (g_set_in[i]) {
-            vk_screen_detach_widget(g_screen, 0, VK_WIDGET(g_set_in[i]));
             vk_input_destroy(g_set_in[i]);
             g_set_in[i] = NULL;
         }
-    }
-    for (i = 0; i < 4; i++) {
         if (g_set_lab[i]) {
-            vk_screen_detach_widget(g_screen, 0, VK_WIDGET(g_set_lab[i]));
             vk_label_destroy(g_set_lab[i]);
             g_set_lab[i] = NULL;
         }
+        if (g_set_row[i]) {
+            vk_box_destroy(g_set_row[i]);
+            g_set_row[i] = NULL;
+        }
+    }
+    if (g_set_ok) {
+        vk_button_destroy(g_set_ok);
+        g_set_ok = NULL;
+    }
+    if (g_set_cancel) {
+        vk_button_destroy(g_set_cancel);
+        g_set_cancel = NULL;
+    }
+    if (g_set_fill) {
+        vk_filler_destroy(g_set_fill);
+        g_set_fill = NULL;
+    }
+    if (g_set_bar) {
+        vk_box_destroy(g_set_bar);
+        g_set_bar = NULL;
+    }
+    if (g_set_form) {
+        vk_box_destroy(g_set_form);
+        g_set_form = NULL;
+    }
+    if (g_set_vbox) {
+        vk_box_destroy(g_set_vbox);
+        g_set_vbox = NULL;
     }
     if (g_set_win) {
         vk_screen_detach_widget(g_screen, 0, VK_WIDGET(g_set_win));
@@ -122,66 +185,85 @@ static void close_settings(void)
         g_set_win = NULL;
     }
     g_settings_open = 0;
+    mf_ui_front_clear();
     mf_ui_refresh();
 }
 
 void mf_ui_open_settings(void)
 {
-    int x, y, w, h;
+    int x, y, w, h, i, iw, ih;
     char buf[32];
+    static const char *names[3] = { "Host", "Port", "Refresh s" };
+
     if (g_settings_open)
         return;
     mf_tui_settings_geom(mf_ui_cols(), mf_ui_rows(), &x, &y, &w, &h);
+    iw = w - 2;
+    ih = h - 2;
     g_set_win = vk_window_create(w, h);
     vk_window_set_title(g_set_win, " General ");
     vk_window_set_border_style(g_set_win, VK_BORDER_SINGLE);
-    vk_window_set_border_colors(g_set_win, COL_TEXT, COL_MENU);
+    vk_window_set_border_colors(g_set_win, COLOR_WHITE, COL_MENU);
+    vk_window_set_border_attrs(g_set_win, A_BOLD);
     vk_widget_set_colors(VK_WIDGET(g_set_win), COL_TEXT, COL_MENU);
-    mf_ui_attach(VK_WIDGET(g_set_win), x, y);
-    vk_window_update(g_set_win);
 
-    g_set_lab[0] = vk_label_create(10);
-    vk_label_set_text(g_set_lab[0], "Host");
-    mf_ui_attach(VK_WIDGET(g_set_lab[0]), x + 2, y + 2);
-    g_set_in[0] = vk_input_create(w - 20);
+    g_set_form = vk_box_create(iw, ih - 3, VK_BOX_VERTICAL, 3);
+    vk_box_set_homogeneous(g_set_form, false);
+    vk_widget_set_colors(VK_WIDGET(g_set_form), COL_TEXT, COL_MENU);
+    vk_widget_set_expand(VK_WIDGET(g_set_form));
+    for (i = 0; i < 3; i++) {
+        g_set_row[i] = vk_box_create(iw, 3, VK_BOX_HORIZONTAL, 2);
+        vk_box_set_homogeneous(g_set_row[i], false);
+        vk_widget_set_colors(VK_WIDGET(g_set_row[i]), COL_TEXT, COL_MENU);
+        g_set_lab[i] = vk_label_create(12);
+        vk_widget_set_colors(VK_WIDGET(g_set_lab[i]), COL_TEXT, COL_MENU);
+        vk_label_set_text(g_set_lab[i], names[i]);
+        vk_label_update(g_set_lab[i]);
+        g_set_in[i] = vk_input_create(iw - 12);
+        vk_input_set_border_style(g_set_in[i], VK_BORDER_SINGLE);
+        vk_widget_set_relief_colors(VK_WIDGET(g_set_in[i]),
+                                    COLOR_WHITE, COLOR_BLACK);
+        vk_widget_set_colors(VK_WIDGET(g_set_in[i]), COL_TEXT, COL_BG);
+        vk_widget_set_expand(VK_WIDGET(g_set_in[i]));
+        vk_box_set_widget(g_set_row[i], 0, VK_WIDGET(g_set_lab[i]));
+        vk_box_set_widget(g_set_row[i], 1, VK_WIDGET(g_set_in[i]));
+        vk_box_set_widget(g_set_form, i, VK_WIDGET(g_set_row[i]));
+    }
     vk_input_set_text(g_set_in[0], g_host);
-    vk_input_set_border_style(g_set_in[0], VK_BORDER_SINGLE);
-    mf_ui_attach(VK_WIDGET(g_set_in[0]), x + 14, y + 2);
-
-    g_set_lab[1] = vk_label_create(10);
-    vk_label_set_text(g_set_lab[1], "Port");
-    mf_ui_attach(VK_WIDGET(g_set_lab[1]), x + 2, y + 5);
-    g_set_in[1] = vk_input_create(12);
     snprintf(buf, sizeof(buf), "%d", g_port);
     vk_input_set_text(g_set_in[1], buf);
-    vk_input_set_border_style(g_set_in[1], VK_BORDER_SINGLE);
-    mf_ui_attach(VK_WIDGET(g_set_in[1]), x + 14, y + 5);
-
-    g_set_lab[2] = vk_label_create(12);
-    vk_label_set_text(g_set_lab[2], "Refresh s");
-    mf_ui_attach(VK_WIDGET(g_set_lab[2]), x + 2, y + 8);
-    g_set_in[2] = vk_input_create(12);
     snprintf(buf, sizeof(buf), "%.2f", g_refresh);
     vk_input_set_text(g_set_in[2], buf);
-    vk_input_set_border_style(g_set_in[2], VK_BORDER_SINGLE);
-    mf_ui_attach(VK_WIDGET(g_set_in[2]), x + 14, y + 8);
-
-    g_set_lab[3] = vk_label_create(w - 4);
-    vk_label_set_text(g_set_lab[3], "OK / Cancel");
-    mf_ui_attach(VK_WIDGET(g_set_lab[3]), x + 2, y + h - 2);
-
-    {
-        int i;
-        for (i = 0; i < 3; i++) {
-            vk_widget_set_colors(VK_WIDGET(g_set_lab[i]), COL_TEXT, COL_MENU);
-            vk_label_update(g_set_lab[i]);
-            vk_widget_set_colors(VK_WIDGET(g_set_in[i]), COL_TEXT, COL_BG);
-            vk_input_show_cursor(g_set_in[i], i == 0);
-            vk_input_update(g_set_in[i]);
-        }
-        vk_widget_set_colors(VK_WIDGET(g_set_lab[3]), COL_TEXT, COL_MENU);
-        vk_label_update(g_set_lab[3]);
+    for (i = 0; i < 3; i++) {
+        vk_input_show_cursor(g_set_in[i], i == 0);
+        vk_input_update(g_set_in[i]);
     }
+
+    g_set_bar = vk_box_create(iw, 3, VK_BOX_HORIZONTAL, 3);
+    vk_box_set_homogeneous(g_set_bar, false);
+    vk_widget_set_colors(VK_WIDGET(g_set_bar), COL_TEXT, COL_MENU);
+    g_set_ok = mk_set_btn("OK", on_set_ok);
+    g_set_cancel = mk_set_btn("Cancel", on_set_cancel);
+    g_set_fill = vk_filler_create();
+    vk_widget_set_colors(VK_WIDGET(g_set_fill), COL_TEXT, COL_MENU);
+    vk_widget_set_expand(VK_WIDGET(g_set_fill));
+    vk_box_set_widget(g_set_bar, 0, VK_WIDGET(g_set_ok));
+    vk_box_set_widget(g_set_bar, 1, VK_WIDGET(g_set_fill));
+    vk_box_set_widget(g_set_bar, 2, VK_WIDGET(g_set_cancel));
+
+    g_set_vbox = vk_box_create(iw, ih, VK_BOX_VERTICAL, 2);
+    vk_box_set_homogeneous(g_set_vbox, false);
+    vk_widget_set_colors(VK_WIDGET(g_set_vbox), COL_TEXT, COL_MENU);
+    vk_widget_set_expand(VK_WIDGET(g_set_vbox));
+    vk_box_set_widget(g_set_vbox, 0, VK_WIDGET(g_set_form));
+    vk_box_set_widget(g_set_vbox, 1, VK_WIDGET(g_set_bar));
+    vk_window_set_child(g_set_win, VK_WIDGET(g_set_vbox));
+    mf_ui_attach(VK_WIDGET(g_set_win), x, y);
+    vk_box_update(g_set_form);
+    vk_box_update(g_set_bar);
+    vk_box_update(g_set_vbox);
+    vk_window_update(g_set_win);
+
     g_set_focus = 0;
     g_settings_open = 1;
     mf_ui_front_clear();
@@ -226,18 +308,43 @@ static int settings_key(wint_t c)
         return 1;
     }
     if (c == '\t') {
-        vk_input_show_cursor(g_set_in[g_set_focus], false);
-        vk_input_update(g_set_in[g_set_focus]);
-        g_set_focus = (g_set_focus + 1) % 3;
-        vk_input_show_cursor(g_set_in[g_set_focus], true);
-        vk_input_update(g_set_in[g_set_focus]);
+        if (g_set_focus < 3)
+            vk_input_show_cursor(g_set_in[g_set_focus], false);
+        if (g_set_focus < 3)
+            vk_input_update(g_set_in[g_set_focus]);
+        g_set_focus = (g_set_focus + 1) % 5;
+        if (g_set_focus < 3) {
+            vk_input_show_cursor(g_set_in[g_set_focus], true);
+            vk_input_update(g_set_in[g_set_focus]);
+        }
+        if (g_set_ok) {
+            vk_widget_set_colors(VK_WIDGET(g_set_ok),
+                                 g_set_focus == 3 ? COLOR_YELLOW : COL_TEXT,
+                                 COL_MENU);
+            vk_button_update(g_set_ok);
+        }
+        if (g_set_cancel) {
+            vk_widget_set_colors(VK_WIDGET(g_set_cancel),
+                                 g_set_focus == 4 ? COLOR_YELLOW : COL_TEXT,
+                                 COL_MENU);
+            vk_button_update(g_set_cancel);
+        }
+        if (g_set_bar)
+            vk_box_update(g_set_bar);
+        if (g_set_win)
+            vk_window_update(g_set_win);
         mf_ui_refresh();
         return 1;
     }
     if (c == '\n' || c == KEY_ENTER) {
-        apply_settings();
+        if (g_set_focus == 4)
+            close_settings();
+        else
+            apply_settings();
         return 1;
     }
+    if (g_set_focus >= 3)
+        return 1;
     in = g_set_in[g_set_focus];
     if (c == KEY_BACKSPACE || c == 127) {
         vk_input_backspace(in);
@@ -383,9 +490,14 @@ void mf_ui_open_device_settings(int idx)
 {
     const char *id = mf_dash_catalog_id(idx);
     const char *name = mf_dash_catalog_name(idx);
+    char path[192];
+
     if (!id || !id[0])
         return;
-    mf_devset_show(id, name, 2.0);
+    mf_devset_show(id, name, NULL);
+    snprintf(path, sizeof(path), "/api/v1/devices/%s/settings", id);
+    g_devset_fetch = 1;
+    (void)mf_http_cli_get(&g_cli, path);
 }
 
 void mf_ui_load_config(void)
@@ -507,7 +619,7 @@ int mf_tui_run(const char *connect, const char *config_path)
                          g_cli.fd >= 0 && FD_ISSET(g_cli.fd, &w), t);
 
         if (g_cli.state == MF_CONN_UP && !g_cli.inflight &&
-            t - g_last_get >= g_refresh) {
+            t - g_last_get >= g_refresh && !g_devset_fetch) {
             if (mf_http_cli_get(&g_cli, mf_ui_poll_path()) == 1)
                 g_last_get = t;
         }
@@ -528,8 +640,13 @@ int mf_tui_run(const char *connect, const char *config_path)
                 snprintf(last_tag, sizeof(last_tag), "%s", tag);
                 dirty = 1;
             }
+            if (g_devset_fetch && !mf_devset_open())
+                g_devset_fetch = 0;
             if (dirty) {
-                if (g_view_idx >= 0 && strstr(last_json, "\"data\"")) {
+                if (g_devset_fetch && mf_devset_open()) {
+                    g_devset_fetch = 0;
+                    mf_devset_apply_json(last_json);
+                } else if (g_view_idx >= 0 && strstr(last_json, "\"data\"")) {
                     snprintf(g_view_json, sizeof(g_view_json), "%s", last_json);
                     mf_pack_update(g_view_json);
                 } else {
@@ -546,7 +663,7 @@ int mf_tui_run(const char *connect, const char *config_path)
         key = vk_kmio_fetch(&mev);
         if (key == KEY_MOUSE) {
             int mr = mf_mouse_handle(&mev);
-            if (mr == 2 && g_view_idx >= 0) {
+            if (mr == 2 && mf_confirm_open() && g_view_idx >= 0) {
                 char path[192], payload[80];
                 snprintf(path, sizeof(path),
                          "/api/v1/devices/%s/actions/set_switch",
@@ -556,6 +673,12 @@ int mf_tui_run(const char *connect, const char *config_path)
                          mf_confirm_action());
                 mf_confirm_close();
                 (void)mf_http_cli_post(&g_cli, path, payload);
+            } else if (mr == 2 && mf_devset_open()) {
+                char path[192];
+                snprintf(path, sizeof(path),
+                         "/api/v1/devices/%s/settings", mf_devset_id());
+                (void)mf_http_cli_put(&g_cli, path, mf_devset_payload());
+                mf_devset_close();
             }
             continue;
         }
@@ -591,13 +714,11 @@ int mf_tui_run(const char *connect, const char *config_path)
             if (mf_devset_open()) {
                 int sr = mf_devset_key((wint_t)key);
                 if (sr == 2) {
-                    char path[192], payload[80];
+                    char path[192];
                     snprintf(path, sizeof(path),
                              "/api/v1/devices/%s/settings", mf_devset_id());
-                    snprintf(payload, sizeof(payload),
-                             "{\"poll_interval_s\":%s}", mf_devset_poll_text());
+                    (void)mf_http_cli_put(&g_cli, path, mf_devset_payload());
                     mf_devset_close();
-                    (void)mf_http_cli_put(&g_cli, path, payload);
                 }
                 continue;
             }
@@ -682,6 +803,7 @@ int
 mf_settings_mouse(int x, int y, mmask_t bstate)
 {
     int win_x, win_y, win_w, win_h;
+    int ox, oy, bx, by, px, py, bw, bh;
 
     if (!g_settings_open || !g_set_win)
         return 0;
@@ -691,8 +813,32 @@ mf_settings_mouse(int x, int y, mmask_t bstate)
     if (x < win_x || y < win_y || x >= win_x + win_w || y >= win_y + win_h)
         return 0;
 
-    /* Absorb clicks over settings dialog; keyboard still drives fields. */
-    (void)bstate;
+    if (!(bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON1_DOUBLE_CLICKED)))
+        return 1;
+    if (!g_set_vbox || !g_set_bar)
+        return 1;
+    vk_widget_get_position(VK_WIDGET(g_set_vbox), &ox, &oy);
+    vk_widget_get_position(VK_WIDGET(g_set_bar), &bx, &by);
+    ox += win_x + bx;
+    oy += win_y + by;
+    if (g_set_ok) {
+        vk_widget_get_position(VK_WIDGET(g_set_ok), &px, &py);
+        vk_widget_get_metrics(VK_WIDGET(g_set_ok), &bw, &bh);
+        if (x >= ox + px && x < ox + px + bw &&
+            y >= oy + py && y < oy + py + bh) {
+            vk_button_press(g_set_ok);
+            return 1;
+        }
+    }
+    if (g_set_cancel) {
+        vk_widget_get_position(VK_WIDGET(g_set_cancel), &px, &py);
+        vk_widget_get_metrics(VK_WIDGET(g_set_cancel), &bw, &bh);
+        if (x >= ox + px && x < ox + px + bw &&
+            y >= oy + py && y < oy + py + bh) {
+            vk_button_press(g_set_cancel);
+            return 1;
+        }
+    }
     return 1;
 }
 
