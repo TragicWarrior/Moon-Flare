@@ -62,6 +62,7 @@ int main(void)
               "pack no 72x22");
     }
     CHECK(strstr(grid[0], "File"), "pack menubar");
+    CHECK(strstr(grid[2], "interface:"), "pack interface row");
     CHECK(strstr(grid[3], "Pack"), "pack frame");
     CHECK(strstr(grid[9], "Cells"), "cells frame");
     CHECK(strstr(grid[6], "MOS") && strstr(grid[6], "T1"), "temp line");

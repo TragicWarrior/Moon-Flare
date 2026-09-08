@@ -20,6 +20,7 @@ typedef struct mf_devinfo {
     const char *name;
     const char *kind;
     const char *driver;
+    const char *endpoint;
     bool        online;
     bool        dying;          /* in_use && stop */
     uint64_t    seq;

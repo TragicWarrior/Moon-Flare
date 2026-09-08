@@ -47,6 +47,7 @@ void mf_pack_shutdown(void);
 int  mf_pack_visible(void);
 int  mf_pack_is_charger(void);
 int  mf_pack_has_switch(void);
+int  mf_pack_switch_on(const char *key);
 
 void mf_devset_show(const char *id, const char *name, double poll);
 void mf_devset_close(void);

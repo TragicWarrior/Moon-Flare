@@ -164,7 +164,7 @@ void mf_tui_paint_pack(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1], int has_switch)
     fill_blank(grid);
     put_str(grid, 0, 1, "File  Settings  Devices  View  Help");
     put_str(grid, 1, 0, "pack-jk  battery/demo  streaming  seq 44");
-    put_str(grid, 2, 0, "endpoint demo");
+    put_str(grid, 2, 0, "interface: bluetooth  28:D4:1E:A7:23:39");
     draw_box(grid, 3, 0, 80, 6, "Pack");
     put_str(grid, 4, 2, "Pack 53.2V            SOC 76%");
     put_str(grid, 5, 2, "Cap  -- Ah            -1.20 A");
@@ -182,7 +182,7 @@ void mf_tui_paint_pack(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1], int has_switch)
         }
     }
     put_str(grid, 14, 2, "dV 18 mV");
-    put_str(grid, 24, 0, "c/d/b MOSFET  Tab devices  Esc dashboard");
+    put_str(grid, 24, 0, "c charge  d discharge  b balancer  Esc dashboard");
 }
 
 void mf_tui_paint_charger(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1])
@@ -190,7 +190,7 @@ void mf_tui_paint_charger(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1])
     fill_blank(grid);
     put_str(grid, 0, 1, "File  Settings  Devices  View  Help");
     put_str(grid, 1, 0, "classic-1  charger/classic  streaming  seq 4");
-    put_str(grid, 2, 0, "172.16.0.20:502");
+    put_str(grid, 2, 0, "interface: tcp  172.16.0.20:502");
     draw_box(grid, 3, 0, 80, 13, "Classic");
     put_str(grid, 4, 2, "Batt 54.1V            PV -- V");
     put_str(grid, 5, 2, "Watts 840");

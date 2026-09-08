@@ -342,6 +342,20 @@ void mf_ui_show_dashboard(void)
     mf_ui_refresh();
 }
 
+static void post_switch(const char *key, int on)
+{
+    char path[192], payload[80];
+
+    if (g_view_idx < 0 || !key)
+        return;
+    snprintf(path, sizeof(path),
+             "/api/v1/devices/%s/actions/set_switch",
+             mf_dash_catalog_id(g_view_idx));
+    snprintf(payload, sizeof(payload),
+             "{\"key\":\"%s\",\"value\":%s}", key, on ? "true" : "false");
+    (void)mf_http_cli_post(&g_cli, path, payload);
+}
+
 const char *mf_ui_poll_path(void)
 {
     if (g_view_idx >= 0 && g_view_path[0])
@@ -597,20 +611,21 @@ int mf_tui_run(const char *connect, const char *config_path)
             }
             if (mf_pack_visible() && !mf_pack_is_charger() && mf_pack_has_switch()) {
                 if (key == 'c' || key == 'C') {
-                    mf_confirm_show(g_view_name, "charge");
+                    if (mf_pack_switch_on("charge"))
+                        mf_confirm_show(g_view_name, "charge");
+                    else
+                        post_switch("charge", 1);
                     continue;
                 }
                 if (key == 'd' || key == 'D') {
-                    mf_confirm_show(g_view_name, "discharge");
+                    if (mf_pack_switch_on("discharge"))
+                        mf_confirm_show(g_view_name, "discharge");
+                    else
+                        post_switch("discharge", 1);
                     continue;
                 }
                 if (key == 'b' || key == 'B') {
-                    char path[192];
-                    snprintf(path, sizeof(path),
-                             "/api/v1/devices/%s/actions/set_switch",
-                             mf_dash_catalog_id(g_view_idx));
-                    (void)mf_http_cli_post(&g_cli, path,
-                                           "{\"key\":\"balance\",\"value\":true}");
+                    post_switch("balance", !mf_pack_switch_on("balance"));
                     continue;
                 }
             }

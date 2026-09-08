@@ -187,7 +187,12 @@ void mf_confirm_show(const char *name, const char *key)
 
     g_cf_l1 = vk_label_create(w - 4);
     vk_widget_set_colors(VK_WIDGET(g_cf_l1), COL_TEXT, COL_MENU);
-    snprintf(msg, sizeof(msg), "Turn off %s MOSFET?", g_cf_key);
+    if (strcmp(g_cf_key, "balance") == 0)
+        snprintf(msg, sizeof(msg), "Turn off balancer?");
+    else if (strcmp(g_cf_key, "discharge") == 0)
+        snprintf(msg, sizeof(msg), "Turn off discharge MOSFET?");
+    else
+        snprintf(msg, sizeof(msg), "Turn off charge MOSFET?");
     vk_label_set_text(g_cf_l1, msg);
     mf_ui_attach(VK_WIDGET(g_cf_l1), x + 2, y + 2);
     vk_label_update(g_cf_l1);

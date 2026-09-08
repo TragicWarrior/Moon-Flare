@@ -118,7 +118,7 @@ int jk_assembler_feed(jk_frame_assembler_t *asm_,
                AT_JUNK, JK_AT_JUNK_SIZE) == 0) {
         chunk_len -= JK_AT_JUNK_SIZE;
     }
-    if (chunk_len == 0)
+    if (chunk_len == 0 && asm_->buf_len < JK_FRAME_SIZE)
         return 0;
 
     /* Append to buffer */
@@ -166,7 +166,9 @@ int jk_assembler_feed(jk_frame_assembler_t *asm_,
         const uint8_t *frame = asm_->buf;
         uint8_t crc = jk_crc8(frame, JK_FRAME_SIZE - 1);
         if (crc == frame[JK_CELL_CRC_OFFSET] &&
-            frame[4] == JK_FRAME_CELL_INFO) {
+            (frame[4] == JK_FRAME_CELL_INFO ||
+             frame[4] == JK_FRAME_SETTINGS ||
+             frame[4] == JK_FRAME_DEVICE_INFO)) {
             memcpy(frame_buf, frame, JK_FRAME_SIZE);
             n++;
             memmove(asm_->buf, frame + JK_FRAME_SIZE,

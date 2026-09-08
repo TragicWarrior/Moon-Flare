@@ -398,6 +398,8 @@ static int handle_device_get(const char *id, mf_rest_response_t *resp)
     cJSON_AddStringToObject(obj, "name", info.name);
     cJSON_AddStringToObject(obj, "kind", info.kind);
     cJSON_AddStringToObject(obj, "driver", info.driver);
+    if (info.endpoint && info.endpoint[0])
+        cJSON_AddStringToObject(obj, "endpoint", info.endpoint);
     cJSON_AddBoolToObject(obj, "online", info.online);
     cJSON_AddStringToObject(obj, "state", info.online ? "streaming" : "offline");
     cJSON_AddNumberToObject(obj, "seq", (double)info.seq);

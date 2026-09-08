@@ -268,6 +268,7 @@ int main(int argc, char **argv)
     CHECK(strstr(json, "\"MOS\"") != NULL, "A MOS label");
     CHECK(strstr(json, "\"T1\"") != NULL, "A T1 label");
     CHECK(strstr(json, "remaining_capacity_ah") != NULL, "A remaining Ah");
+    CHECK(strstr(json, "\"balancing\"") != NULL, "A cell balancing flag");
     CHECK(ops->get_reading(b, json, sizeof(json)) == 0, "read B");
     vb = json_num(json, "pack_voltage_v");
     CHECK(vb > 54.3 && vb < 54.5, "MAC B pack ~54.4 V");

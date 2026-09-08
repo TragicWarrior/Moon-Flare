@@ -55,7 +55,10 @@ typedef struct {
     jk_frame_assembler_t asm;
     uint8_t              frame[JK_FRAME_SIZE];
     jk_cell_info_t       cell;
+    jk_settings_t        settings;
     int                  have_data;
+    int                  have_settings;
+    int                  bal_want; /* -1 unknown, else last SET */
     int                  have_trigger;
     int                  have_start;
     int                  need_cell_req;
@@ -371,16 +374,34 @@ static void on_line(jk_ctx_t *c, const char *line)
                     c->handshake_ok);
             nlog++;
         }
-        if (n > 0 &&
-            jk_assembler_feed(&c->asm, raw, (size_t)n, c->frame, 1) > 0) {
-            int rc = jk_decode_cell_info(c->frame, JK_FRAME_SIZE,
-                                         JK_PROTO_JK02_32S, 0, &c->cell);
-            if (rc == JK_OK) {
-                c->have_data = 1;
-                c->last_cell_mono = mono_now();
-            } else {
-                fprintf(stderr, "jk: decode cell-info %d\n", rc);
-            }
+        if (n > 0) {
+            const uint8_t *p = raw;
+            size_t left = (size_t)n;
+            int got;
+            do {
+                got = jk_assembler_feed(&c->asm, p, left, c->frame, 1);
+                p = (const uint8_t *)"";
+                left = 0;
+                if (got <= 0)
+                    break;
+                if (c->frame[4] == JK_FRAME_CELL_INFO) {
+                    int rc = jk_decode_cell_info(c->frame, JK_FRAME_SIZE,
+                                                 JK_PROTO_JK02_32S, 0,
+                                                 &c->cell);
+                    if (rc == JK_OK) {
+                        c->have_data = 1;
+                        c->last_cell_mono = mono_now();
+                    } else {
+                        fprintf(stderr, "jk: decode cell-info %d\n", rc);
+                    }
+                } else if (c->frame[4] == JK_FRAME_SETTINGS) {
+                    if (jk_decode_settings(c->frame, JK_FRAME_SIZE,
+                                           &c->settings) == JK_OK) {
+                        c->have_settings = 1;
+                        c->bal_want = -1;
+                    }
+                }
+            } while (got > 0);
         }
     }
 }
@@ -509,6 +530,7 @@ static void *jk_open(const char *spec_json, char *err, size_t errsz)
         return NULL;
     }
     c->fd = -1;
+    c->bal_want = -1;
     c->poll_interval_s = POLL_DEFAULT;
     snprintf(c->adapter, sizeof(c->adapter), "hci0");
     ble = json_ble_scope(spec_json ? spec_json : "");
@@ -628,21 +650,38 @@ static int jk_get_reading(void *v, char *json, size_t cap)
         return 0;
     }
     r = &c->cell;
-    js_append(json, cap, &off,
-              "{\"pack_voltage_v\":%.3f,\"current_a\":%.2f,\"soc_pct\":%.1f,"
-              "\"soh_pct\":%.1f,\"cell_count\":%u,"
-              "\"full_capacity_ah\":%.2f,\"remaining_capacity_ah\":%.2f,"
-              "\"charge_mosfet_on\":%s,\"discharge_mosfet_on\":%s,"
-              "\"balancer_switch\":%s,\"cells\":[",
-              (double)r->pack_voltage_v, (double)r->current_a,
-              (double)r->soc_pct, (double)r->soh_pct, (unsigned)r->cell_count,
-              (double)r->nominal_ah, (double)r->remaining_ah,
-              r->charge_mosfet_on ? "true" : "false",
-              r->discharge_mosfet_on ? "true" : "false",
-              r->balancing_indicator ? "true" : "false");
+    {
+        int bal;
+
+        if (c->bal_want >= 0)
+            bal = c->bal_want;
+        else if (c->have_settings)
+            bal = c->settings.balancer_switch ? 1 : 0;
+        else
+            bal = (r->balancing_indicator ||
+                   r->balancing_action != JK_BALANCE_OFF) ? 1 : 0;
+        js_append(json, cap, &off,
+                  "{\"pack_voltage_v\":%.3f,\"current_a\":%.2f,\"soc_pct\":%.1f,"
+                  "\"soh_pct\":%.1f,\"cell_count\":%u,"
+                  "\"full_capacity_ah\":%.2f,\"remaining_capacity_ah\":%.2f,"
+                  "\"charge_mosfet_on\":%s,\"discharge_mosfet_on\":%s,"
+                  "\"balancer_switch\":%s,\"balancing_indicator\":%s,"
+                  "\"balance_current_a\":%.3f,\"cells\":[",
+                  (double)r->pack_voltage_v, (double)r->current_a,
+                  (double)r->soc_pct, (double)r->soh_pct,
+                  (unsigned)r->cell_count,
+                  (double)r->nominal_ah, (double)r->remaining_ah,
+                  r->charge_mosfet_on ? "true" : "false",
+                  r->discharge_mosfet_on ? "true" : "false",
+                  bal ? "true" : "false",
+                  r->balancing_indicator ? "true" : "false",
+                  (double)r->balance_current_a);
+    }
     for (i = 0; i < (int)r->cell_count; i++)
-        js_append(json, cap, &off, "%s{\"index\":%d,\"voltage_v\":%.3f}",
-                  i ? "," : "", i + 1, (double)r->cells[i].voltage_v);
+        js_append(json, cap, &off,
+                  "%s{\"index\":%d,\"voltage_v\":%.3f,\"balancing\":%s}",
+                  i ? "," : "", i + 1, (double)r->cells[i].voltage_v,
+                  r->cells[i].balancing ? "true" : "false");
     {
         struct { const char *lab; float t; } ts[6];
         int nt = 0;
@@ -802,6 +841,8 @@ static int jk_action(void *v, const char *action, const char *json,
         reg = JK_REG_BALANCE;
     else
         reg = JK_REG_CHARGE;
+    if (reg == JK_REG_BALANCE)
+        c->bal_want = on ? 1 : 0;
     cmd = jk_build_switch_cmd(reg, on != 0);
     return queue_hex_write(c, cmd);
 }

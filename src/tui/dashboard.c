@@ -38,9 +38,9 @@ static int frame_caption(vk_object_t *obj, int event, void *anything)
     (void)event;
     if (!canvas || !cap)
         return 0;
-    wattron(canvas, VDK_COLORS(COL_TEXT, COL_BG));
+    wattron(canvas, VDK_COLORS(COL_TEXT, COL_BG) | A_BOLD);
     mvwprintw(canvas, 0, 2, " %s ", cap);
-    wattroff(canvas, VDK_COLORS(COL_TEXT, COL_BG));
+    wattroff(canvas, VDK_COLORS(COL_TEXT, COL_BG) | A_BOLD);
     return 0;
 }
 

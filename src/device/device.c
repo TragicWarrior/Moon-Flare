@@ -86,6 +86,7 @@ static void fill_info(const mf_device_t *d, mf_devinfo_t *out)
     out->name = d->name;
     out->kind = d->kind;
     out->driver = d->driver;
+    out->endpoint = d->endpoint;
     out->online = d->online;
     out->dying = d->in_use && d->stop;
     out->seq = d->seq;
