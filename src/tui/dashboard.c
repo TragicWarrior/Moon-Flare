@@ -166,10 +166,21 @@ static void fill_lb(vk_listbox_t *lb, cJSON *arr, const char *kind)
         if (strcmp(kind, "battery") == 0) {
             cJSON *v = cJSON_GetObjectItemCaseSensitive(o, "pack_voltage_v");
             cJSON *s = cJSON_GetObjectItemCaseSensitive(o, "soc_pct");
+            cJSON *cur = cJSON_GetObjectItemCaseSensitive(o, "current_a");
+            cJSON *ns = cJSON_GetObjectItemCaseSensitive(o, "cell_count");
+            cJSON *full = cJSON_GetObjectItemCaseSensitive(o, "full_capacity_ah");
+            cJSON *rem = cJSON_GetObjectItemCaseSensitive(o, "remaining_capacity_ah");
+            double pack = v && cJSON_IsNumber(v) ? v->valuedouble : 0;
+            double ncell = ns && cJSON_IsNumber(ns) ? ns->valuedouble : 0;
+            double avg = ncell > 0 ? pack / ncell : 0;
+            double soc = mf_tui_display_soc(
+                s && cJSON_IsNumber(s) ? s->valuedouble : 0,
+                rem && cJSON_IsNumber(rem) ? rem->valuedouble : -1,
+                full && cJSON_IsNumber(full) ? full->valuedouble : 0,
+                avg,
+                cur && cJSON_IsNumber(cur) ? cur->valuedouble : 0);
             snprintf(line, sizeof(line), "%s %.1fV %.0f%%",
-                     nm[0] ? nm : "pack",
-                     v && cJSON_IsNumber(v) ? v->valuedouble : 0,
-                     s && cJSON_IsNumber(s) ? s->valuedouble : 0);
+                     nm[0] ? nm : "pack", pack, soc);
         } else if (strcmp(kind, "charger") == 0) {
             cJSON *st = cJSON_GetObjectItemCaseSensitive(o, "charge_stage");
             cJSON *w = cJSON_GetObjectItemCaseSensitive(o, "charging_watts");

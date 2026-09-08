@@ -3,6 +3,48 @@
 #include <stdio.h>
 #include <string.h>
 
+double mf_tui_display_soc(double bms_soc, double rem_ah, double full_ah,
+                          double avg_cell_v, double current_a)
+{
+    static const double pt[][2] = {
+        {2.80, 0}, {3.00, 5}, {3.20, 10}, {3.25, 20}, {3.28, 30},
+        {3.30, 40}, {3.33, 50}, {3.35, 60}, {3.37, 70}, {3.40, 85},
+        {3.45, 95}, {3.50, 99}, {3.60, 100}
+    };
+    double soc = bms_soc;
+    int n = (int)(sizeof(pt) / sizeof(pt[0]));
+    int i;
+    double vsoc;
+
+    if (full_ah > 0 && rem_ah >= 0)
+        soc = rem_ah / full_ah * 100.0;
+    if (avg_cell_v <= 0 || current_a <= -0.5 || current_a >= 0.5)
+        goto clamp;
+    if (avg_cell_v <= pt[0][0])
+        vsoc = pt[0][1];
+    else if (avg_cell_v >= pt[n - 1][0])
+        vsoc = pt[n - 1][1];
+    else {
+        vsoc = 100;
+        for (i = 1; i < n; i++) {
+            if (avg_cell_v <= pt[i][0]) {
+                double span = pt[i][0] - pt[i - 1][0];
+                double t = span > 0 ? (avg_cell_v - pt[i - 1][0]) / span : 0;
+                vsoc = pt[i - 1][1] + t * (pt[i][1] - pt[i - 1][1]);
+                break;
+            }
+        }
+    }
+    if (soc - vsoc > 20.0 || vsoc - soc > 20.0)
+        soc = vsoc;
+clamp:
+    if (soc < 0)
+        soc = 0;
+    if (soc > 100)
+        soc = 100;
+    return soc;
+}
+
 int mf_tui_dropdown_max_h(int lines)
 {
     int h = lines - 4;

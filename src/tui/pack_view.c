@@ -308,30 +308,6 @@ int mf_pack_switch_on(const char *key)
     return 0;
 }
 
-static double lfp_soc_from_v(double v)
-{
-    static const double pt[][2] = {
-        {2.80, 0}, {3.00, 5}, {3.20, 10}, {3.25, 20}, {3.28, 30},
-        {3.30, 40}, {3.33, 50}, {3.35, 60}, {3.37, 70}, {3.40, 85},
-        {3.45, 95}, {3.50, 99}, {3.60, 100}
-    };
-    int n = (int)(sizeof(pt) / sizeof(pt[0]));
-    int i;
-
-    if (v <= pt[0][0])
-        return pt[0][1];
-    if (v >= pt[n - 1][0])
-        return pt[n - 1][1];
-    for (i = 1; i < n; i++) {
-        if (v <= pt[i][0]) {
-            double span = pt[i][0] - pt[i - 1][0];
-            double t = span > 0 ? (v - pt[i - 1][0]) / span : 0;
-            return pt[i - 1][1] + t * (pt[i][1] - pt[i - 1][1]);
-        }
-    }
-    return 100;
-}
-
 static void fmt_interface(const char *ep, const char *driver,
                           char *line, size_t cap)
 {
@@ -475,8 +451,6 @@ void mf_pack_update(const char *json)
 
             if (ns < 1)
                 ns = 16;
-            if (full > 0 && rem >= 0)
-                soc = rem / full * 100.0;
             vk_progress_set_range(VK_PROGRESS(g_mt_pack), 2.80 * ns, 3.65 * ns);
             band_cell_v(g_mt_pack, (double)ns);
             vk_progress_set_value(VK_PROGRESS(g_mt_pack), pack_v);
@@ -559,10 +533,12 @@ void mf_pack_update(const char *json)
                 vk_progress_set_value(VK_PROGRESS(g_mt_cell[i]), v > 0 ? v : 2.80);
                 vk_progress_update(VK_PROGRESS(g_mt_cell[i]));
             }
-            if (nv > 0 && (cur > -0.5 && cur < 0.5)) {
-                double vsoc = lfp_soc_from_v(vsum / (double)nv);
-                if (soc - vsoc > 20.0 || vsoc - soc > 20.0)
-                    soc = vsoc;
+            {
+                double full = jnum(data, "full_capacity_ah", 0);
+                double rem = jnum(data, "remaining_capacity_ah", -1);
+                double avg = nv > 0 ? vsum / (double)nv : 0;
+                soc = mf_tui_display_soc(jnum(data, "soc_pct", soc),
+                                         rem, full, avg, cur);
             }
         }
         vk_progress_set_value(VK_PROGRESS(g_mt_soc), soc);

@@ -204,6 +204,8 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
         cJSON *c = num_or_null(data, "current_a");
         cJSON *s = num_or_null(data, "soc_pct");
         cJSON *n = num_or_null(data, "cell_count");
+        cJSON *full = num_or_null(data, "full_capacity_ah");
+        cJSON *rem = num_or_null(data, "remaining_capacity_ah");
         if (v)
             cJSON_AddNumberToObject(row, "pack_voltage_v", v->valuedouble);
         if (c)
@@ -212,6 +214,11 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
             cJSON_AddNumberToObject(row, "soc_pct", s->valuedouble);
         if (n)
             cJSON_AddNumberToObject(row, "cell_count", n->valuedouble);
+        if (full)
+            cJSON_AddNumberToObject(row, "full_capacity_ah", full->valuedouble);
+        if (rem)
+            cJSON_AddNumberToObject(row, "remaining_capacity_ah",
+                                    rem->valuedouble);
         cJSON_AddItemToArray(batteries, row);
     }
     if (data)
