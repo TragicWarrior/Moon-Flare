@@ -86,6 +86,14 @@ void mf_ui_refresh(void)
         vk_widget_draw(g_front[i]);
 }
 
+void mf_ui_resize(void)
+{
+    vk_screen_resize(g_screen);
+    mf_dash_on_resize();
+    mf_menubar_on_resize();
+    mf_ui_refresh();
+}
+
 static void close_settings(void)
 {
     int i;
@@ -525,6 +533,10 @@ int mf_tui_run(const char *connect, const char *config_path)
                 key = ch;
         }
         if (key > 0) {
+            if (key == KEY_RESIZE) {
+                mf_ui_resize();
+                continue;
+            }
             if (g_help_win && (key == 27 || key == 'q')) {
                 close_help();
                 continue;

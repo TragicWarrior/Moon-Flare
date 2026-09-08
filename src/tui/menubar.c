@@ -238,6 +238,16 @@ void mf_menubar_init(void)
     g_focused = 0;
 }
 
+void mf_menubar_on_resize(void)
+{
+    int width = mf_ui_cols();
+    close_dropdown();
+    if (width < 80)
+        width = 80;
+    if (g_bar)
+        vk_widget_resize(VK_WIDGET(g_bar), width, 1);
+}
+
 void mf_menubar_shutdown(void)
 {
     close_dropdown();

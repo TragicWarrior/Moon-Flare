@@ -27,6 +27,9 @@ static vk_label_t   *g_status;
 static vk_label_t   *g_hints;
 static vk_label_t   *g_small;
 static char          g_caps[3][32];
+static char          g_last_hp[128];
+static char          g_last_tag[24];
+static char          g_last_json[65536];
 
 static int frame_caption(vk_object_t *obj, int event, void *anything)
 {
@@ -67,6 +70,30 @@ static vk_frame_t *mk_card(int x, int y, char *cap)
     return f;
 }
 
+static void ensure_cards(void)
+{
+    if (g_fr[0])
+        return;
+    g_fr[0] = mk_card(0, MF_CARD_Y, g_caps[0]);
+    g_fr[1] = mk_card(27, MF_CARD_Y, g_caps[1]);
+    g_fr[2] = mk_card(54, MF_CARD_Y, g_caps[2]);
+}
+
+static void show_too_small(int cols)
+{
+    int w = cols > 4 ? cols - 2 : 20;
+    if (!g_small) {
+        g_small = vk_label_create(w);
+        vk_widget_set_colors(VK_WIDGET(g_small), COLOR_RED, COL_BG);
+        vk_label_set_text(g_small, "Terminal too small (need >= 80x25)");
+        mf_ui_attach(VK_WIDGET(g_small), 2, 8);
+    } else {
+        vk_widget_resize(VK_WIDGET(g_small), w, 1);
+        vk_widget_show(VK_WIDGET(g_small));
+    }
+    vk_label_update(g_small);
+}
+
 void mf_dash_init(void)
 {
     int cols = mf_ui_cols();
@@ -82,18 +109,40 @@ void mf_dash_init(void)
     vk_label_set_text(g_hints, "F10 menu  Enter open  q quit");
     mf_ui_attach(VK_WIDGET(g_hints), 0, rows > 0 ? rows - 1 : 24);
     vk_label_update(g_hints);
-    if (cols < 80 || rows < 25) {
-        g_small = vk_label_create(cols > 4 ? cols - 2 : 20);
-        vk_widget_set_colors(VK_WIDGET(g_small), COLOR_RED, COL_BG);
-        vk_label_set_text(g_small, "Terminal too small (need >= 80x25)");
-        mf_ui_attach(VK_WIDGET(g_small), 2, 8);
-        vk_label_update(g_small);
+    mf_dash_on_resize();
+}
+
+void mf_dash_on_resize(void)
+{
+    int cols = mf_ui_cols();
+    int rows = mf_ui_rows();
+    int i, small = (cols < MF_TUI_COLS || rows < MF_TUI_ROWS);
+    int cw = cols > 0 ? cols : 80;
+
+    if (g_status)
+        vk_widget_resize(VK_WIDGET(g_status), cw, 1);
+    if (g_hints) {
+        vk_widget_resize(VK_WIDGET(g_hints), cw, 1);
+        vk_widget_move(VK_WIDGET(g_hints), 0, rows > 0 ? rows - 1 : 24);
+    }
+    if (small) {
+        show_too_small(cols);
+        for (i = 0; i < 3; i++) {
+            if (g_fr[i])
+                vk_widget_hide(VK_WIDGET(g_fr[i]));
+        }
         return;
     }
-    g_fr[0] = mk_card(0, MF_CARD_Y, g_caps[0]);
-    g_fr[1] = mk_card(27, MF_CARD_Y, g_caps[1]);
-    g_fr[2] = mk_card(54, MF_CARD_Y, g_caps[2]);
-    mf_dash_update("127.0.0.1:5250", "WAIT", NULL);
+    if (g_small)
+        vk_widget_hide(VK_WIDGET(g_small));
+    ensure_cards();
+    for (i = 0; i < 3; i++) {
+        if (g_fr[i])
+            vk_widget_show(VK_WIDGET(g_fr[i]));
+    }
+    mf_dash_update(g_last_hp[0] ? g_last_hp : "127.0.0.1:5250",
+                   g_last_tag[0] ? g_last_tag : "WAIT",
+                   g_last_json[0] ? g_last_json : NULL);
 }
 
 static void fill_lb(vk_listbox_t *lb, cJSON *arr, const char *kind)
@@ -197,6 +246,10 @@ void mf_dash_set_visible(int vis)
 void mf_dash_update(const char *hostport, const char *tag, const char *json)
 {
     char st[96];
+    snprintf(g_last_hp, sizeof(g_last_hp), "%s", hostport ? hostport : "");
+    snprintf(g_last_tag, sizeof(g_last_tag), "%s", tag ? tag : "");
+    if (json)
+        snprintf(g_last_json, sizeof(g_last_json), "%s", json);
     cJSON *root = json ? cJSON_Parse(json) : NULL;
     cJSON *b = root ? cJSON_GetObjectItemCaseSensitive(root, "batteries") : NULL;
     cJSON *c = root ? cJSON_GetObjectItemCaseSensitive(root, "chargers") : NULL;

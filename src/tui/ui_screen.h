@@ -5,6 +5,7 @@
 
 vk_screen_t *mf_ui_screen(void);
 void mf_ui_refresh(void);
+void mf_ui_resize(void);
 void mf_ui_attach(vk_widget_t *w, int x, int y);
 void mf_ui_front_clear(void);
 void mf_ui_front_push(vk_widget_t *w);
@@ -17,11 +18,13 @@ void mf_ui_save_config(void);
 void mf_ui_load_config(void);
 
 void mf_menubar_init(void);
+void mf_menubar_on_resize(void);
 void mf_menubar_shutdown(void);
 int  mf_menubar_key(wint_t c);
 int  mf_menubar_active(void);
 
 void mf_dash_init(void);
+void mf_dash_on_resize(void);
 void mf_dash_update(const char *hostport, const char *tag, const char *json);
 void mf_dash_shutdown(void);
 void mf_dash_set_visible(int vis);
