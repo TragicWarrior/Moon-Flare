@@ -159,10 +159,10 @@ static void fill_lb(vk_listbox_t *lb, cJSON *arr, const char *kind)
     for (i = 0; i < n && i < MAX_LINE; i++) {
         cJSON *o = cJSON_GetArrayItem(arr, i);
         cJSON *name = cJSON_GetObjectItemCaseSensitive(o, "name");
-        char line[40], nm[12];
+        char line[40], nm[20];
         nm[0] = '\0';
         if (cJSON_IsString(name) && name->valuestring)
-            snprintf(nm, sizeof(nm), "%.8s", name->valuestring);
+            snprintf(nm, sizeof(nm), "%.16s", name->valuestring);
         if (strcmp(kind, "battery") == 0) {
             cJSON *v = cJSON_GetObjectItemCaseSensitive(o, "pack_voltage_v");
             cJSON *s = cJSON_GetObjectItemCaseSensitive(o, "soc_pct");
@@ -182,12 +182,10 @@ static void fill_lb(vk_listbox_t *lb, cJSON *arr, const char *kind)
             snprintf(line, sizeof(line), "%s %.1fV %.0f%%",
                      nm[0] ? nm : "pack", pack, soc);
         } else if (strcmp(kind, "charger") == 0) {
-            cJSON *st = cJSON_GetObjectItemCaseSensitive(o, "charge_stage");
             cJSON *w = cJSON_GetObjectItemCaseSensitive(o, "charging_watts");
-            snprintf(line, sizeof(line), "%s %.0fW %s",
+            snprintf(line, sizeof(line), "%s %.0fW",
                      nm[0] ? nm : "chg",
-                     w && cJSON_IsNumber(w) ? w->valuedouble : 0,
-                     st && cJSON_IsString(st) ? st->valuestring : "");
+                     w && cJSON_IsNumber(w) ? w->valuedouble : 0);
         } else {
             snprintf(line, sizeof(line), "%s", nm[0] ? nm : "inv");
         }
@@ -258,28 +256,33 @@ void mf_dash_set_visible(int vis)
 void mf_dash_update(const char *hostport, const char *tag, const char *json)
 {
     char st[96];
+    cJSON *root, *b, *c, *i;
+    int nb, nc, ni;
+
     snprintf(g_last_hp, sizeof(g_last_hp), "%s", hostport ? hostport : "");
     snprintf(g_last_tag, sizeof(g_last_tag), "%s", tag ? tag : "");
-    if (json)
-        snprintf(g_last_json, sizeof(g_last_json), "%s", json);
-    cJSON *root = json ? cJSON_Parse(json) : NULL;
-    cJSON *b = root ? cJSON_GetObjectItemCaseSensitive(root, "batteries") : NULL;
-    cJSON *c = root ? cJSON_GetObjectItemCaseSensitive(root, "chargers") : NULL;
-    cJSON *i = root ? cJSON_GetObjectItemCaseSensitive(root, "inverters") : NULL;
-    int nb = b && cJSON_IsArray(b) ? cJSON_GetArraySize(b) : 0;
-    int nc = c && cJSON_IsArray(c) ? cJSON_GetArraySize(c) : 0;
-    int ni = i && cJSON_IsArray(i) ? cJSON_GetArraySize(i) : 0;
-    g_ncat = 0;
-    cat_add(b, "battery");
-    cat_add(c, "charger");
-    cat_add(i, "inverter");
-
     snprintf(st, sizeof(st), "%s  [%s]",
              hostport ? hostport : "", tag ? tag : "");
     if (g_status) {
         vk_label_set_text(g_status, st);
         vk_label_update(g_status);
     }
+    if (!json || !json[0])
+        return;
+
+    snprintf(g_last_json, sizeof(g_last_json), "%s", json);
+    root = cJSON_Parse(json);
+    b = root ? cJSON_GetObjectItemCaseSensitive(root, "batteries") : NULL;
+    c = root ? cJSON_GetObjectItemCaseSensitive(root, "chargers") : NULL;
+    i = root ? cJSON_GetObjectItemCaseSensitive(root, "inverters") : NULL;
+    nb = b && cJSON_IsArray(b) ? cJSON_GetArraySize(b) : 0;
+    nc = c && cJSON_IsArray(c) ? cJSON_GetArraySize(c) : 0;
+    ni = i && cJSON_IsArray(i) ? cJSON_GetArraySize(i) : 0;
+    g_ncat = 0;
+    cat_add(b, "battery");
+    cat_add(c, "charger");
+    cat_add(i, "inverter");
+
     snprintf(g_caps[0], sizeof(g_caps[0]), "Batteries (%d)", nb);
     snprintf(g_caps[1], sizeof(g_caps[1]), "Chargers (%d)", nc);
     snprintf(g_caps[2], sizeof(g_caps[2]), "Inverters (%d)", ni);

@@ -61,6 +61,25 @@ static void cfg_remove_uuid(const char *uuid)
     }
 }
 
+static void cfg_patch_name_poll(const char *uuid, const char *name, double poll)
+{
+    mf_daemon_config_t *cfg = live_cfg();
+    int i;
+
+    if (!uuid || !uuid[0] || !cfg)
+        return;
+    for (i = 0; i < cfg->n_devices; i++) {
+        if (strcmp(cfg->devices[i].uuid, uuid) != 0)
+            continue;
+        if (name && name[0])
+            snprintf(cfg->devices[i].name, sizeof(cfg->devices[i].name),
+                     "%s", name);
+        if (poll > 0.0)
+            cfg->devices[i].poll_interval_s = poll;
+        return;
+    }
+}
+
 static void cfg_upsert_from_json(const char *uuid, const cJSON *root)
 {
     mf_daemon_config_t *cfg = live_cfg();
@@ -479,6 +498,30 @@ static int handle_settings_put(const char *id, const mf_rest_request_t *req,
         set_error(resp, st, err[0] ? err : (st == 404 ? "not found" : "bad request"));
         return 0;
     }
+    {
+        cJSON *b = cJSON_Parse(body);
+        const char *nm = NULL;
+        double poll = -1.0;
+
+        if (b) {
+            cJSON *n = cJSON_GetObjectItemCaseSensitive(b, "name");
+            cJSON *p = cJSON_GetObjectItemCaseSensitive(b, "poll_interval_s");
+
+            if (cJSON_IsString(n) && n->valuestring)
+                nm = n->valuestring;
+            if (cJSON_IsNumber(p))
+                poll = p->valuedouble;
+            else if (cJSON_IsString(p) && p->valuestring)
+                poll = atof(p->valuestring);
+            cfg_patch_name_poll(id, nm, poll);
+            cJSON_Delete(b);
+        }
+        if (g_cfg_path[0])
+            (void)mf_config_save(live_cfg(), g_cfg_path);
+        if (mf_config_save_overlay(live_cfg()) != 0)
+            mf_log(LOG_WARNING, "settings overlay persist failed: %s",
+                   mf_config_overlay_path());
+    }
     return handle_settings_get(id, resp);
 }
 
@@ -646,6 +689,7 @@ static int handle_config_load(mf_rest_response_t *resp)
         set_error(resp, 404, "not found");
         return 0;
     }
+    (void)mf_config_load_overlay(&next);
     if (mf_devices_validate_config(next.devices, next.n_devices,
                                    err, sizeof(err)) != 0) {
         set_error(resp, 400, err[0] ? err : "bad request");

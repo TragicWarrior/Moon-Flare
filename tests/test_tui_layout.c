@@ -90,8 +90,11 @@ int main(void)
     CHECK(w == 70 && h == 22, "device settings 22x70");
     CHECK(y == 2 && y + h <= 25, "device settings fits");
     mf_tui_paint_devsettings(grid, "pack-demo");
-    CHECK(strstr(grid[y + 2], "poll_interval_s"), "poll first");
-    CHECK(strstr(grid[y + h - 2], "Save") && strstr(grid[y + h - 2], "Exit"),
+    CHECK(strstr(grid[y + 3], "Name"), "name first");
+    CHECK(strstr(grid[y + 6], "Poll Interval"), "poll second");
+    CHECK(strstr(grid[y + 6], "(Seconds)"), "poll unit hint");
+    CHECK(strstr(grid[y + 9], "UUID"), "uuid readonly");
+    CHECK(strstr(grid[y + h - 4], "Save") && strstr(grid[y + h - 4], "Exit"),
           "Save/Exit pinned");
 
     mf_tui_confirm_geom(80, 25, &x, &y, &w, &h);

@@ -62,6 +62,14 @@ static void assert_str_eq(const char *expected, const char *actual, const char *
     }
 }
 
+static void assert_true(int cond, const char *msg)
+{
+    if (!cond) {
+        fprintf(stderr, "FAIL: %s\n", msg);
+        exit(1);
+    }
+}
+
 /* ------------------------------------------------------------------ */
 /* 1 & 2. Search order + missing-file defaults                        */
 /* ------------------------------------------------------------------ */
@@ -499,6 +507,43 @@ static void test_overlay_merge(void)
     printf("PASS: overlay merge\n");
 }
 
+static void test_overlay_name_persist(void)
+{
+    char dir[] = "/tmp/mf-ov-XXXXXX";
+    char path[256];
+    mf_daemon_config_t base, loaded;
+    cJSON *root;
+
+    assert_true(mkdtemp(dir) != NULL, "overlay tmpdir");
+    snprintf(path, sizeof(path), "%s/settings.json", dir);
+    setenv("MF_SETTINGS_OVERLAY", path, 1);
+
+    mf_config_defaults(&base);
+    root = cJSON_Parse(
+        "{\"devices\":[{\"uuid\":\"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\","
+        "\"name\":\"pack-xd\",\"poll_interval_s\":2.0}]}");
+    mf_config_apply_json(&base, root);
+    cJSON_Delete(root);
+    snprintf(base.devices[0].name, sizeof(base.devices[0].name), "XD Battery");
+    base.devices[0].poll_interval_s = 2.5;
+    assert_int_eq(0, mf_config_save_overlay(&base), "overlay save");
+
+    mf_config_defaults(&loaded);
+    root = cJSON_Parse(
+        "{\"devices\":[{\"uuid\":\"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\","
+        "\"name\":\"pack-xd\",\"poll_interval_s\":2.0}]}");
+    mf_config_apply_json(&loaded, root);
+    cJSON_Delete(root);
+    assert_int_eq(0, mf_config_load_overlay(&loaded), "overlay load");
+    assert_str_eq("XD Battery", loaded.devices[0].name, "overlay name wins");
+    assert_true(loaded.devices[0].poll_interval_s > 2.4, "overlay poll wins");
+
+    unsetenv("MF_SETTINGS_OVERLAY");
+    unlink(path);
+    rmdir(dir);
+    printf("PASS: overlay name persist\n");
+}
+
 /* ------------------------------------------------------------------ */
 /* main                                                               */
 /* ------------------------------------------------------------------ */
@@ -513,6 +558,7 @@ int main(void)
     test_device_uuid_required();
     test_passwords();
     test_overlay_merge();
+    test_overlay_name_persist();
 
     printf("\nAll config tests passed.\n");
     return 0;

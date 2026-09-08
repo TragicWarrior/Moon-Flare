@@ -411,18 +411,51 @@ int mf_devices_get_settings(const char *uuid, char *json, size_t cap)
 {
     mf_device_t *d = find_live_mut(uuid);
     char plug[4096];
+    cJSON *plug_root = NULL, *out, *it;
+    char *printed;
 
     if (!d || !json || cap == 0)
         return 404;
     plug[0] = '\0';
     if (d->ops && d->ops->get_settings && d->ctx)
         (void)d->ops->get_settings(d->ctx, plug, sizeof(plug));
-    if (plug[0] == '{' && plug[1] && plug[1] != '}')
-        snprintf(json, cap, "{\"poll_interval_s\":%.3f,%s",
-                 d->poll_interval_s, plug + 1);
-    else
+
+    out = cJSON_CreateObject();
+    if (!out)
+        return 500;
+    cJSON_AddStringToObject(out, "name", d->name);
+    cJSON_AddNumberToObject(out, "poll_interval_s", d->poll_interval_s);
+    if (plug[0] == '{')
+        plug_root = cJSON_Parse(plug);
+    if (plug_root && cJSON_IsObject(plug_root)) {
+        for (it = plug_root->child; it; it = it->next) {
+            cJSON *copy;
+
+            if (!it->string || !it->string[0])
+                continue;
+            if (strcmp(it->string, "poll_interval_s") == 0 ||
+                strcmp(it->string, "name") == 0 ||
+                strcmp(it->string, "uuid") == 0)
+                continue;
+            copy = cJSON_Duplicate(it, 1);
+            if (copy)
+                cJSON_AddItemToObject(out, it->string, copy);
+        }
+    }
+    if (plug_root)
+        cJSON_Delete(plug_root);
+    cJSON_AddStringToObject(out, "uuid", d->uuid);
+
+    printed = cJSON_PrintUnformatted(out);
+    cJSON_Delete(out);
+    if (!printed) {
         snprintf(json, cap, "{\"poll_interval_s\":%.3f}", d->poll_interval_s);
+        json[cap - 1] = '\0';
+        return 200;
+    }
+    snprintf(json, cap, "%s", printed);
     json[cap - 1] = '\0';
+    free(printed);
     return 200;
 }
 
@@ -430,10 +463,10 @@ int mf_devices_put_settings(const char *uuid, const char *json,
                             char *err, size_t errsz)
 {
     mf_device_t *d = find_live_mut(uuid);
-    const char *p;
-    int have_poll = 0;
+    cJSON *root, *it;
     int have_other = 0;
     int rc;
+    int slot;
 
     if (err && errsz)
         err[0] = '\0';
@@ -441,34 +474,58 @@ int mf_devices_put_settings(const char *uuid, const char *json,
         return 404;
     if (!json)
         json = "{}";
-    p = strstr(json, "\"poll_interval_s\"");
-    if (p) {
-        p = strchr(p, ':');
-        if (p) {
-            double iv = atof(p + 1);
+    slot = (int)(d - g_dev);
+    root = cJSON_Parse(json);
+    if (root && cJSON_IsObject(root)) {
+        it = cJSON_GetObjectItemCaseSensitive(root, "name");
+        if (cJSON_IsString(it) && it->valuestring) {
+            if (!it->valuestring[0]) {
+                if (err && errsz)
+                    snprintf(err, errsz, "name required");
+                cJSON_Delete(root);
+                return 400;
+            }
+            if (strlen(it->valuestring) >= sizeof(d->name)) {
+                if (err && errsz)
+                    snprintf(err, errsz, "name too long");
+                cJSON_Delete(root);
+                return 400;
+            }
+            if (name_taken(it->valuestring, slot)) {
+                if (err && errsz)
+                    snprintf(err, errsz, "name in use");
+                cJSON_Delete(root);
+                return 400;
+            }
+            snprintf(d->name, sizeof(d->name), "%s", it->valuestring);
+        }
+        it = cJSON_GetObjectItemCaseSensitive(root, "poll_interval_s");
+        if (cJSON_IsNumber(it) ||
+            (cJSON_IsString(it) && it->valuestring)) {
+            double iv = cJSON_IsNumber(it) ? it->valuedouble
+                                           : atof(it->valuestring);
             double mn = mf_poll_interval_min(d->driver);
-            have_poll = 1;
+
             if (iv < mn) {
                 if (err && errsz)
                     snprintf(err, errsz, "poll_interval_s below %.1f", mn);
+                cJSON_Delete(root);
                 return 400;
             }
             d->poll_interval_s = iv;
         }
-    }
-    {
-        const char *q = json;
-        have_other = 0;
-        while ((q = strchr(q, '"')) != NULL) {
-            const char *k = q + 1;
-            const char *e = strchr(k, '"');
-            if (!e)
-                break;
-            if ((size_t)(e - k) != 15 || strncmp(k, "poll_interval_s", 15) != 0)
-                have_other = 1;
-            q = e + 1;
+        for (it = root->child; it; it = it->next) {
+            if (!it->string || !it->string[0])
+                continue;
+            if (strcmp(it->string, "name") == 0 ||
+                strcmp(it->string, "poll_interval_s") == 0 ||
+                strcmp(it->string, "uuid") == 0)
+                continue;
+            have_other = 1;
         }
     }
+    if (root)
+        cJSON_Delete(root);
     if (d->ops && d->ops->put_settings && d->ctx && have_other) {
         rc = d->ops->put_settings(d->ctx, json, err, errsz);
         if (rc == MF_ERR_UNSUPPORTED || rc == MF_ERR_INVAL)
@@ -478,7 +535,6 @@ int mf_devices_put_settings(const char *uuid, const char *json,
         if (rc != MF_OK && rc != 0)
             return 400;
     }
-    (void)have_poll;
     return 200;
 }
 

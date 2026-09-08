@@ -251,9 +251,13 @@ void mf_tui_paint_devsettings(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
     mf_tui_devsettings_geom(MF_TUI_COLS, MF_TUI_ROWS, &x, &y, &w, &h);
     snprintf(cap, sizeof(cap), "%s", name ? name : "device");
     draw_box(grid, y, x, w, h, cap);
-    put_str(grid, y + 2, x + 2, "poll_interval_s");
-    put_str(grid, y + 2, x + 22, "[2.0]");
-    put_str(grid, y + h - 2, x + 2, "Save                 Exit");
+    put_str(grid, y + 3, x + 2, "Name");
+    put_str(grid, y + 3, x + 24, "[pack-demo]");
+    put_str(grid, y + 6, x + 2, "Poll Interval");
+    put_str(grid, y + 6, x + 24, "[2.0]");
+    put_str(grid, y + 6, x + w - 13, "(Seconds)");
+    put_str(grid, y + 9, x + 2, "UUID");
+    put_str(grid, y + h - 4, x + 2, "Save                 Exit");
 }
 
 void mf_tui_paint_confirm(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],

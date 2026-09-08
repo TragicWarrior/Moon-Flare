@@ -114,6 +114,9 @@ static void schedule_retry(mf_http_cli_t *c, double now, const char *why)
     set_status(c, why ? why : "retry");
 }
 
+static int cli_begin(mf_http_cli_t *c, const char *method, const char *path,
+                     const char *json);
+
 static int parse_complete(mf_http_cli_t *c)
 {
     char *hdr = strstr(c->in, "\r\n\r\n");
@@ -175,6 +178,17 @@ void mf_http_cli_pump(mf_http_cli_t *c, int readable, int writable, double now)
     if (c->state != MF_CONN_UP)
         return;
 
+    if (!c->inflight && c->pend) {
+        char m[8], pth[160], js[2048];
+
+        snprintf(m, sizeof(m), "%s", c->pend_method);
+        snprintf(pth, sizeof(pth), "%s", c->pend_path);
+        snprintf(js, sizeof(js), "%s", c->pend_json);
+        c->pend = 0;
+        c->pend_json[0] = '\0';
+        (void)cli_begin(c, m, pth, js[0] ? js : NULL);
+    }
+
     if (c->inflight && c->out_off < c->out_len && writable) {
         ssize_t n = send(c->fd, c->out + c->out_off, c->out_len - c->out_off,
                          MSG_NOSIGNAL);
@@ -220,8 +234,19 @@ static int cli_begin(mf_http_cli_t *c, const char *method, const char *path,
     if (c->state != MF_CONN_UP || c->fd < 0)
         return -1;
     if (c->inflight) {
-        c->skipped++;
-        return 0;
+        /* Status GET is single-flight; never clobber a queued PUT/POST. */
+        if (method && strcmp(method, "GET") == 0) {
+            c->skipped++;
+            return 0;
+        }
+        snprintf(c->pend_method, sizeof(c->pend_method), "%s",
+                 method ? method : "GET");
+        snprintf(c->pend_path, sizeof(c->pend_path), "%s",
+                 path ? path : "/");
+        snprintf(c->pend_json, sizeof(c->pend_json), "%s",
+                 json ? json : "");
+        c->pend = 1;
+        return 1;
     }
     snprintf(c->path, sizeof(c->path), "%s", path ? path : "/");
     if (json && json[0])

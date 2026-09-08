@@ -220,6 +220,8 @@ int main(int argc, char **argv)
     mf_config_defaults(&g_cfg);
     if (mf_config_load(config_path, &g_cfg) != 0)
         LOG_W("config load failed; using defaults");
+    if (mf_config_load_overlay(&g_cfg) != 0)
+        LOG_W("settings overlay not loaded");
     if (!listen_from_cli && g_cfg.listen[0])
         listen_spec = g_cfg.listen;
     if (!plugin_dir && g_cfg.plugin_dir[0])

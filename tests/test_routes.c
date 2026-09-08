@@ -408,6 +408,33 @@ static void test_pr10(void)
     req.path = setpath;
     memset(&resp, 0, sizeof(resp));
     check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 200, "GET settings");
+    {
+        const char *p = resp.body;
+        int npoll = 0;
+
+        while (p && (p = strstr(p, "\"poll_interval_s\""))) {
+            npoll++;
+            p += 16;
+        }
+        check(npoll == 1, "GET settings poll once");
+        check(strstr(resp.body, "\"name\"") != NULL, "settings has name");
+        check(strstr(resp.body, "\"uuid\"") != NULL, "settings has uuid");
+    }
+
+    req.method = "PUT";
+    req.path = setpath;
+    req.body = "{\"name\":\"renamed-pr10\",\"poll_interval_s\":2.0}";
+    req.body_len = strlen(req.body);
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 200,
+          "PUT name → 200");
+    check(strstr(resp.body, "renamed-pr10") != NULL, "settings echoes name");
+
+    req.body = "{\"name\":\"\"}";
+    req.body_len = strlen(req.body);
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 400,
+          "PUT empty name → 400");
 
     memset(&req, 0, sizeof(req));
     req.method = "POST";

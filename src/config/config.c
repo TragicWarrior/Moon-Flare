@@ -504,41 +504,43 @@ static void ensure_parent_dir(const char *path)
     mkdir(tmp, 0755);
 }
 
-int mf_config_save(const mf_daemon_config_t *cfg, const char *path)
+static int write_atomic(const char *path, const char *json)
 {
-    ensure_parent_dir(path);
-
-    char *json = mf_config_serialize(cfg);
-    if (!json)
-        return -1;
-
-    /* Write to temp file in same directory, then rename (atomic). */
     char tmp[PATH_MAX];
-    snprintf(tmp, sizeof(tmp), "%s.tmp.%ld", path, (long)getpid());
+    size_t len;
+    int fd;
 
-    int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (fd < 0) {
-        free(json);
+    if (!path || !path[0] || !json)
         return -1;
-    }
-
-    size_t len = strlen(json);
+    ensure_parent_dir(path);
+    snprintf(tmp, sizeof(tmp), "%s.tmp.%ld", path, (long)getpid());
+    fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0)
+        return -1;
+    len = strlen(json);
     if (write(fd, json, len) != (ssize_t)len) {
         close(fd);
         unlink(tmp);
-        free(json);
         return -1;
     }
-
     close(fd);
-    free(json);
-
     if (rename(tmp, path) < 0) {
         unlink(tmp);
         return -1;
     }
-
     return 0;
+}
+
+int mf_config_save(const mf_daemon_config_t *cfg, const char *path)
+{
+    char *json = mf_config_serialize(cfg);
+    int rc;
+
+    if (!json)
+        return -1;
+    rc = write_atomic(path, json);
+    free(json);
+    return rc;
 }
 
 /* ─── config_redact (strip passwords) ──────────────────────── */
@@ -623,4 +625,84 @@ void mf_config_overlay_merge(mf_daemon_config_t *base_cfg,
         if (ov->modbus.auto_net)
             base->modbus.auto_net = true;
     }
+}
+
+const char *mf_config_overlay_path(void)
+{
+    static char path[256];
+    const char *e = getenv("MF_SETTINGS_OVERLAY");
+    const char *st;
+
+    if (e && e[0])
+        return e;
+    st = getenv("STATE_DIRECTORY");
+    if (!st || !st[0])
+        st = "/var/lib/moonflare";
+    snprintf(path, sizeof(path), "%s/settings.json", st);
+    return path;
+}
+
+int mf_config_save_overlay(const mf_daemon_config_t *cfg)
+{
+    cJSON *root, *arr;
+    char *json;
+    int i, rc;
+
+    if (!cfg)
+        return -1;
+    root = cJSON_CreateObject();
+    arr = cJSON_CreateArray();
+    if (!root || !arr) {
+        cJSON_Delete(root);
+        return -1;
+    }
+    cJSON_AddItemToObject(root, "devices", arr);
+    for (i = 0; i < cfg->n_devices; i++) {
+        const mf_config_device_t *d = &cfg->devices[i];
+        cJSON *o;
+
+        if (!d->uuid[0])
+            continue;
+        o = cJSON_CreateObject();
+        if (!o)
+            continue;
+        cJSON_AddStringToObject(o, "uuid", d->uuid);
+        if (d->name[0])
+            cJSON_AddStringToObject(o, "name", d->name);
+        if (d->poll_interval_s > 0.0)
+            cJSON_AddNumberToObject(o, "poll_interval_s", d->poll_interval_s);
+        cJSON_AddItemToArray(arr, o);
+    }
+    json = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!json)
+        return -1;
+    rc = write_atomic(mf_config_overlay_path(), json);
+    free(json);
+    return rc;
+}
+
+int mf_config_load_overlay(mf_daemon_config_t *cfg)
+{
+    const char *path = mf_config_overlay_path();
+    struct stat st;
+    char *raw = NULL;
+    cJSON *root;
+    mf_daemon_config_t ov;
+
+    if (!cfg || !path)
+        return 0;
+    if (stat(path, &st) < 0 || !S_ISREG(st.st_mode))
+        return 0;
+    if (load_file(path, &raw, NULL) < 0)
+        return -1;
+    root = cJSON_Parse(raw);
+    free(raw);
+    if (!root)
+        return -1;
+    mf_config_defaults(&ov);
+    mf_config_apply_json(&ov, root);
+    cJSON_Delete(root);
+    mf_config_overlay_merge(cfg, &ov);
+    return 0;
 }

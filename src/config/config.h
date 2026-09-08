@@ -149,6 +149,13 @@ void mf_config_redact(mf_daemon_config_t *cfg);
 void mf_config_overlay_merge(mf_daemon_config_t *base_cfg,
                              const mf_daemon_config_t *overlay_cfg);
 
+/* Writable settings overlay (name, poll) when /etc is not writable.
+ * Path: $MF_SETTINGS_OVERLAY, else $STATE_DIRECTORY/settings.json,
+ * else /var/lib/moonflare/settings.json. */
+const char *mf_config_overlay_path(void);
+int         mf_config_save_overlay(const mf_daemon_config_t *cfg);
+int         mf_config_load_overlay(mf_daemon_config_t *cfg);
+
 /* ---------- Helpers ---------- */
 
 /* Search path resolution: returns the first existing file path found.
