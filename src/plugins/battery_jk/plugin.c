@@ -16,6 +16,7 @@
 #include <string.h>
 #include <strings.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
@@ -36,6 +37,7 @@ typedef struct {
     char     mac[32];
     char     adapter[16];
     char     name[64];
+    char     gatt_bin[256];
     double   poll_interval_s;
 
     int      fd;
@@ -65,6 +67,87 @@ static double mono_now(void)
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
+}
+
+enum { H_NONE = 0, H_STARTING, H_UP, H_DEAD, HMAX = 4 };
+
+typedef struct {
+    char  adapter[16];
+    int   st;
+    pid_t pid;
+    int   refcnt;
+} helper_row_t;
+
+static helper_row_t g_help[HMAX];
+
+static helper_row_t *helper_row(const char *adapter)
+{
+    int i, empty = -1;
+    const char *ad = adapter && adapter[0] ? adapter : "hci0";
+    for (i = 0; i < HMAX; i++) {
+        if (g_help[i].adapter[0] && strcmp(g_help[i].adapter, ad) == 0)
+            return &g_help[i];
+        if (empty < 0 && !g_help[i].adapter[0])
+            empty = i;
+    }
+    if (empty < 0)
+        return NULL;
+    snprintf(g_help[empty].adapter, sizeof(g_help[empty].adapter), "%s", ad);
+    g_help[empty].st = H_NONE;
+    g_help[empty].pid = -1;
+    g_help[empty].refcnt = 0;
+    return &g_help[empty];
+}
+
+static int helper_spawn(jk_ctx_t *c)
+{
+    helper_row_t *h = helper_row(c->adapter);
+    const char *bin = c->gatt_bin[0] ? c->gatt_bin : getenv("MF_GATT_BIN");
+    pid_t pid;
+    if (!h)
+        return -1;
+    if (h->st == H_UP || h->st == H_STARTING)
+        return 0;
+    if (!bin || !bin[0])
+        bin = "/usr/local/libexec/mf_gatt";
+    pid = fork();
+    if (pid < 0)
+        return -1;
+    if (pid == 0) {
+        execl(bin, bin, "--adapter", h->adapter, (char *)NULL);
+        _exit(127);
+    }
+    h->pid = pid;
+    h->st = H_STARTING;
+    return 0;
+}
+
+static void helper_up(jk_ctx_t *c)
+{
+    helper_row_t *h = helper_row(c->adapter);
+    if (!h)
+        return;
+    h->st = H_UP;
+    h->refcnt++;
+}
+
+static void helper_dead(jk_ctx_t *c)
+{
+    helper_row_t *h = helper_row(c->adapter);
+    if (!h)
+        return;
+    if (h->refcnt > 0)
+        h->st = H_DEAD;
+}
+
+static void helper_release(jk_ctx_t *c)
+{
+    helper_row_t *h = helper_row(c->adapter);
+    if (!h || h->refcnt <= 0)
+        return;
+    h->refcnt--;
+    if (h->refcnt == 0 && h->st == H_UP)
+        h->st = H_NONE;
 }
 
 static const char *json_find_key(const char *js, const char *key)
@@ -167,8 +250,14 @@ static int start_connect(jk_ctx_t *c)
     }
     rc = connect(fd, (struct sockaddr *)&a, alen);
     if (rc != 0 && errno != EINPROGRESS) {
+        int e = errno;
         close(fd);
-        snprintf(c->err, sizeof(c->err), "connect: %s", strerror(errno));
+        if (e == ENOENT) {
+            (void)helper_spawn(c);
+            set_err(c, "helper starting");
+            return -1;
+        }
+        snprintf(c->err, sizeof(c->err), "connect: %s", strerror(e));
         return -1;
     }
     c->fd = fd;
@@ -243,6 +332,8 @@ static void on_line(jk_ctx_t *c, const char *line)
     json_str(line, "cmd", cmd, sizeof(cmd));
     json_str(line, "hex", hex, sizeof(hex));
     if (strcmp(type, "ok") == 0 && strcmp(cmd, "connect") == 0) {
+        if (!c->handshake_ok)
+            helper_up(c);
         c->handshake_ok = 1;
         c->state = ST_STREAM;
         c->err[0] = '\0';
@@ -280,6 +371,8 @@ static void drain_in(jk_ctx_t *c)
             return;
         }
         if (n == 0) {
+            if (c->handshake_ok)
+                helper_dead(c);
             sock_close(c);
             set_err(c, "helper closed");
             return;
@@ -321,7 +414,7 @@ static mf_step_t pump(jk_ctx_t *c)
         if (now < c->next_try)
             return MF_STEP_IDLE;
         if (start_connect(c) != 0)
-            return MF_STEP_ERROR;
+            return MF_STEP_IDLE;
         if (c->state == ST_HANDSHAKE)
             send_connect(c);
     }
@@ -378,6 +471,8 @@ static void *jk_open(const char *spec_json, char *err, size_t errsz)
     json_str(ble, "address", c->mac, sizeof(c->mac));
     json_str(ble, "adapter", c->adapter, sizeof(c->adapter));
     json_str(spec_json ? spec_json : "", "name", c->name, sizeof(c->name));
+    json_str(spec_json ? spec_json : "", "gatt_bin", c->gatt_bin,
+             sizeof(c->gatt_bin));
     if (!c->adapter[0])
         snprintf(c->adapter, sizeof(c->adapter), "hci0");
     iv = json_double(spec_json ? spec_json : "", "poll_interval_s", 0.0);
@@ -406,12 +501,19 @@ static void *jk_open(const char *spec_json, char *err, size_t errsz)
 static void jk_close(void *v)
 {
     jk_ctx_t *c = v;
+    helper_row_t *h;
     if (!c)
         return;
-    if (c->fd >= 0 && c->handshake_ok)
-        queue_str(c, "{\"cmd\":\"disconnect\"}");
-    if (c->fd >= 0)
+    h = helper_row(c->adapter);
+    if (c->fd >= 0 && c->handshake_ok) {
+        if (h && h->refcnt <= 1)
+            queue_str(c, "{\"cmd\":\"quit\"}");
+        else
+            queue_str(c, "{\"cmd\":\"disconnect\"}");
         flush_out(c);
+    }
+    if (c->handshake_ok)
+        helper_release(c);
     sock_close(c);
     free(c);
 }

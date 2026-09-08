@@ -39,6 +39,7 @@
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <syslog.h>
 #include <unistd.h>
 
@@ -247,7 +248,10 @@ int main(int argc, char **argv)
         sigaction(SIGINT, &sa, NULL);
         sigaction(SIGTERM, &sa, NULL);
         signal(SIGPIPE, SIG_IGN);
+        signal(SIGCHLD, SIG_DFL); /* reaped with waitpid WNOHANG in the loop */
     }
+    if (g_cfg.gatt_bin[0])
+        setenv("MF_GATT_BIN", g_cfg.gatt_bin, 1);
 
     g_pts = protothread_create();
     if (!g_pts) {
@@ -299,6 +303,8 @@ int main(int argc, char **argv)
             ;
         mf_devices_apply_pending();
         mf_discover_step();
+        while (waitpid(-1, NULL, WNOHANG) > 0)
+            ;
     }
 
     LOG_I("shutting down");

@@ -21,6 +21,7 @@ endif()
 include(GNUInstallDirs)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(NCURSESW REQUIRED IMPORTED_TARGET ncursesw)
+pkg_check_modules(LIBSYSTEMD REQUIRED IMPORTED_TARGET libsystemd)
 
 # libviper/VDK drives the TUI (PR-7). Point at a sibling ../libviper by
 # default; override with -DLIBVIPER_SOURCE_DIR=/path at configure time.
@@ -261,6 +262,12 @@ add_executable(test_http_core tests/test_http_core.c)
 target_compile_options(test_http_core PRIVATE ${MF_WARN})
 add_test(NAME http_core COMMAND test_http_core $<TARGET_FILE:moonflared>)
 
+add_executable(mf_gatt src/gatt/mf_gatt.c)
+target_compile_definitions(mf_gatt PRIVATE _GNU_SOURCE)
+target_compile_options(mf_gatt PRIVATE ${MF_WARN})
+target_link_libraries(mf_gatt PRIVATE PkgConfig::LIBSYSTEMD)
+add_test(NAME mf_gatt_help COMMAND mf_gatt --help)
+
 add_test(NAME moonflared_help COMMAND moonflared --help)
 add_test(NAME moonflare_help COMMAND moonflare --help)
 
@@ -280,6 +287,7 @@ add_test(NAME moonflare_dump_pack COMMAND moonflare --dump-layout pack)
 add_test(NAME moonflare_dump_charger COMMAND moonflare --dump-layout charger)
 
 install(TARGETS moonflared moonflare RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS mf_gatt RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR})
 install(FILES contrib/moonflared.service
         DESTINATION ${CMAKE_INSTALL_DATADIR}/moon-flare)
 install(FILES etc/moonflared.json.example etc/moonflare.json.example
