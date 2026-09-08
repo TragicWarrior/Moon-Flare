@@ -1,0 +1,300 @@
+#include "ui_screen.h"
+#include "layout.h"
+
+#include <stdint.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <string.h>
+#include <vdk.h>
+
+#define COL_BG   COLOR_WHITE
+#define COL_TEXT COLOR_BLACK
+#define COL_HI_FG COLOR_WHITE
+#define COL_HI_BG COLOR_BLUE
+#define COL_MENU_BG COLOR_CYAN
+
+enum { MB_FILE = 0, MB_SETTINGS, MB_DEVICES, MB_VIEW, MB_HELP, MB_COUNT };
+
+struct mb_item {
+    const char *label;
+    void (*fn)(void);
+    int end;
+};
+
+static vk_menubar_t *g_bar;
+static vk_window_t  *g_drop;
+static int           g_drop_idx = -1;
+static int           g_focused;
+static const struct mb_item *g_open_table;
+
+static void on_quit(void) { mf_ui_quit(); }
+static void on_general(void) { mf_ui_open_settings(); }
+static void on_save(void) { mf_ui_save_config(); }
+static void on_load(void) { mf_ui_load_config(); }
+static void on_dash(void) { /* already dashboard */ }
+static void on_keys(void) { mf_ui_show_help(0); }
+static void on_about(void) { mf_ui_show_help(1); }
+static void on_noop(void) { }
+
+static const struct mb_item file_items[] = {
+    { "Quit", on_quit, 0 },
+    { NULL, NULL, 1 }
+};
+static const struct mb_item settings_items[] = {
+    { "General…", on_general, 0 },
+    { NULL, NULL, 0 },
+    { "Save config", on_save, 0 },
+    { "Load config", on_load, 0 },
+    { NULL, NULL, 1 }
+};
+static const struct mb_item devices_items[] = {
+    { "Add Device…", on_noop, 0 },
+    { "Remove Device…", on_noop, 0 },
+    { NULL, NULL, 1 }
+};
+static const struct mb_item view_items[] = {
+    { "Dashboard", on_dash, 0 },
+    { NULL, NULL, 1 }
+};
+static const struct mb_item help_items[] = {
+    { "Keyboard", on_keys, 0 },
+    { "About", on_about, 0 },
+    { NULL, NULL, 1 }
+};
+
+static const struct mb_item *const tables[MB_COUNT] = {
+    file_items, settings_items, devices_items, view_items, help_items
+};
+static const char *const titles[MB_COUNT] = {
+    "File", "Settings", "Devices", "View", "Help"
+};
+
+static void close_dropdown(void)
+{
+    if (g_drop) {
+        vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_drop));
+        vk_window_destroy(g_drop);
+        g_drop = NULL;
+    }
+    g_drop_idx = -1;
+}
+
+static int on_drop_item(vk_widget_t *w, void *idxp)
+{
+    int i = (int)(intptr_t)idxp;
+    (void)w;
+    close_dropdown();
+    g_focused = 0;
+    if (g_bar) {
+        vk_menubar_set_focused(g_bar, false);
+        vk_menubar_update(g_bar);
+    }
+    mf_ui_refresh();
+    if (g_open_table && i >= 0 && g_open_table[i].fn)
+        g_open_table[i].fn();
+    return 0;
+}
+
+static void open_dropdown(int idx)
+{
+    const struct mb_item *t;
+    vk_listbox_t *lb;
+    vk_window_t *win;
+    int i, n = 0, max_w = 16, max_h, item_x, bar_x, bar_y;
+    int cols = mf_ui_cols(), rows = mf_ui_rows();
+    char cap[32];
+
+    if (idx < 0 || idx >= MB_COUNT || !g_bar)
+        return;
+    close_dropdown();
+    t = tables[idx];
+    g_open_table = t;
+    for (i = 0; !t[i].end; i++) {
+        if (t[i].label && t[i].fn) {
+            int len = (int)strlen(t[i].label);
+            if (len + 2 > max_w)
+                max_w = len + 2;
+            n++;
+        } else if (t[i].label == NULL && t[i].fn == NULL)
+            n++;
+    }
+    if (n < 1)
+        n = 1;
+    max_h = n;
+    if (max_h > mf_tui_dropdown_max_h(rows))
+        max_h = mf_tui_dropdown_max_h(rows);
+    if (max_w > mf_tui_dropdown_max_w(cols))
+        max_w = mf_tui_dropdown_max_w(cols);
+
+    lb = vk_listbox_create(max_w, max_h);
+    vk_listbox_set_wrap(lb, true);
+    vk_listbox_set_highlight(lb, COL_HI_FG, COL_HI_BG);
+    vk_widget_set_colors(VK_WIDGET(lb), COL_TEXT, COL_MENU_BG);
+    for (i = 0; !t[i].end; i++) {
+        if (!t[i].label && !t[i].fn)
+            vk_listbox_add_separator(lb, VK_SEPARATOR_SINGLE);
+        else if (t[i].label && t[i].fn)
+            vk_listbox_add_item(lb, (char *)t[i].label, on_drop_item,
+                                (void *)(intptr_t)i);
+    }
+
+    snprintf(cap, sizeof(cap), " %s ", titles[idx]);
+    win = vk_window_create(max_w + 2, max_h + 2);
+    vk_window_set_title(win, cap);
+    vk_window_set_border_style(win, VK_BORDER_SINGLE);
+    vk_window_set_border_colors(win, COL_TEXT, COL_MENU_BG);
+    vk_widget_set_colors(VK_WIDGET(win), COL_TEXT, COL_MENU_BG);
+    vk_window_set_child(win, VK_WIDGET(lb));
+
+    vk_widget_get_position(VK_WIDGET(g_bar), &bar_x, &bar_y);
+    (void)bar_y;
+    vk_menubar_get_item_position(g_bar, idx, &item_x);
+    if (bar_x + item_x + max_w + 2 > cols)
+        item_x = cols - max_w - 2 - bar_x;
+    if (item_x < 0)
+        item_x = 0;
+    mf_ui_attach(VK_WIDGET(win), bar_x + item_x, MF_MENUBAR_H);
+    vk_listbox_update(lb);
+    vk_window_update(win);
+    g_drop = win;
+    g_drop_idx = idx;
+    mf_ui_front_clear();
+    mf_ui_front_push(VK_WIDGET(g_bar));
+    mf_ui_front_push(VK_WIDGET(g_drop));
+    mf_ui_refresh();
+}
+
+static int on_bar_activate(vk_widget_t *w, void *idxp)
+{
+    int idx = (int)(intptr_t)idxp;
+    (void)w;
+    if (g_drop && g_drop_idx == idx) {
+        close_dropdown();
+        mf_ui_refresh();
+        return 0;
+    }
+    open_dropdown(idx);
+    return 0;
+}
+
+void mf_menubar_init(void)
+{
+    int i, width = mf_ui_cols();
+    if (width < 80)
+        width = 80;
+    g_bar = vk_menubar_create(width);
+    vk_widget_set_colors(VK_WIDGET(g_bar), COL_TEXT, COL_BG);
+    vk_menubar_set_highlight(g_bar, COL_HI_FG, COL_HI_BG);
+    for (i = 0; i < MB_COUNT; i++)
+        vk_menubar_add_item(g_bar, (char *)titles[i], on_bar_activate,
+                            (void *)(intptr_t)i);
+    mf_ui_attach(VK_WIDGET(g_bar), 0, 0);
+    vk_menubar_set_focused(g_bar, false);
+    vk_menubar_update(g_bar);
+    g_focused = 0;
+}
+
+void mf_menubar_shutdown(void)
+{
+    close_dropdown();
+    if (g_bar) {
+        vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_bar));
+        vk_menubar_destroy(g_bar);
+        g_bar = NULL;
+    }
+}
+
+int mf_menubar_active(void)
+{
+    return g_focused || g_drop != NULL;
+}
+
+int mf_menubar_key(wint_t c)
+{
+    vk_listbox_t *lb;
+    if (c == KEY_F(10)) {
+        if (mf_menubar_active()) {
+            close_dropdown();
+            g_focused = 0;
+            if (g_bar) {
+                vk_menubar_set_focused(g_bar, false);
+                vk_menubar_update(g_bar);
+            }
+        } else {
+            g_focused = 1;
+            vk_menubar_set_focused(g_bar, true);
+            if (vk_menubar_get_curr(g_bar) < 0)
+                vk_menubar_set_curr(g_bar, 0);
+            vk_menubar_update(g_bar);
+        }
+        mf_ui_refresh();
+        return 1;
+    }
+    if (!mf_menubar_active())
+        return 0;
+    if (g_drop) {
+        lb = VK_LISTBOX(vk_window_get_child(g_drop));
+        if (c == 27) {
+            close_dropdown();
+            mf_ui_refresh();
+            return 1;
+        }
+        if (c == KEY_UP && lb) {
+            vk_listbox_set_prev(lb);
+            vk_listbox_update(lb);
+            vk_window_update(g_drop);
+            mf_ui_refresh();
+            return 1;
+        }
+        if (c == KEY_DOWN && lb) {
+            vk_listbox_set_next(lb);
+            vk_listbox_update(lb);
+            vk_window_update(g_drop);
+            mf_ui_refresh();
+            return 1;
+        }
+        if ((c == '\n' || c == KEY_ENTER) && lb) {
+            vk_listbox_exec_curr(lb);
+            return 1;
+        }
+        if (c == KEY_LEFT) {
+            close_dropdown();
+            vk_menubar_set_prev(g_bar);
+            vk_menubar_update(g_bar);
+            open_dropdown(vk_menubar_get_curr(g_bar));
+            return 1;
+        }
+        if (c == KEY_RIGHT) {
+            close_dropdown();
+            vk_menubar_set_next(g_bar);
+            vk_menubar_update(g_bar);
+            open_dropdown(vk_menubar_get_curr(g_bar));
+            return 1;
+        }
+        return 1;
+    }
+    if (c == 27) {
+        g_focused = 0;
+        vk_menubar_set_focused(g_bar, false);
+        vk_menubar_update(g_bar);
+        mf_ui_refresh();
+        return 1;
+    }
+    if (c == KEY_LEFT) {
+        vk_menubar_set_prev(g_bar);
+        vk_menubar_update(g_bar);
+        mf_ui_refresh();
+        return 1;
+    }
+    if (c == KEY_RIGHT) {
+        vk_menubar_set_next(g_bar);
+        vk_menubar_update(g_bar);
+        mf_ui_refresh();
+        return 1;
+    }
+    if (c == KEY_DOWN || c == '\n' || c == KEY_ENTER) {
+        open_dropdown(vk_menubar_get_curr(g_bar));
+        return 1;
+    }
+    return 1;
+}

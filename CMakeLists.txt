@@ -19,16 +19,20 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
 endif()
 
 include(GNUInstallDirs)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(NCURSESW REQUIRED IMPORTED_TARGET ncursesw)
 
 # libviper/VDK drives the TUI (PR-7). Point at a sibling ../libviper by
 # default; override with -DLIBVIPER_SOURCE_DIR=/path at configure time.
-# moonflare is a --help stub until PR-7, so libvdk.so is not required yet.
-# When the TUI lands, SYSTEM-include ${LIBVIPER_SOURCE_DIR}/vdk and
-# ${LIBVIPER_SOURCE_DIR}/vkmio so #include <vdk.h> / <vkmio.h> match
-# llama-chess and xd_bms_tui.c.
+# TUI consumes a sibling libviper checkout (same as xd-battery).
 set(LIBVIPER_SOURCE_DIR "${PROJECT_SOURCE_DIR}/../libviper"
     CACHE PATH "Path to the libviper source tree (contains vdk/, vkmio/, libvdk.so)")
 get_filename_component(LIBVIPER_SOURCE_DIR "${LIBVIPER_SOURCE_DIR}" ABSOLUTE)
+if(NOT EXISTS "${LIBVIPER_SOURCE_DIR}/libvdk.so")
+    message(FATAL_ERROR
+        "libvdk.so not found at ${LIBVIPER_SOURCE_DIR}/libvdk.so. "
+        "Build libviper first, or pass -DLIBVIPER_SOURCE_DIR=<path>.")
+endif()
 
 set(MF_WARN -Wall -Wextra -Wpedantic -Wshadow -Wconversion)
 # protothread.h uses GCC labels-as-values; drop -Wpedantic there.
@@ -61,8 +65,27 @@ target_compile_definitions(moonflared PRIVATE _GNU_SOURCE)
 target_compile_options(moonflared PRIVATE ${MF_WARN_PT})
 target_link_libraries(moonflared PRIVATE mf_phr mf_cjson ${CMAKE_DL_LIBS})
 
-add_executable(moonflare src/moonflare.c)
+add_executable(moonflare
+    src/moonflare.c
+    src/tui/ui_screen.c
+    src/tui/menubar.c
+    src/tui/dashboard.c
+    src/tui/http_client.c
+    src/tui/layout.c
+    src/config/config.c)
+target_include_directories(moonflare PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/tui
+    ${CMAKE_SOURCE_DIR}/src/config
+    ${CMAKE_SOURCE_DIR}/include)
+target_include_directories(moonflare SYSTEM PRIVATE
+    ${LIBVIPER_SOURCE_DIR}/vdk ${LIBVIPER_SOURCE_DIR}/vkmio)
+target_link_libraries(moonflare PRIVATE
+    mf_cjson "${LIBVIPER_SOURCE_DIR}/libvdk.so" PkgConfig::NCURSESW m)
+target_compile_definitions(moonflare PRIVATE _GNU_SOURCE)
 target_compile_options(moonflare PRIVATE ${MF_WARN})
+set_target_properties(moonflare PROPERTIES
+    BUILD_RPATH ${LIBVIPER_SOURCE_DIR})
 
 add_executable(test_jk_proto
     src/jk/jk_proto.c
@@ -177,6 +200,19 @@ add_test(NAME http_core COMMAND test_http_core $<TARGET_FILE:moonflared>)
 
 add_test(NAME moonflared_help COMMAND moonflared --help)
 add_test(NAME moonflare_help COMMAND moonflare --help)
+
+add_executable(test_tui_layout tests/test_tui_layout.c src/tui/layout.c)
+target_include_directories(test_tui_layout PRIVATE ${CMAKE_SOURCE_DIR}/src/tui)
+target_compile_options(test_tui_layout PRIVATE ${MF_WARN})
+add_test(NAME tui_layout COMMAND test_tui_layout)
+
+add_executable(test_tui_http tests/test_tui_http.c src/tui/http_client.c)
+target_include_directories(test_tui_http PRIVATE ${CMAKE_SOURCE_DIR}/src/tui)
+target_compile_definitions(test_tui_http PRIVATE _GNU_SOURCE)
+target_compile_options(test_tui_http PRIVATE ${MF_WARN})
+add_test(NAME tui_http COMMAND test_tui_http)
+
+add_test(NAME moonflare_dump COMMAND moonflare --dump-layout)
 
 install(TARGETS moonflared moonflare RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES contrib/moonflared.service
