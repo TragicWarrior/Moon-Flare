@@ -7,8 +7,8 @@
 #include <vdk.h>
 #include <stdlib.h>
 
-#define COL_BG   COLOR_WHITE
-#define COL_TEXT COLOR_BLACK
+#define COL_BG   COLOR_BLUE
+#define COL_TEXT COLOR_WHITE
 #define MAX_LINE 32
 #define MAX_CAT  32
 

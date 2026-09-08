@@ -6,8 +6,8 @@
 #include <string.h>
 #include <vdk.h>
 
-#define COL_BG   COLOR_WHITE
-#define COL_TEXT COLOR_BLACK
+#define COL_BG   COLOR_BLUE
+#define COL_TEXT COLOR_WHITE
 #define COL_TROUGH COLOR_CYAN
 #define NCELL_SHOW 16
 

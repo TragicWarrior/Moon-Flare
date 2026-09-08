@@ -17,6 +17,8 @@
 #define COL_BG   COLOR_WHITE
 #define COL_TEXT COLOR_BLACK
 #define COL_MENU COLOR_CYAN
+#define COL_DASH_FG COLOR_WHITE
+#define COL_DASH_BG COLOR_BLUE
 #define FRONT_MAX 8
 #define STALE_SECS 8.0
 
@@ -55,7 +57,7 @@ static void wallpaper(vk_screen_t *s, int id, WINDOW *c)
 {
     (void)s;
     (void)id;
-    wbkgd(c, VDK_COLORS(COL_TEXT, COL_BG));
+    wbkgd(c, VDK_COLORS(COL_DASH_FG, COL_DASH_BG));
     werase(c);
 }
 
