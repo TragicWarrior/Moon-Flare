@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -57,6 +58,8 @@ typedef struct {
     int                  have_data;
     int                  have_trigger;
     int                  have_start;
+    int                  need_cell_req;
+    double               last_cell_mono;
     double               trigger_v;
     double               start_v;
     char                 err[96];
@@ -99,6 +102,13 @@ static helper_row_t *helper_row(const char *adapter)
     return &g_help[empty];
 }
 
+static int helper_needed(int e)
+{
+    /* Abstract @mf-gatt/<adapter> is not in the filesystem: a missing
+     * listener is ECONNREFUSED. Pathname sockets may return ENOENT. */
+    return e == ENOENT || e == ECONNREFUSED;
+}
+
 static int helper_spawn(jk_ctx_t *c)
 {
     helper_row_t *h = helper_row(c->adapter);
@@ -106,7 +116,13 @@ static int helper_spawn(jk_ctx_t *c)
     pid_t pid;
     if (!h)
         return -1;
-    if (h->st == H_UP || h->st == H_STARTING)
+    if (h->st == H_STARTING) {
+        if (h->pid > 0 && kill(h->pid, 0) != 0 && errno == ESRCH)
+            h->st = H_NONE;
+        else
+            return 0;
+    }
+    if (h->st == H_UP)
         return 0;
     if (!bin || !bin[0])
         bin = "/usr/local/libexec/mf_gatt";
@@ -252,7 +268,7 @@ static int start_connect(jk_ctx_t *c)
     if (rc != 0 && errno != EINPROGRESS) {
         int e = errno;
         close(fd);
-        if (e == ENOENT) {
+        if (helper_needed(e)) {
             (void)helper_spawn(c);
             set_err(c, "helper starting");
             return -1;
@@ -285,6 +301,8 @@ static void send_connect(jk_ctx_t *c)
              c->mac);
     queue_str(c, line);
 }
+
+static int queue_hex_write(jk_ctx_t *c, const uint8_t *cmd);
 
 static int hex_nibble(int ch)
 {
@@ -335,6 +353,7 @@ static void on_line(jk_ctx_t *c, const char *line)
         if (!c->handshake_ok)
             helper_up(c);
         c->handshake_ok = 1;
+        c->need_cell_req = 1;
         c->state = ST_STREAM;
         c->err[0] = '\0';
         return;
@@ -349,8 +368,10 @@ static void on_line(jk_ctx_t *c, const char *line)
         if (n > 0 &&
             jk_assembler_feed(&c->asm, raw, (size_t)n, c->frame, 1) > 0) {
             if (jk_decode_cell_info(c->frame, JK_FRAME_SIZE, JK_PROTO_JK02_32S,
-                                    0, &c->cell) == JK_OK)
+                                    0, &c->cell) == JK_OK) {
                 c->have_data = 1;
+                c->last_cell_mono = mono_now();
+            }
         }
     }
 }
@@ -430,7 +451,10 @@ static mf_step_t pump(jk_ctx_t *c)
             return MF_STEP_IDLE;
         }
         if (getsockopt(c->fd, SOL_SOCKET, SO_ERROR, &err, &el) != 0 || err) {
+            int e = err ? err : errno;
             sock_close(c);
+            if (helper_needed(e))
+                (void)helper_spawn(c);
             set_err(c, "connect failed");
             return MF_STEP_ERROR;
         }
@@ -439,6 +463,17 @@ static mf_step_t pump(jk_ctx_t *c)
     }
     if (c->fd >= 0)
         drain_in(c);
+    if (c->handshake_ok && c->fd >= 0) {
+        if (c->need_cell_req) {
+            queue_hex_write(c, jk_build_command(JK_CMD_DEVICE_INFO, NULL, 0, 0));
+            queue_hex_write(c, jk_build_command(JK_CMD_CELL_INFO, NULL, 0, 0));
+            c->need_cell_req = 0;
+            c->last_cell_mono = now;
+        } else if (now - c->last_cell_mono > 8.0) {
+            queue_hex_write(c, jk_build_command(JK_CMD_CELL_INFO, NULL, 0, 0));
+            c->last_cell_mono = now;
+        }
+    }
     if (c->fd >= 0)
         flush_out(c);
     c->select_mask = 0;

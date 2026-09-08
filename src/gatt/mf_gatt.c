@@ -374,6 +374,10 @@ static int discover_ffe1(cli_t *c)
                     }
                     if (uuid[0] && strcasecmp(uuid, FFE1) == 0) {
                         int h = char_handle_from_path(opath);
+                        /* Combined FFE1 (notify+write on one char): if Flags
+                         * did not parse, still use this characteristic. */
+                        if (!has_notify && !has_write && !has_wnr)
+                            has_notify = has_write = 1;
                         if (has_notify)
                             snprintf(notify_path, sizeof(notify_path), "%s", opath),
                                 notify_h = h;
@@ -407,8 +411,12 @@ static int discover_ffe1(cli_t *c)
         snprintf(notify_path, sizeof(notify_path), "%s", guess);
         notify_h = 0x05;
     }
-    if (!write_path[0] || !notify_path[0])
+    if (!write_path[0] || !notify_path[0]) {
+        log_msg("ffe1 missing write=%d notify=%d for %s",
+                write_path[0] ? 1 : 0, notify_path[0] ? 1 : 0, c->mac);
         return -1;
+    }
+    log_msg("ffe1 write=%s notify=%s", write_path, notify_path);
     snprintf(c->write_path, sizeof(c->write_path), "%s", write_path);
     snprintf(c->notify_path, sizeof(c->notify_path), "%s", notify_path);
     c->write_handle = write_h;
@@ -449,6 +457,8 @@ static int on_notify(sd_bus_message *m, void *userdata, sd_bus_error *ret_err)
                          "{\"type\":\"notify\",\"address\":\"%s\",\"hex\":\"%s\"}",
                          c->mac, hex);
                 queue_line(c, line);
+                if (g_debug)
+                    log_msg("notify %s %zu", c->mac, n);
             }
         } else if (contents) {
             sd_bus_message_skip(m, contents);
@@ -553,7 +563,7 @@ static int start_notify(cli_t *c)
     }
     sd_bus_error_free(&err);
     snprintf(match, sizeof(match),
-             "type='signal',sender='org.bluez',path='%s',"
+             "type='signal',path='%s',"
              "interface='org.freedesktop.DBus.Properties',"
              "member='PropertiesChanged'",
              c->notify_path);
@@ -609,6 +619,7 @@ static void device_disconnect(cli_t *c)
 
 static void sess_fail(cli_t *c, const char *msg)
 {
+    log_msg("sess_fail %s: %s", c->mac[0] ? c->mac : "?", msg ? msg : "");
     if (g_scan_owner >= 0 && &g_cli[g_scan_owner] == c) {
         stop_discovery();
         g_scan_owner = -1;
@@ -657,6 +668,7 @@ static void sess_advance(cli_t *c, int idx)
             }
             c->sess = SESS_READY;
             c->acked = 1;
+            log_msg("connect ready %s", c->mac);
             queue_ok(c, "connect");
             queue_state(c, "connected", "");
         }
