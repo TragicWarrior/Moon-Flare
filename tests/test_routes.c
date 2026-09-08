@@ -5,6 +5,7 @@
 #include <cJSON.h>
 #include <stdarg.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -349,6 +350,138 @@ static void test_delete(void)
           "DELETE unknown → 404");
 }
 
+static void test_pr10(void)
+{
+    const char *body =
+        "{\"name\":\"pr10-batt\",\"kind\":\"battery\",\"driver\":\"demo\"}";
+    mf_rest_request_t req;
+    mf_rest_response_t resp;
+    char path[192];
+    char setpath[192];
+    char actpath[192];
+    const char *id;
+    char put[64];
+    uint64_t gen = 0;
+
+    printf("9. PR-10 settings/actions/config/discover\n");
+
+    memset(&req, 0, sizeof(req));
+    req.method = "POST";
+    req.path = "/api/v1/devices";
+    req.body = body;
+    req.body_len = strlen(body);
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 201, "POST pr10 device");
+    id = strrchr(resp.location, '/');
+    check(id && id[1], "pr10 id");
+    if (!id)
+        return;
+    id++;
+    snprintf(path, sizeof(path), "/api/v1/devices/%s", id);
+    snprintf(setpath, sizeof(setpath), "/api/v1/devices/%s/settings", id);
+    snprintf(actpath, sizeof(actpath), "/api/v1/devices/%s/actions/set_switch", id);
+
+    memset(&req, 0, sizeof(req));
+    req.method = "PUT";
+    req.path = setpath;
+    req.body = "{\"poll_interval_s\":0.1}";
+    req.body_len = strlen(req.body);
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 400,
+          "PUT poll below clamp → 400");
+
+    req.body = "{\"poll_interval_s\":2.0}";
+    req.body_len = strlen(req.body);
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 200,
+          "PUT poll 2.0 → 200");
+    check(strstr(resp.body, "\"poll_interval_s\"") != NULL, "settings has poll");
+
+    memset(&req, 0, sizeof(req));
+    req.method = "GET";
+    req.path = setpath;
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 200, "GET settings");
+
+    memset(&req, 0, sizeof(req));
+    req.method = "POST";
+    req.path = actpath;
+    req.body = "{\"key\":\"charge\",\"value\":true}";
+    req.body_len = strlen(req.body);
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 400,
+          "action without plugin ctx → 400");
+
+    memset(&req, 0, sizeof(req));
+    req.method = "GET";
+    req.path = "/api/v1/config";
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 200, "GET config");
+    check(strstr(resp.body, "\"config_gen\"") != NULL, "config_gen present");
+    check(resp.etag[0] == '"', "ETag quoted");
+    {
+        cJSON *root = cJSON_Parse(resp.body);
+        if (root) {
+            cJSON *g = cJSON_GetObjectItem(root, "config_gen");
+            if (g && cJSON_IsNumber(g))
+                gen = (uint64_t)g->valuedouble;
+            cJSON_Delete(root);
+        }
+    }
+
+    memset(&req, 0, sizeof(req));
+    req.method = "PUT";
+    req.path = "/api/v1/config";
+    req.if_match = "\"999\"";
+    req.body = "{\"listen\":\"127.0.0.1:5250\"}";
+    req.body_len = strlen(req.body);
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 409,
+          "PUT config stale If-Match → 409");
+
+    snprintf(put, sizeof(put), "{\"listen\":\"127.0.0.1:5250\",\"config_gen\":%llu}",
+             (unsigned long long)gen);
+    req.if_match = NULL;
+    req.body = put;
+    req.body_len = strlen(put);
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 200,
+          "PUT config matching gen → 200");
+
+    memset(&req, 0, sizeof(req));
+    req.method = "POST";
+    req.path = "/api/v1/discover";
+    req.body = "{\"kind\":\"charger\",\"bus\":\"modbus\"}";
+    req.body_len = strlen(req.body);
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 202,
+          "POST discover → 202");
+    check(strstr(resp.body, "started") != NULL, "started");
+
+    memset(&req, 0, sizeof(req));
+    req.method = "GET";
+    req.path = "/api/v1/discover";
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 200, "GET discover");
+    check(strstr(resp.body, "\"status\":\"running\"") != NULL, "discover running");
+
+    memset(&req, 0, sizeof(req));
+    req.method = "POST";
+    req.path = "/api/v1/discover";
+    req.body = "{\"kind\":\"charger\",\"bus\":\"modbus\"}";
+    req.body_len = strlen(req.body);
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 409,
+          "second POST discover → 409");
+
+    memset(&req, 0, sizeof(req));
+    req.method = "GET";
+    req.path = "/api/v1/drivers";
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 200,
+          "GET /drivers still 200");
+}
+
 int main(void)
 {
     srand((unsigned)time(NULL));
@@ -365,6 +498,7 @@ int main(void)
     test_create_device();
     test_malformed_json();
     test_delete();
+    test_pr10();
 
     printf("\n");
     if (g_fail > 0) {

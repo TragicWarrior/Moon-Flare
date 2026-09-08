@@ -19,9 +19,11 @@
 
 #include "config.h"
 #include "device.h"
+#include "discover.h"
 #include "http_pt.h"
 #include "loader.h"
 #include "protothread.h"
+#include "rest.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -253,6 +255,8 @@ int main(int argc, char **argv)
     }
 
     mf_devices_init(g_pts, &g_chan_tick, &g_quit, &g_plugins);
+    mf_rest_set_live_config(&g_cfg, config_path);
+    mf_rest_init();
     mf_http_init(&g_http, g_pts, &g_chan_tick, &g_quit, g_listen_fd,
                  http_idle_s, g_debug);
     mf_http_start(&g_http);
@@ -266,6 +270,7 @@ int main(int argc, char **argv)
         int maxfd = -1;
         mf_http_prepare_fds(&g_http, &rset, &wset, &maxfd);
         mf_devices_prepare_fds(&rset, &wset, &maxfd);
+        mf_discover_prepare_fds(&rset, &wset, &maxfd);
 
         struct timeval tv;
         tv.tv_sec  = 0;
@@ -283,6 +288,7 @@ int main(int argc, char **argv)
         pt_broadcast(g_pts, &g_chan_tick);
         while (protothread_run(g_pts))
             ;
+        mf_discover_step();
     }
 
     LOG_I("shutting down");
@@ -291,6 +297,7 @@ int main(int argc, char **argv)
     pt_broadcast(g_pts, &g_chan_tick);
     while (protothread_run(g_pts))
         ;
+    mf_discover_close();
     mf_http_close_all(&g_http);
     mf_plugins_unload(&g_plugins);
     if (g_listen_fd >= 0)

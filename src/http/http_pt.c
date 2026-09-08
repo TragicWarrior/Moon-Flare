@@ -52,6 +52,7 @@ static void conn_reset_req(mf_http_conn_t *c)
     c->req_close = false;
     c->method[0] = '\0';
     c->path[0] = '\0';
+    c->if_match[0] = '\0';
     c->state = HTTP_RECV_HEADERS;
     c->select_mask = MF_IO_WANT_READ;
 }
@@ -141,7 +142,8 @@ __attribute__((weak)) int mf_rest_dispatch(const mf_rest_request_t *req,
 }
 
 static int http_reply(mf_http_conn_t *c, int status, const char *reason,
-                      const char *body, bool force_close, const char *location)
+                      const char *body, bool force_close, const char *location,
+                      const char *etag)
 {
     size_t body_len = body ? strlen(body) : 0;
     bool close_c = force_close || c->req_close || c->minor < 1;
@@ -152,12 +154,16 @@ static int http_reply(mf_http_conn_t *c, int status, const char *reason,
                      "Content-Length: %zu\r\n"
                      "Connection: %s\r\n"
                      "%s%s%s"
+                     "%s%s%s"
                      "\r\n",
                      c->minor >= 0 ? c->minor : 1,
                      status, reason, body_len, conn,
                      location && location[0] ? "Location: " : "",
                      location && location[0] ? location : "",
-                     location && location[0] ? "\r\n" : "");
+                     location && location[0] ? "\r\n" : "",
+                     etag && etag[0] ? "ETag: " : "",
+                     etag && etag[0] ? etag : "",
+                     etag && etag[0] ? "\r\n" : "");
     if (n < 0 || (size_t)n + body_len >= sizeof(c->out))
         return -1;
     if (body_len > 0)
@@ -173,7 +179,7 @@ static int http_reply(mf_http_conn_t *c, int status, const char *reason,
 static void http_reply_or_close(mf_http_conn_t *c, int status, const char *reason,
                                 const char *body, bool force_close)
 {
-    if (http_reply(c, status, reason, body, force_close, NULL) < 0)
+    if (http_reply(c, status, reason, body, force_close, NULL, NULL) < 0)
         conn_close(c);
 }
 
@@ -222,6 +228,8 @@ static void handle_request(mf_http_t *h, mf_http_conn_t *c)
         memset(&resp, 0, sizeof(resp));
         req.method = c->method;
         req.path = c->path;
+        req.if_match = c->if_match[0] ? c->if_match : NULL;
+        req.peer = c->peer[0] ? c->peer : NULL;
         if (c->content_length > 0 &&
             c->header_len + c->content_length <= c->in_len) {
             req.body = c->in + c->header_len;
@@ -230,7 +238,8 @@ static void handle_request(mf_http_t *h, mf_http_conn_t *c)
         if (mf_rest_dispatch(&req, &resp) == 0 && resp.status > 0) {
             if (http_reply(c, resp.status, http_reason(resp.status),
                            resp.body, false,
-                           resp.location[0] ? resp.location : NULL) < 0)
+                           resp.location[0] ? resp.location : NULL,
+                           resp.etag[0] ? resp.etag : NULL) < 0)
                 conn_close(c);
             return;
         }
@@ -312,6 +321,9 @@ static int parse_headers(mf_http_t *h, mf_http_conn_t *c)
                 c->req_close = true;
             else if (hdr_has_token(&headers[i], "keep-alive"))
                 c->req_close = false;
+        } else if (hdr_name_eq(&headers[i], "if-match")) {
+            copy_token(c->if_match, sizeof(c->if_match),
+                       headers[i].value, headers[i].value_len);
         }
     }
     (void)have_cl;

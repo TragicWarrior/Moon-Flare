@@ -349,6 +349,86 @@ int main(int argc, char **argv)
         FAIL("unknown driver should 400");
 
     if (uuid[0]) {
+        char req2[1024];
+        {
+            const char *sb = "{\"poll_interval_s\":0.1}";
+            snprintf(req2, sizeof(req2),
+                     "PUT /api/v1/devices/%s/settings HTTP/1.1\r\nHost: x\r\n"
+                     "Content-Type: application/json\r\nContent-Length: %zu\r\n"
+                     "Connection: close\r\n\r\n%s",
+                     uuid, strlen(sb), sb);
+        }
+        if (http_exchange(port, req2, resp, sizeof(resp)) < 0 || status_of(resp) != 400)
+            FAIL("PUT poll clamp");
+        {
+            const char *sb = "{\"poll_interval_s\":2.0}";
+            snprintf(req2, sizeof(req2),
+                     "PUT /api/v1/devices/%s/settings HTTP/1.1\r\nHost: x\r\n"
+                     "Content-Type: application/json\r\nContent-Length: %zu\r\n"
+                     "Connection: close\r\n\r\n%s",
+                     uuid, strlen(sb), sb);
+        }
+        if (http_exchange(port, req2, resp, sizeof(resp)) < 0 || status_of(resp) != 200)
+            FAIL("PUT poll 2.0");
+        else if (!strstr(body_of(resp), "poll_interval_s"))
+            FAIL("settings missing poll_interval_s");
+
+        {
+            const char *ab = "{\"key\":\"charge\",\"value\":false}";
+            snprintf(req2, sizeof(req2),
+                     "POST /api/v1/devices/%s/actions/set_switch HTTP/1.1\r\n"
+                     "Host: x\r\nContent-Type: application/json\r\n"
+                     "Content-Length: %zu\r\nConnection: close\r\n\r\n%s",
+                     uuid, strlen(ab), ab);
+        }
+        if (http_exchange(port, req2, resp, sizeof(resp)) < 0 || status_of(resp) != 200)
+            FAIL("POST set_switch");
+    }
+
+    if (http_exchange(port,
+                      "GET /api/v1/config HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+                      resp, sizeof(resp)) < 0 || status_of(resp) != 200)
+        FAIL("GET config");
+    else if (!strstr(body_of(resp), "config_gen"))
+        FAIL("config missing config_gen");
+    {
+        const char *body = "{\"listen\":\"127.0.0.1:5250\"}";
+        snprintf(req, sizeof(req),
+                 "PUT /api/v1/config HTTP/1.1\r\nHost: x\r\n"
+                 "If-Match: \"999\"\r\nContent-Type: application/json\r\n"
+                 "Content-Length: %zu\r\nConnection: close\r\n\r\n%s",
+                 strlen(body), body);
+        if (http_exchange(port, req, resp, sizeof(resp)) < 0 || status_of(resp) != 409)
+            FAIL("PUT config stale If-Match");
+    }
+
+    {
+        const char *body = "{\"kind\":\"charger\",\"bus\":\"modbus\"}";
+        snprintf(req, sizeof(req),
+                 "POST /api/v1/discover HTTP/1.1\r\nHost: x\r\n"
+                 "Content-Type: application/json\r\nContent-Length: %zu\r\n"
+                 "Connection: close\r\n\r\n%s",
+                 strlen(body), body);
+        if (http_exchange(port, req, resp, sizeof(resp)) < 0 || status_of(resp) != 202)
+            FAIL("POST discover");
+        if (http_exchange(port, req, resp, sizeof(resp)) < 0 || status_of(resp) != 409)
+            FAIL("second POST discover");
+        if (http_exchange(port,
+                          "GET /api/v1/discover HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+                          resp, sizeof(resp)) < 0 || status_of(resp) != 200)
+            FAIL("GET discover");
+        else if (!strstr(body_of(resp), "\"status\""))
+            FAIL("discover missing status");
+    }
+
+    if (http_exchange(port,
+                      "GET /api/v1/drivers HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+                      resp, sizeof(resp)) < 0 || status_of(resp) != 200)
+        FAIL("GET drivers after PR-10");
+    else if (!strstr(body_of(resp), "\"driver\":\"demo\""))
+        FAIL("drivers still lists demo");
+
+    if (uuid[0]) {
         snprintf(delpath, sizeof(delpath),
                  "DELETE /api/v1/devices/%s HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
                  uuid);

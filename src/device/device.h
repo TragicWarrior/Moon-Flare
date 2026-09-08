@@ -43,6 +43,15 @@ int  mf_devices_add(const char *name, const char *kind, const char *driver,
 /* 202 if slot was live or dying; 404 if unknown. */
 int  mf_devices_delete(const char *uuid);
 
+/* Settings / actions (PR-10). HTTP status: 200, 400, 404, 409. */
+int    mf_devices_get_settings(const char *uuid, char *json, size_t cap);
+int    mf_devices_put_settings(const char *uuid, const char *json,
+                               char *err, size_t errsz);
+int    mf_devices_action(const char *uuid, const char *action, const char *json,
+                         char *err, size_t errsz);
+double mf_poll_interval_min(const char *driver);
+int    mf_devices_any_dying(void);
+
 void mf_devices_prepare_fds(fd_set *rset, fd_set *wset, int *maxfd);
 void mf_devices_request_stop_all(void);
 

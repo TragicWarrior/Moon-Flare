@@ -62,6 +62,7 @@ typedef struct mf_http_conn {
     char     method[16];
     char     path[128];
     char     peer[64];
+    char     if_match[64];
 
     double   last_progress;
 

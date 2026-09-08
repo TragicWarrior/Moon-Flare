@@ -291,6 +291,143 @@ int mf_devices_add(const char *name, const char *kind, const char *driver,
     return 0;
 }
 
+double mf_poll_interval_min(const char *driver)
+{
+    if (driver && strcmp(driver, "classic") == 0)
+        return 1.0;
+    if (driver && strcmp(driver, "jk") == 0)
+        return 1.0;
+    if (driver && strcmp(driver, "xd") == 0)
+        return 0.5;
+    return 0.5;
+}
+
+static mf_device_t *find_live_mut(const char *uuid)
+{
+    int i;
+    if (!uuid || !uuid[0])
+        return NULL;
+    for (i = 0; i < MF_DEVICE_SLOTS; i++) {
+        if (!g_dev[i].in_use || g_dev[i].stop)
+            continue;
+        if (strcmp(g_dev[i].uuid, uuid) == 0)
+            return &g_dev[i];
+    }
+    return NULL;
+}
+
+int mf_devices_get_settings(const char *uuid, char *json, size_t cap)
+{
+    mf_device_t *d = find_live_mut(uuid);
+    char plug[4096];
+
+    if (!d || !json || cap == 0)
+        return 404;
+    plug[0] = '\0';
+    if (d->ops && d->ops->get_settings && d->ctx)
+        (void)d->ops->get_settings(d->ctx, plug, sizeof(plug));
+    if (plug[0] == '{' && plug[1] && plug[1] != '}')
+        snprintf(json, cap, "{\"poll_interval_s\":%.3f,%s",
+                 d->poll_interval_s, plug + 1);
+    else
+        snprintf(json, cap, "{\"poll_interval_s\":%.3f}", d->poll_interval_s);
+    json[cap - 1] = '\0';
+    return 200;
+}
+
+int mf_devices_put_settings(const char *uuid, const char *json,
+                            char *err, size_t errsz)
+{
+    mf_device_t *d = find_live_mut(uuid);
+    const char *p;
+    int have_poll = 0;
+    int have_other = 0;
+    int rc;
+
+    if (err && errsz)
+        err[0] = '\0';
+    if (!d)
+        return 404;
+    if (!json)
+        json = "{}";
+    p = strstr(json, "\"poll_interval_s\"");
+    if (p) {
+        p = strchr(p, ':');
+        if (p) {
+            double iv = atof(p + 1);
+            double mn = mf_poll_interval_min(d->driver);
+            have_poll = 1;
+            if (iv < mn) {
+                if (err && errsz)
+                    snprintf(err, errsz, "poll_interval_s below %.1f", mn);
+                return 400;
+            }
+            d->poll_interval_s = iv;
+        }
+    }
+    {
+        const char *q = json;
+        have_other = 0;
+        while ((q = strchr(q, '"')) != NULL) {
+            const char *k = q + 1;
+            const char *e = strchr(k, '"');
+            if (!e)
+                break;
+            if ((size_t)(e - k) != 15 || strncmp(k, "poll_interval_s", 15) != 0)
+                have_other = 1;
+            q = e + 1;
+        }
+    }
+    if (d->ops && d->ops->put_settings && d->ctx && have_other) {
+        rc = d->ops->put_settings(d->ctx, json, err, errsz);
+        if (rc == MF_ERR_UNSUPPORTED || rc == MF_ERR_INVAL)
+            return 400;
+        if (rc == MF_ERR_OFFLINE || rc == MF_ERR_BUSY)
+            return 409;
+        if (rc != MF_OK && rc != 0)
+            return 400;
+    }
+    (void)have_poll;
+    return 200;
+}
+
+int mf_devices_action(const char *uuid, const char *action, const char *json,
+                      char *err, size_t errsz)
+{
+    mf_device_t *d = find_live_mut(uuid);
+    int rc;
+
+    if (err && errsz)
+        err[0] = '\0';
+    if (!d)
+        return 404;
+    if (!action || !action[0])
+        return 400;
+    if (!d->ops || !d->ops->action || !d->ctx) {
+        if (err && errsz)
+            snprintf(err, errsz, "unsupported");
+        return 400;
+    }
+    rc = d->ops->action(d->ctx, action, json ? json : "{}", err, errsz);
+    if (rc == MF_OK || rc == 0) {
+        refresh_reading(d);
+        return 200;
+    }
+    if (rc == MF_ERR_OFFLINE || rc == MF_ERR_BUSY)
+        return 409;
+    return 400;
+}
+
+int mf_devices_any_dying(void)
+{
+    int i;
+    for (i = 0; i < MF_DEVICE_SLOTS; i++) {
+        if (g_dev[i].in_use && g_dev[i].stop)
+            return 1;
+    }
+    return 0;
+}
+
 int mf_devices_delete(const char *uuid)
 {
     int i;

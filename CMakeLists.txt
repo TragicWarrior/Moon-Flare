@@ -47,7 +47,7 @@ target_compile_options(mf_phr PRIVATE -w)
 
 enable_testing()
 
-add_executable(moonflared src/moonflared.c src/http/http_pt.c src/plugin/loader.c src/config/config.c src/rest/routes.c src/device/device.c)
+add_executable(moonflared src/moonflared.c src/http/http_pt.c src/plugin/loader.c src/config/config.c src/rest/routes.c src/rest/discover.c src/device/device.c)
 target_include_directories(moonflared PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
@@ -55,7 +55,8 @@ target_include_directories(moonflared PRIVATE
     ${CMAKE_SOURCE_DIR}/src/http
     ${CMAKE_SOURCE_DIR}/src/plugin
     ${CMAKE_SOURCE_DIR}/src/config
-    ${CMAKE_SOURCE_DIR}/src/device)
+    ${CMAKE_SOURCE_DIR}/src/device
+    ${CMAKE_SOURCE_DIR}/src/rest)
 target_compile_definitions(moonflared PRIVATE _GNU_SOURCE)
 target_compile_options(moonflared PRIVATE ${MF_WARN_PT})
 target_link_libraries(moonflared PRIVATE mf_phr mf_cjson ${CMAKE_DL_LIBS})
@@ -144,11 +145,11 @@ set_target_properties(test_history PROPERTIES BUILD_RPATH
     ${CMAKE_SOURCE_DIR}/third_party/sqlite/lib)
 add_test(NAME history COMMAND test_history)
 
-add_executable(test_routes tests/test_routes.c src/rest/routes.c src/device/device.c src/plugin/loader.c)
+add_executable(test_routes tests/test_routes.c src/rest/routes.c src/rest/discover.c src/device/device.c src/plugin/loader.c src/config/config.c)
 target_include_directories(test_routes PRIVATE
     ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/rest
     ${CMAKE_SOURCE_DIR}/src/device ${CMAKE_SOURCE_DIR}/src/plugin
-    ${CMAKE_SOURCE_DIR}/include)
+    ${CMAKE_SOURCE_DIR}/src/config ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(test_routes PRIVATE mf_cjson ${CMAKE_DL_LIBS})
 add_test(NAME routes COMMAND test_routes)
 
