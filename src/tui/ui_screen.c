@@ -39,6 +39,10 @@ static vk_label_t *g_set_lab[4];
 static vk_input_t *g_set_in[3];
 static int g_set_focus;
 static vk_window_t *g_help_win;
+static int g_view_idx = -1;
+static char g_view_path[192];
+static char g_view_json[65536];
+static char g_view_name[32];
 
 static double mono_now(void)
 {
@@ -316,6 +320,49 @@ void mf_ui_save_config(void)
     free(s);
 }
 
+void mf_ui_show_dashboard(void)
+{
+    mf_confirm_close();
+    mf_devset_close();
+    mf_pack_hide();
+    mf_dash_set_visible(1);
+    g_view_idx = -1;
+    g_view_path[0] = '\0';
+    mf_ui_refresh();
+}
+
+const char *mf_ui_poll_path(void)
+{
+    if (g_view_idx >= 0 && g_view_path[0])
+        return g_view_path;
+    return "/api/v1/status";
+}
+
+void mf_ui_open_device_view(int idx)
+{
+    const char *id = mf_dash_catalog_id(idx);
+    const char *kind = mf_dash_catalog_kind(idx);
+    const char *name = mf_dash_catalog_name(idx);
+    if (!id || !id[0])
+        return;
+    g_view_idx = idx;
+    snprintf(g_view_name, sizeof(g_view_name), "%s", name ? name : id);
+    snprintf(g_view_path, sizeof(g_view_path), "/api/v1/devices/%s", id);
+    mf_dash_set_visible(0);
+    mf_pack_show(kind && strcmp(kind, "charger") == 0);
+    (void)mf_http_cli_get(&g_cli, g_view_path);
+    mf_ui_refresh();
+}
+
+void mf_ui_open_device_settings(int idx)
+{
+    const char *id = mf_dash_catalog_id(idx);
+    const char *name = mf_dash_catalog_name(idx);
+    if (!id || !id[0])
+        return;
+    mf_devset_show(id, name, 2.0);
+}
+
 void mf_ui_load_config(void)
 {
     mf_tui_config_load(g_cfg_path[0] ? g_cfg_path : NULL, &g_tui_cfg);
@@ -346,11 +393,22 @@ static void parse_connect(const char *spec)
     snprintf(g_hostport, sizeof(g_hostport), "%.120s:%d", g_host, g_port);
 }
 
-static int dump_layout(void)
+static int dump_layout(const char *which)
 {
     char grid[MF_TUI_ROWS][MF_TUI_COLS + 1];
     int r;
-    mf_tui_paint_dashboard(grid, "127.0.0.1:5250", "UP", 0, NULL, 0, NULL, 0, NULL);
+    if (which && strcmp(which, "pack") == 0)
+        mf_tui_paint_pack(grid, 1);
+    else if (which && strcmp(which, "charger") == 0)
+        mf_tui_paint_charger(grid);
+    else if (which && (strcmp(which, "settings") == 0 ||
+                       strcmp(which, "devsettings") == 0))
+        mf_tui_paint_devsettings(grid, "pack-demo");
+    else if (which && strcmp(which, "confirm") == 0)
+        mf_tui_paint_confirm(grid, "pack-demo");
+    else
+        mf_tui_paint_dashboard(grid, "127.0.0.1:5250", "UP",
+                               0, NULL, 0, NULL, 0, NULL);
     for (r = 0; r < MF_TUI_ROWS; r++)
         puts(grid[r]);
     return 0;
@@ -392,6 +450,7 @@ int mf_tui_run(const char *connect, const char *config_path)
     vk_kmio_init(g_kmio_fd, VK_KMIO_MOUSE);
 
     mf_dash_init();
+    mf_pack_init();
     mf_menubar_init();
     mf_ui_front_clear();
     mf_ui_refresh();
@@ -424,7 +483,7 @@ int mf_tui_run(const char *connect, const char *config_path)
 
         if (g_cli.state == MF_CONN_UP && !g_cli.inflight &&
             t - g_last_get >= g_refresh) {
-            if (mf_http_cli_get(&g_cli, "/api/v1/status") == 1)
+            if (mf_http_cli_get(&g_cli, mf_ui_poll_path()) == 1)
                 g_last_get = t;
         }
         {
@@ -445,8 +504,13 @@ int mf_tui_run(const char *connect, const char *config_path)
                 dirty = 1;
             }
             if (dirty) {
-                mf_dash_update(g_hostport, tag,
-                               last_json[0] ? last_json : NULL);
+                if (g_view_idx >= 0 && strstr(last_json, "\"data\"")) {
+                    snprintf(g_view_json, sizeof(g_view_json), "%s", last_json);
+                    mf_pack_update(g_view_json);
+                } else {
+                    mf_dash_update(g_hostport, tag,
+                                   last_json[0] ? last_json : NULL);
+                }
                 mf_ui_refresh();
             }
         }
@@ -465,10 +529,61 @@ int mf_tui_run(const char *connect, const char *config_path)
                 close_help();
                 continue;
             }
+            if (mf_confirm_open()) {
+                int cr = mf_confirm_handle((wint_t)key);
+                if (cr == 2 && g_view_idx >= 0) {
+                    char path[192], payload[80];
+                    snprintf(path, sizeof(path),
+                             "/api/v1/devices/%s/actions/set_switch",
+                             mf_dash_catalog_id(g_view_idx));
+                    snprintf(payload, sizeof(payload),
+                             "{\"key\":\"%s\",\"value\":false}",
+                             mf_confirm_action());
+                    mf_confirm_close();
+                    (void)mf_http_cli_post(&g_cli, path, payload);
+                }
+                continue;
+            }
+            if (mf_devset_open()) {
+                int sr = mf_devset_key((wint_t)key);
+                if (sr == 2) {
+                    char path[192], payload[80];
+                    snprintf(path, sizeof(path),
+                             "/api/v1/devices/%s/settings", mf_devset_id());
+                    snprintf(payload, sizeof(payload),
+                             "{\"poll_interval_s\":%s}", mf_devset_poll_text());
+                    mf_devset_close();
+                    (void)mf_http_cli_put(&g_cli, path, payload);
+                }
+                continue;
+            }
             if (g_settings_open && settings_key((wint_t)key))
                 continue;
             if (mf_menubar_key((wint_t)key))
                 continue;
+            if (mf_pack_visible() && (key == 27 || key == KEY_EXIT)) {
+                mf_ui_show_dashboard();
+                continue;
+            }
+            if (mf_pack_visible() && !mf_pack_is_charger() && mf_pack_has_switch()) {
+                if (key == 'c' || key == 'C') {
+                    mf_confirm_show(g_view_name, "charge");
+                    continue;
+                }
+                if (key == 'd' || key == 'D') {
+                    mf_confirm_show(g_view_name, "discharge");
+                    continue;
+                }
+                if (key == 'b' || key == 'B') {
+                    char path[192];
+                    snprintf(path, sizeof(path),
+                             "/api/v1/devices/%s/actions/set_switch",
+                             mf_dash_catalog_id(g_view_idx));
+                    (void)mf_http_cli_post(&g_cli, path,
+                                           "{\"key\":\"balance\",\"value\":true}");
+                    continue;
+                }
+            }
             if (key == 'q' || key == 'Q')
                 g_quit = 1;
         }
@@ -476,7 +591,10 @@ int mf_tui_run(const char *connect, const char *config_path)
 
     close_help();
     close_settings();
+    mf_confirm_close();
+    mf_devset_close();
     mf_menubar_shutdown();
+    mf_pack_shutdown();
     mf_dash_shutdown();
     mf_http_cli_close(&g_cli);
     if (g_kmio_fd >= 0)
@@ -486,7 +604,7 @@ int mf_tui_run(const char *connect, const char *config_path)
     return 0;
 }
 
-int mf_tui_dump_layout_main(void)
+int mf_tui_dump_layout_main(const char *which)
 {
-    return dump_layout();
+    return dump_layout(which);
 }

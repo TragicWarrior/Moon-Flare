@@ -1,0 +1,416 @@
+#include "ui_screen.h"
+#include "layout.h"
+
+#include <cJSON.h>
+#include <stdio.h>
+#include <string.h>
+#include <vdk.h>
+
+#define COL_BG   COLOR_WHITE
+#define COL_TEXT COLOR_BLACK
+#define COL_TROUGH COLOR_CYAN
+#define NCELL_SHOW 16
+
+static int g_kind; /* 0 pack, 1 charger */
+static vk_label_t *g_chrome1, *g_chrome2, *g_hints;
+static vk_frame_t *g_fr_pack, *g_fr_cells, *g_fr_classic;
+static vk_meter_t *g_mt_pack, *g_mt_soc, *g_mt_batt, *g_mt_watts;
+static vk_progress_t *g_pr_cap;
+static vk_label_t *g_lb_cur, *g_lb_temp, *g_lb_mos, *g_lb_spread;
+static vk_label_t *g_lb_stage, *g_lb_energy, *g_lb_ctemp;
+static vk_meter_t *g_mt_cell[NCELL_SHOW];
+static vk_label_t *g_lb_cell[NCELL_SHOW];
+static int g_visible;
+static int g_has_switch;
+
+static int frame_caption(vk_object_t *obj, int event, void *anything)
+{
+    WINDOW *canvas = vk_widget_get_canvas(VK_WIDGET(obj));
+    const char *cap = anything;
+    (void)event;
+    if (!canvas || !cap)
+        return 0;
+    wattron(canvas, VDK_COLORS(COL_TEXT, COL_BG));
+    mvwprintw(canvas, 0, 2, " %s ", cap);
+    wattroff(canvas, VDK_COLORS(COL_TEXT, COL_BG));
+    return 0;
+}
+
+static vk_label_t *mk_lab(int x, int y, int w)
+{
+    vk_label_t *l = vk_label_create(w);
+    vk_widget_set_colors(VK_WIDGET(l), COL_TEXT, COL_BG);
+    mf_ui_attach(VK_WIDGET(l), x, y);
+    return l;
+}
+
+static vk_meter_t *mk_meter(int x, int y, int len, double lo, double hi)
+{
+    vk_meter_t *m = vk_meter_create(VK_PROGRESS_HORIZONTAL, len, 1);
+    vk_widget_set_colors(VK_WIDGET(m), COL_TEXT, COL_BG);
+    vk_progress_set_range(VK_PROGRESS(m), lo, hi);
+    vk_progress_set_trough(VK_PROGRESS(m), VK_TROUGH_SOLID, COL_TROUGH, COL_BG);
+    vk_progress_set_style(VK_PROGRESS(m), VK_PROGRESS_UNDERBAR);
+    mf_ui_attach(VK_WIDGET(m), x, y);
+    return m;
+}
+
+static void band_cell_v(vk_meter_t *m, double scale)
+{
+    vk_meter_clear_thresholds(m);
+    vk_meter_add_threshold(m, 2.80 * scale, COLOR_YELLOW, COL_BG);
+    vk_meter_add_threshold(m, 3.00 * scale, COLOR_GREEN, COL_BG);
+    vk_meter_add_threshold(m, 3.45 * scale, COLOR_YELLOW, COL_BG);
+    vk_meter_add_threshold(m, 3.60 * scale, COLOR_RED, COL_BG);
+}
+
+static void band_pct(vk_meter_t *m)
+{
+    vk_meter_clear_thresholds(m);
+    vk_meter_add_threshold(m, 10, COLOR_YELLOW, COL_BG);
+    vk_meter_add_threshold(m, 25, COLOR_GREEN, COL_BG);
+}
+
+static void hide_w(vk_widget_t *w)
+{
+    if (w)
+        vk_widget_hide(w);
+}
+
+static void show_w(vk_widget_t *w)
+{
+    if (w)
+        vk_widget_show(w);
+}
+
+static void destroy_w(vk_widget_t *w)
+{
+    if (!w)
+        return;
+    vk_screen_detach_widget(mf_ui_screen(), 0, w);
+    vk_widget_destroy(w);
+}
+
+void mf_pack_init(void)
+{
+    int i, col, row, ccx, ccy, cols = mf_ui_cols();
+    int iw = cols > 4 ? cols - 4 : 76;
+
+    g_chrome1 = mk_lab(0, 1, cols);
+    g_chrome2 = mk_lab(0, 2, cols);
+    g_fr_pack = vk_frame_create(cols, 6);
+    vk_widget_set_colors(VK_WIDGET(g_fr_pack), COL_TEXT, COL_BG);
+    vk_frame_set_border_style(g_fr_pack, VK_BORDER_SINGLE);
+    vk_frame_set_border_colors(g_fr_pack, COL_TEXT, COL_BG);
+    mf_ui_attach(VK_WIDGET(g_fr_pack), 0, 3);
+    vk_object_register_event(VK_OBJECT(g_fr_pack), VK_EVENT_ON_FINALIZE,
+                             frame_caption, "Pack");
+    g_mt_pack = mk_meter(2, 4, 28, 40.0, 58.4);
+    band_cell_v(g_mt_pack, 16.0);
+    g_mt_soc = mk_meter(42, 4, 28, 0.0, 100.0);
+    band_pct(g_mt_soc);
+    g_pr_cap = vk_progress_create(VK_PROGRESS_HORIZONTAL, 28, 1);
+    vk_widget_set_colors(VK_WIDGET(g_pr_cap), COL_TEXT, COL_BG);
+    vk_progress_set_range(g_pr_cap, 0, 100);
+    vk_progress_set_trough(g_pr_cap, VK_TROUGH_SOLID, COL_TROUGH, COL_BG);
+    vk_progress_set_style(g_pr_cap, VK_PROGRESS_UNDERBAR);
+    mf_ui_attach(VK_WIDGET(g_pr_cap), 2, 5);
+    g_lb_cur = mk_lab(42, 5, 30);
+    g_lb_temp = mk_lab(2, 6, iw);
+    g_lb_mos = mk_lab(2, 7, iw);
+
+    g_fr_cells = vk_frame_create(cols, 7);
+    vk_widget_set_colors(VK_WIDGET(g_fr_cells), COL_TEXT, COL_BG);
+    vk_frame_set_border_style(g_fr_cells, VK_BORDER_SINGLE);
+    vk_frame_set_border_colors(g_fr_cells, COL_TEXT, COL_BG);
+    mf_ui_attach(VK_WIDGET(g_fr_cells), 0, 9);
+    vk_object_register_event(VK_OBJECT(g_fr_cells), VK_EVENT_ON_FINALIZE,
+                             frame_caption, "Cells");
+    for (i = 0; i < NCELL_SHOW; i++) {
+        col = i % 4;
+        row = i / 4;
+        ccx = 2 + col * (iw / 4);
+        ccy = 10 + row;
+        g_mt_cell[i] = mk_meter(ccx + 3, ccy, 8, 2.80, 3.65);
+        band_cell_v(g_mt_cell[i], 1.0);
+        g_lb_cell[i] = mk_lab(ccx, ccy, 3);
+    }
+    g_lb_spread = mk_lab(2, 14, iw);
+
+    g_fr_classic = vk_frame_create(cols, 13);
+    vk_widget_set_colors(VK_WIDGET(g_fr_classic), COL_TEXT, COL_BG);
+    vk_frame_set_border_style(g_fr_classic, VK_BORDER_SINGLE);
+    vk_frame_set_border_colors(g_fr_classic, COL_TEXT, COL_BG);
+    mf_ui_attach(VK_WIDGET(g_fr_classic), 0, 3);
+    vk_object_register_event(VK_OBJECT(g_fr_classic), VK_EVENT_ON_FINALIZE,
+                             frame_caption, "Classic");
+    g_mt_batt = mk_meter(2, 4, 28, 40.0, 64.0);
+    g_mt_watts = mk_meter(2, 5, 28, 0.0, 4000.0);
+    g_lb_stage = mk_lab(2, 7, iw);
+    g_lb_energy = mk_lab(2, 8, iw);
+    g_lb_ctemp = mk_lab(2, 10, iw);
+
+    g_hints = mk_lab(0, 24, cols);
+    mf_pack_hide();
+}
+
+void mf_pack_hide(void)
+{
+    int i;
+    hide_w(VK_WIDGET(g_chrome1));
+    hide_w(VK_WIDGET(g_chrome2));
+    hide_w(VK_WIDGET(g_fr_pack));
+    hide_w(VK_WIDGET(g_fr_cells));
+    hide_w(VK_WIDGET(g_fr_classic));
+    hide_w(VK_WIDGET(g_mt_pack));
+    hide_w(VK_WIDGET(g_mt_soc));
+    hide_w(VK_WIDGET(g_pr_cap));
+    hide_w(VK_WIDGET(g_lb_cur));
+    hide_w(VK_WIDGET(g_lb_temp));
+    hide_w(VK_WIDGET(g_lb_mos));
+    hide_w(VK_WIDGET(g_lb_spread));
+    hide_w(VK_WIDGET(g_mt_batt));
+    hide_w(VK_WIDGET(g_mt_watts));
+    hide_w(VK_WIDGET(g_lb_stage));
+    hide_w(VK_WIDGET(g_lb_energy));
+    hide_w(VK_WIDGET(g_lb_ctemp));
+    hide_w(VK_WIDGET(g_hints));
+    for (i = 0; i < NCELL_SHOW; i++) {
+        hide_w(VK_WIDGET(g_mt_cell[i]));
+        hide_w(VK_WIDGET(g_lb_cell[i]));
+    }
+    g_visible = 0;
+}
+
+static void show_pack_widgets(void)
+{
+    int i;
+    show_w(VK_WIDGET(g_chrome1));
+    show_w(VK_WIDGET(g_chrome2));
+    show_w(VK_WIDGET(g_fr_pack));
+    show_w(VK_WIDGET(g_fr_cells));
+    show_w(VK_WIDGET(g_mt_pack));
+    show_w(VK_WIDGET(g_mt_soc));
+    show_w(VK_WIDGET(g_pr_cap));
+    show_w(VK_WIDGET(g_lb_cur));
+    show_w(VK_WIDGET(g_lb_temp));
+    show_w(VK_WIDGET(g_lb_mos));
+    show_w(VK_WIDGET(g_lb_spread));
+    show_w(VK_WIDGET(g_hints));
+    for (i = 0; i < NCELL_SHOW; i++) {
+        show_w(VK_WIDGET(g_mt_cell[i]));
+        show_w(VK_WIDGET(g_lb_cell[i]));
+    }
+}
+
+static void show_charger_widgets(void)
+{
+    show_w(VK_WIDGET(g_chrome1));
+    show_w(VK_WIDGET(g_chrome2));
+    show_w(VK_WIDGET(g_fr_classic));
+    show_w(VK_WIDGET(g_mt_batt));
+    show_w(VK_WIDGET(g_mt_watts));
+    show_w(VK_WIDGET(g_lb_stage));
+    show_w(VK_WIDGET(g_lb_energy));
+    show_w(VK_WIDGET(g_lb_ctemp));
+    show_w(VK_WIDGET(g_hints));
+}
+
+void mf_pack_show(int charger)
+{
+    mf_pack_hide();
+    g_kind = charger ? 1 : 0;
+    if (g_kind)
+        show_charger_widgets();
+    else
+        show_pack_widgets();
+    g_visible = 1;
+    vk_label_set_text(g_hints, g_kind ? "Esc dashboard" :
+                      "c/d/b MOSFET  Tab devices  Esc dashboard");
+    vk_label_update(g_hints);
+    if (g_fr_pack)
+        vk_frame_update(g_fr_pack);
+    if (g_fr_cells)
+        vk_frame_update(g_fr_cells);
+    if (g_fr_classic)
+        vk_frame_update(g_fr_classic);
+}
+
+int mf_pack_visible(void) { return g_visible; }
+int mf_pack_is_charger(void) { return g_kind; }
+int mf_pack_has_switch(void) { return g_has_switch; }
+
+static cJSON *data_obj(cJSON *root)
+{
+    cJSON *d = cJSON_GetObjectItemCaseSensitive(root, "data");
+    return d ? d : root;
+}
+
+static double jnum(cJSON *o, const char *k, double def)
+{
+    cJSON *it = o ? cJSON_GetObjectItemCaseSensitive(o, k) : NULL;
+    return (it && cJSON_IsNumber(it)) ? it->valuedouble : def;
+}
+
+static const char *jstr(cJSON *o, const char *k, const char *def)
+{
+    cJSON *it = o ? cJSON_GetObjectItemCaseSensitive(o, k) : NULL;
+    return (it && cJSON_IsString(it) && it->valuestring) ? it->valuestring : def;
+}
+
+static int caps_switch(cJSON *root)
+{
+    cJSON *caps = cJSON_GetObjectItemCaseSensitive(root, "caps");
+    int i, n;
+    if (!caps || !cJSON_IsArray(caps))
+        return 0;
+    n = cJSON_GetArraySize(caps);
+    for (i = 0; i < n; i++) {
+        cJSON *it = cJSON_GetArrayItem(caps, i);
+        if (cJSON_IsString(it) && it->valuestring &&
+            strstr(it->valuestring, "switch"))
+            return 1;
+    }
+    return 0;
+}
+
+void mf_pack_update(const char *json)
+{
+    cJSON *root, *data, *cells;
+    char line[96];
+    const char *name, *kind, *driver, *state;
+    int seq, i, ncell = 0;
+    double pack_v, soc, cur, vmin = 99, vmax = 0;
+
+    if (!g_visible || !json)
+        return;
+    root = cJSON_Parse(json);
+    if (!root)
+        return;
+    data = data_obj(root);
+    name = jstr(root, "name", "device");
+    kind = jstr(root, "kind", "");
+    driver = jstr(root, "driver", "");
+    state = jstr(root, "state", "");
+    seq = (int)jnum(root, "seq", 0);
+    snprintf(line, sizeof(line), "%s  %s/%s  %s  seq %d",
+             name, kind, driver, state, seq);
+    vk_label_set_text(g_chrome1, line);
+    vk_label_update(g_chrome1);
+    {
+        const char *ep = jstr(root, "endpoint", "");
+        snprintf(line, sizeof(line), "%s", ep[0] ? ep : driver);
+        vk_label_set_text(g_chrome2, line);
+        vk_label_update(g_chrome2);
+    }
+    g_has_switch = caps_switch(root);
+
+    if (!g_kind) {
+        pack_v = jnum(data, "pack_voltage_v", 0);
+        soc = jnum(data, "soc_pct", 0);
+        cur = jnum(data, "current_a", 0);
+        vk_progress_set_value(VK_PROGRESS(g_mt_pack), pack_v);
+        vk_progress_set_value(VK_PROGRESS(g_mt_soc), soc);
+        vk_progress_set_value(g_pr_cap, jnum(data, "soh_pct", 0));
+        vk_progress_update(VK_PROGRESS(g_mt_pack));
+        vk_progress_update(VK_PROGRESS(g_mt_soc));
+        vk_progress_update(g_pr_cap);
+        snprintf(line, sizeof(line), "%+.2f A", cur);
+        vk_label_set_text(g_lb_cur, line);
+        vk_label_update(g_lb_cur);
+        vk_label_set_text(g_lb_temp, "MOS --  T1 --  T2 --");
+        vk_label_update(g_lb_temp);
+        if (g_has_switch) {
+            int chg = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(data, "charge_mosfet_on"));
+            int dsg = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(data, "discharge_mosfet_on"));
+            int bal = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(data, "balancer_switch"));
+            snprintf(line, sizeof(line), "CHG %s  DSG %s  BAL %s",
+                     chg ? "on" : "off", dsg ? "on" : "off", bal ? "on" : "off");
+            vk_label_set_text(g_lb_mos, line);
+        } else {
+            vk_label_set_text(g_lb_mos, "--");
+        }
+        vk_label_update(g_lb_mos);
+        cells = cJSON_GetObjectItemCaseSensitive(data, "cells");
+        if (cells && cJSON_IsArray(cells))
+            ncell = cJSON_GetArraySize(cells);
+        for (i = 0; i < NCELL_SHOW; i++) {
+            double v = 0;
+            char idx[4];
+            if (i < ncell) {
+                cJSON *cell = cJSON_GetArrayItem(cells, i);
+                v = jnum(cell, "voltage_v", 0);
+                if (v < vmin)
+                    vmin = v;
+                if (v > vmax)
+                    vmax = v;
+            }
+            snprintf(idx, sizeof(idx), "%02d", i + 1);
+            vk_label_set_text(g_lb_cell[i], idx);
+            vk_label_update(g_lb_cell[i]);
+            vk_progress_set_value(VK_PROGRESS(g_mt_cell[i]), v > 0 ? v : 2.80);
+            vk_progress_update(VK_PROGRESS(g_mt_cell[i]));
+        }
+        if (ncell > 0 && vmax >= vmin)
+            snprintf(line, sizeof(line), "dV %.0f mV", (vmax - vmin) * 1000.0);
+        else
+            snprintf(line, sizeof(line), "dV --");
+        if (ncell > NCELL_SHOW) {
+            char extra[32];
+            snprintf(extra, sizeof(extra), "  +%d", ncell - NCELL_SHOW);
+            strncat(line, extra, sizeof(line) - strlen(line) - 1);
+        }
+        vk_label_set_text(g_lb_spread, line);
+        vk_label_update(g_lb_spread);
+        vk_frame_update(g_fr_pack);
+        vk_frame_update(g_fr_cells);
+    } else {
+        double bv = jnum(data, "battery_voltage_v", 0);
+        double w = jnum(data, "charging_watts", 0);
+        vk_progress_set_value(VK_PROGRESS(g_mt_batt), bv);
+        vk_progress_set_value(VK_PROGRESS(g_mt_watts), w);
+        vk_progress_update(VK_PROGRESS(g_mt_batt));
+        vk_progress_update(VK_PROGRESS(g_mt_watts));
+        snprintf(line, sizeof(line), "stage %s", jstr(data, "charge_stage", "--"));
+        vk_label_set_text(g_lb_stage, line);
+        vk_label_update(g_lb_stage);
+        snprintf(line, sizeof(line), "kWh today %.1f   Ah today %.0f",
+                 jnum(data, "kwh_today", 0), jnum(data, "ah_today", 0));
+        vk_label_set_text(g_lb_energy, line);
+        vk_label_update(g_lb_energy);
+        snprintf(line, sizeof(line), "FET --  Batt --  PCB --");
+        vk_label_set_text(g_lb_ctemp, line);
+        vk_label_update(g_lb_ctemp);
+        vk_frame_update(g_fr_classic);
+    }
+    cJSON_Delete(root);
+}
+
+void mf_pack_shutdown(void)
+{
+    int i;
+    destroy_w(VK_WIDGET(g_chrome1));
+    destroy_w(VK_WIDGET(g_chrome2));
+    destroy_w(VK_WIDGET(g_hints));
+    destroy_w(VK_WIDGET(g_fr_pack));
+    destroy_w(VK_WIDGET(g_fr_cells));
+    destroy_w(VK_WIDGET(g_fr_classic));
+    destroy_w(VK_WIDGET(g_mt_pack));
+    destroy_w(VK_WIDGET(g_mt_soc));
+    destroy_w(VK_WIDGET(g_pr_cap));
+    destroy_w(VK_WIDGET(g_lb_cur));
+    destroy_w(VK_WIDGET(g_lb_temp));
+    destroy_w(VK_WIDGET(g_lb_mos));
+    destroy_w(VK_WIDGET(g_lb_spread));
+    destroy_w(VK_WIDGET(g_mt_batt));
+    destroy_w(VK_WIDGET(g_mt_watts));
+    destroy_w(VK_WIDGET(g_lb_stage));
+    destroy_w(VK_WIDGET(g_lb_energy));
+    destroy_w(VK_WIDGET(g_lb_ctemp));
+    for (i = 0; i < NCELL_SHOW; i++) {
+        destroy_w(VK_WIDGET(g_mt_cell[i]));
+        destroy_w(VK_WIDGET(g_lb_cell[i]));
+    }
+    memset(&g_chrome1, 0, sizeof(g_chrome1));
+    g_visible = 0;
+}

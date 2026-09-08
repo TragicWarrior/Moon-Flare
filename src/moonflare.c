@@ -15,11 +15,11 @@ static void usage(const char *prog)
     fprintf(stderr,
         "moonflare -- Moon Flare TUI (libviper/VDK)\n"
         "\n"
-        "Usage: %s [--connect HOST:PORT] [--config PATH] [--dump-layout] [--help]\n"
+        "Usage: %s [--connect HOST:PORT] [--config PATH] [--dump-layout [KIND]] [--help]\n"
         "\n"
         "  --connect       moonflared REST address (default %s)\n"
         "  --config        path to moonflare.json\n"
-        "  --dump-layout   print the 80x25 dashboard to stdout and exit\n"
+        "  --dump-layout   80x25 ASCII (dashboard|pack|charger|settings|confirm)\n"
         "\n"
         "All views render at 80x25 minimum. F10 opens the menubar.\n",
         prog, DEFAULT_CONNECT);
@@ -29,6 +29,7 @@ int main(int argc, char **argv)
 {
     const char *connect = DEFAULT_CONNECT;
     const char *config  = NULL;
+    const char *dump_kind = NULL;
     int help = 0, dump = 0;
     int i;
 
@@ -39,6 +40,8 @@ int main(int argc, char **argv)
             config = argv[++i];
         } else if (!strcmp(argv[i], "--dump-layout")) {
             dump = 1;
+            if (i + 1 < argc && argv[i + 1][0] != '-')
+                dump_kind = argv[++i];
         } else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
             help = 1;
         } else {
@@ -53,6 +56,6 @@ int main(int argc, char **argv)
         return 0;
     }
     if (dump)
-        return mf_tui_dump_layout_main();
+        return mf_tui_dump_layout_main(dump_kind);
     return mf_tui_run(connect, config);
 }

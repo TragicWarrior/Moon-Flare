@@ -28,7 +28,7 @@ typedef struct mf_http_cli {
     int             inflight;
     int             skipped;
     char            path[160];
-    char            out[512];
+    char            out[2048];
     size_t          out_len, out_off;
     char            in[65536];
     size_t          in_len;
@@ -47,6 +47,8 @@ void mf_http_cli_pump(mf_http_cli_t *c, int readable, int writable, double now);
 
 /* 1 = queued, 0 = skipped (already in flight), -1 = not connected. */
 int  mf_http_cli_get(mf_http_cli_t *c, const char *path);
+int  mf_http_cli_post(mf_http_cli_t *c, const char *path, const char *json);
+int  mf_http_cli_put(mf_http_cli_t *c, const char *path, const char *json);
 int  mf_http_cli_take_body(mf_http_cli_t *c, char *dst, size_t cap);
 
 #endif

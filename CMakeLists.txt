@@ -70,6 +70,8 @@ add_executable(moonflare
     src/tui/ui_screen.c
     src/tui/menubar.c
     src/tui/dashboard.c
+    src/tui/pack_view.c
+    src/tui/device_settings.c
     src/tui/http_client.c
     src/tui/layout.c
     src/config/config.c)
@@ -213,6 +215,8 @@ target_compile_options(test_tui_http PRIVATE ${MF_WARN})
 add_test(NAME tui_http COMMAND test_tui_http)
 
 add_test(NAME moonflare_dump COMMAND moonflare --dump-layout)
+add_test(NAME moonflare_dump_pack COMMAND moonflare --dump-layout pack)
+add_test(NAME moonflare_dump_charger COMMAND moonflare --dump-layout charger)
 
 install(TARGETS moonflared moonflare RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES contrib/moonflared.service

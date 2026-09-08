@@ -5,10 +5,21 @@
 #include <stdio.h>
 #include <string.h>
 #include <vdk.h>
+#include <stdlib.h>
 
 #define COL_BG   COLOR_WHITE
 #define COL_TEXT COLOR_BLACK
 #define MAX_LINE 32
+#define MAX_CAT  32
+
+typedef struct {
+    char id[40];
+    char name[32];
+    char kind[16];
+} cat_dev_t;
+
+static cat_dev_t g_cat[MAX_CAT];
+static int g_ncat;
 
 static vk_frame_t   *g_fr[3];
 static vk_listbox_t *g_lb[3];
@@ -124,6 +135,65 @@ static void fill_lb(vk_listbox_t *lb, cJSON *arr, const char *kind)
     vk_listbox_update(lb);
 }
 
+static void cat_add(cJSON *arr, const char *kind)
+{
+    int i, n;
+    if (!arr || !cJSON_IsArray(arr))
+        return;
+    n = cJSON_GetArraySize(arr);
+    for (i = 0; i < n && g_ncat < MAX_CAT; i++) {
+        cJSON *o = cJSON_GetArrayItem(arr, i);
+        cJSON *id = cJSON_GetObjectItemCaseSensitive(o, "id");
+        cJSON *name = cJSON_GetObjectItemCaseSensitive(o, "name");
+        cat_dev_t *d = &g_cat[g_ncat++];
+        memset(d, 0, sizeof(*d));
+        snprintf(d->kind, sizeof(d->kind), "%s", kind);
+        if (cJSON_IsString(id) && id->valuestring)
+            snprintf(d->id, sizeof(d->id), "%s", id->valuestring);
+        if (cJSON_IsString(name) && name->valuestring)
+            snprintf(d->name, sizeof(d->name), "%s", name->valuestring);
+    }
+}
+
+int mf_dash_catalog_n(void) { return g_ncat; }
+const char *mf_dash_catalog_id(int i)
+{
+    return (i >= 0 && i < g_ncat) ? g_cat[i].id : "";
+}
+const char *mf_dash_catalog_name(int i)
+{
+    return (i >= 0 && i < g_ncat) ? g_cat[i].name : "";
+}
+const char *mf_dash_catalog_kind(int i)
+{
+    return (i >= 0 && i < g_ncat) ? g_cat[i].kind : "";
+}
+
+void mf_dash_set_visible(int vis)
+{
+    int i;
+    for (i = 0; i < 3; i++) {
+        if (g_fr[i]) {
+            if (vis)
+                vk_widget_show(VK_WIDGET(g_fr[i]));
+            else
+                vk_widget_hide(VK_WIDGET(g_fr[i]));
+        }
+    }
+    if (g_status) {
+        if (vis)
+            vk_widget_show(VK_WIDGET(g_status));
+        else
+            vk_widget_hide(VK_WIDGET(g_status));
+    }
+    if (g_hints) {
+        if (vis)
+            vk_widget_show(VK_WIDGET(g_hints));
+        else
+            vk_widget_hide(VK_WIDGET(g_hints));
+    }
+}
+
 void mf_dash_update(const char *hostport, const char *tag, const char *json)
 {
     char st[96];
@@ -134,6 +204,10 @@ void mf_dash_update(const char *hostport, const char *tag, const char *json)
     int nb = b && cJSON_IsArray(b) ? cJSON_GetArraySize(b) : 0;
     int nc = c && cJSON_IsArray(c) ? cJSON_GetArraySize(c) : 0;
     int ni = i && cJSON_IsArray(i) ? cJSON_GetArraySize(i) : 0;
+    g_ncat = 0;
+    cat_add(b, "battery");
+    cat_add(c, "charger");
+    cat_add(i, "inverter");
 
     snprintf(st, sizeof(st), "%s  [%s]",
              hostport ? hostport : "", tag ? tag : "");

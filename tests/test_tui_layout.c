@@ -55,6 +55,50 @@ int main(void)
           "OK/Cancel on last interior row");
     CHECK(y + h - 1 < MF_TUI_ROWS, "settings bottom visible");
 
+    mf_tui_paint_pack(grid, 1);
+    for (r = 0; r < MF_TUI_ROWS; r++) {
+        CHECK(strlen(grid[r]) == 80, "pack row width 80");
+        CHECK(!strstr(grid[r], "72x22") && !strstr(grid[r], "too small"),
+              "pack no 72x22");
+    }
+    CHECK(strstr(grid[0], "File"), "pack menubar");
+    CHECK(strstr(grid[3], "Pack"), "pack frame");
+    CHECK(strstr(grid[9], "Cells"), "cells frame");
+    CHECK(strstr(grid[7], "CHG"), "MOSFET line");
+    CHECK(strstr(grid[24], "Esc dashboard"), "pack hints row 24");
+    CHECK(strstr(grid[14], "dV") || strstr(grid[14], "mV"), "spread on row 14");
+    {
+        int overflow = 0;
+        for (r = 16; r <= 23; r++) {
+            if (strstr(grid[r], "Pack") || strstr(grid[r], "Cells"))
+                overflow = 1;
+        }
+        CHECK(!overflow, "pack frames do not occupy rows 16-23");
+    }
+
+    mf_tui_paint_charger(grid);
+    CHECK(strstr(grid[3], "Classic"), "charger frame");
+    CHECK(strstr(grid[7], "Absorb") || strstr(grid[7], "stage"), "stage");
+    CHECK(strstr(grid[24], "Esc dashboard"), "charger hints");
+    for (r = 0; r < MF_TUI_ROWS; r++)
+        CHECK(strlen(grid[r]) == 80, "charger row width 80");
+
+    mf_tui_devsettings_geom(80, 25, &x, &y, &w, &h);
+    CHECK(w == 70 && h == 22, "device settings 22x70");
+    CHECK(y == 2 && y + h <= 25, "device settings fits");
+    mf_tui_paint_devsettings(grid, "pack-demo");
+    CHECK(strstr(grid[y + 2], "poll_interval_s"), "poll first");
+    CHECK(strstr(grid[y + h - 2], "Save") && strstr(grid[y + h - 2], "Esc"),
+          "Save/Esc pinned");
+
+    mf_tui_confirm_geom(80, 25, &x, &y, &w, &h);
+    CHECK(w == 50 && h == 7, "confirm 7x50");
+    CHECK(y >= 1 && y + h <= 24, "confirm below menubar above hints");
+    mf_tui_paint_confirm(grid, "pack-demo");
+    CHECK(strstr(grid[0], "File"), "confirm keeps menubar");
+    CHECK(strstr(grid[y], "pack-demo") || strstr(grid[y], "pack"), "confirm title");
+    CHECK(strstr(grid[y + 4], "y") && strstr(grid[y + 4], "n"), "y/n visible");
+
     if (g_fail) {
         fprintf(stderr, "%d check(s) failed\n", g_fail);
         return 1;

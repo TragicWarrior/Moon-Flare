@@ -24,8 +24,40 @@ int  mf_menubar_active(void);
 void mf_dash_init(void);
 void mf_dash_update(const char *hostport, const char *tag, const char *json);
 void mf_dash_shutdown(void);
+void mf_dash_set_visible(int vis);
+int  mf_dash_catalog_n(void);
+const char *mf_dash_catalog_id(int i);
+const char *mf_dash_catalog_name(int i);
+const char *mf_dash_catalog_kind(int i);
+
+void mf_pack_init(void);
+void mf_pack_show(int charger);
+void mf_pack_hide(void);
+void mf_pack_update(const char *json);
+void mf_pack_shutdown(void);
+int  mf_pack_visible(void);
+int  mf_pack_is_charger(void);
+int  mf_pack_has_switch(void);
+
+void mf_devset_show(const char *id, const char *name, double poll);
+void mf_devset_close(void);
+int  mf_devset_open(void);
+int  mf_devset_key(wint_t c);
+const char *mf_devset_id(void);
+const char *mf_devset_poll_text(void);
+
+void mf_confirm_show(const char *name, const char *action);
+void mf_confirm_close(void);
+int  mf_confirm_open(void);
+int  mf_confirm_handle(wint_t c);
+const char *mf_confirm_action(void);
+
+void mf_ui_open_device_view(int idx);
+void mf_ui_open_device_settings(int idx);
+void mf_ui_show_dashboard(void);
+const char *mf_ui_poll_path(void);
 
 int  mf_tui_run(const char *connect, const char *config_path);
-int  mf_tui_dump_layout_main(void);
+int  mf_tui_dump_layout_main(const char *which);
 
 #endif

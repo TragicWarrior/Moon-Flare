@@ -214,7 +214,8 @@ void mf_http_cli_pump(mf_http_cli_t *c, int readable, int writable, double now)
     }
 }
 
-int mf_http_cli_get(mf_http_cli_t *c, const char *path)
+static int cli_begin(mf_http_cli_t *c, const char *method, const char *path,
+                     const char *json)
 {
     if (c->state != MF_CONN_UP || c->fd < 0)
         return -1;
@@ -222,17 +223,42 @@ int mf_http_cli_get(mf_http_cli_t *c, const char *path)
         c->skipped++;
         return 0;
     }
-    snprintf(c->path, sizeof(c->path), "%s", path ? path : "/api/v1/status");
-    c->out_len = (size_t)snprintf(c->out, sizeof(c->out),
-                                  "GET %s HTTP/1.1\r\nHost: %s\r\n"
-                                  "Connection: keep-alive\r\n\r\n",
-                                  c->path, c->host);
+    snprintf(c->path, sizeof(c->path), "%s", path ? path : "/");
+    if (json && json[0])
+        c->out_len = (size_t)snprintf(c->out, sizeof(c->out),
+                                      "%s %s HTTP/1.1\r\nHost: %s\r\n"
+                                      "Content-Type: application/json\r\n"
+                                      "Content-Length: %zu\r\n"
+                                      "Connection: keep-alive\r\n\r\n%s",
+                                      method, c->path, c->host, strlen(json), json);
+    else
+        c->out_len = (size_t)snprintf(c->out, sizeof(c->out),
+                                      "%s %s HTTP/1.1\r\nHost: %s\r\n"
+                                      "Connection: keep-alive\r\n\r\n",
+                                      method, c->path, c->host);
+    if (c->out_len >= sizeof(c->out))
+        c->out_len = sizeof(c->out) - 1;
     c->out_off = 0;
     c->in_len = 0;
     c->have_body = 0;
     c->inflight = 1;
     c->want = MF_CLI_IO_WRITE | MF_CLI_IO_READ;
     return 1;
+}
+
+int mf_http_cli_get(mf_http_cli_t *c, const char *path)
+{
+    return cli_begin(c, "GET", path ? path : "/api/v1/status", NULL);
+}
+
+int mf_http_cli_post(mf_http_cli_t *c, const char *path, const char *json)
+{
+    return cli_begin(c, "POST", path, json);
+}
+
+int mf_http_cli_put(mf_http_cli_t *c, const char *path, const char *json)
+{
+    return cli_begin(c, "PUT", path, json);
 }
 
 int mf_http_cli_take_body(mf_http_cli_t *c, char *dst, size_t cap)

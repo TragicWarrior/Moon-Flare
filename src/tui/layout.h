@@ -24,4 +24,19 @@ void mf_tui_paint_dashboard(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
 void mf_tui_paint_settings(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
                            const char *host, int port, double refresh_s);
 
+#define MF_DEVSET_W  70
+#define MF_DEVSET_H  22
+#define MF_CONFIRM_W 50
+#define MF_CONFIRM_H 7
+
+void mf_tui_devsettings_geom(int cols, int rows, int *x, int *y, int *w, int *h);
+void mf_tui_confirm_geom(int cols, int rows, int *x, int *y, int *w, int *h);
+
+void mf_tui_paint_pack(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1], int has_switch);
+void mf_tui_paint_charger(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1]);
+void mf_tui_paint_devsettings(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
+                              const char *name);
+void mf_tui_paint_confirm(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
+                          const char *name);
+
 #endif

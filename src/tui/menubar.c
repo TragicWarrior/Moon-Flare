@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <vdk.h>
 
 #define COL_BG   COLOR_WHITE
@@ -31,10 +32,18 @@ static void on_quit(void) { mf_ui_quit(); }
 static void on_general(void) { mf_ui_open_settings(); }
 static void on_save(void) { mf_ui_save_config(); }
 static void on_load(void) { mf_ui_load_config(); }
-static void on_dash(void) { /* already dashboard */ }
+static void on_dash(void) { mf_ui_show_dashboard(); }
 static void on_keys(void) { mf_ui_show_help(0); }
 static void on_about(void) { mf_ui_show_help(1); }
 static void on_noop(void) { }
+
+static int g_dyn_cat[32];
+static int g_dyn_kind; /* 0 settings, 1 view */
+
+static void on_dyn_item(void)
+{
+    /* filled via on_drop_item index lookup below */
+}
 
 static const struct mb_item file_items[] = {
     { "Quit", on_quit, 0 },
@@ -90,6 +99,14 @@ static int on_drop_item(vk_widget_t *w, void *idxp)
         vk_menubar_update(g_bar);
     }
     mf_ui_refresh();
+    if (g_open_table && i >= 0 && g_open_table[i].fn == on_dyn_item) {
+        int cat = g_dyn_cat[i];
+        if (g_dyn_kind == 0)
+            mf_ui_open_device_settings(cat);
+        else
+            mf_ui_open_device_view(cat);
+        return 0;
+    }
     if (g_open_table && i >= 0 && g_open_table[i].fn)
         g_open_table[i].fn();
     return 0;
@@ -108,6 +125,33 @@ static void open_dropdown(int idx)
         return;
     close_dropdown();
     t = tables[idx];
+    if (idx == MB_DEVICES || idx == MB_VIEW) {
+        static struct mb_item dyn[40];
+        int nd = 0, c, k;
+        memset(dyn, 0, sizeof(dyn));
+        g_dyn_kind = (idx == MB_VIEW);
+        if (idx == MB_DEVICES) {
+            dyn[nd++] = (struct mb_item){ "Add Device…", on_noop, 0 };
+            dyn[nd++] = (struct mb_item){ "Remove Device…", on_noop, 0 };
+            dyn[nd++] = (struct mb_item){ NULL, NULL, 0 };
+        } else {
+            dyn[nd++] = (struct mb_item){ "Dashboard", on_dash, 0 };
+            dyn[nd++] = (struct mb_item){ NULL, NULL, 0 };
+        }
+        for (c = 0; c < mf_dash_catalog_n() && nd < 38; c++) {
+            const char *nm = mf_dash_catalog_name(c);
+            if (!nm || !nm[0])
+                continue;
+            dyn[nd].label = nm;
+            dyn[nd].fn = on_dyn_item;
+            dyn[nd].end = 0;
+            g_dyn_cat[nd] = c;
+            nd++;
+        }
+        dyn[nd].end = 1;
+        (void)k;
+        t = dyn;
+    }
     g_open_table = t;
     for (i = 0; !t[i].end; i++) {
         if (t[i].label && t[i].fn) {
