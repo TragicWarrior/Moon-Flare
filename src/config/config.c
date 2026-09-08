@@ -213,6 +213,8 @@ static void apply_usb(mf_config_usb_t *u, const cJSON *obj)
         strncpy(u->path, v->valuestring, sizeof(u->path) - 1);
     if ((v = cJSON_GetObjectItem(obj, "serial_id")) && v->type == cJSON_String)
         strncpy(u->serial_id, v->valuestring, sizeof(u->serial_id) - 1);
+    if ((v = cJSON_GetObjectItem(obj, "by_id")) && v->type == cJSON_String)
+        strncpy(u->by_id, v->valuestring, sizeof(u->by_id) - 1);
     if ((v = cJSON_GetObjectItem(obj, "auto_port")) && v->type == cJSON_True)
         u->auto_port = true;
     if ((v = cJSON_GetObjectItem(obj, "baud")) && v->type == cJSON_Number)
@@ -396,6 +398,7 @@ static cJSON *device_to_json(const mf_config_device_t *d)
         cJSON *usb = cJSON_CreateObject();
         cJSON_AddStringOrNull(usb, "path", d->usb.path);
         cJSON_AddStringOrNull(usb, "serial_id", d->usb.serial_id);
+        cJSON_AddStringOrNull(usb, "by_id", d->usb.by_id);
         cJSON_AddBool(usb, "auto_port", d->usb.auto_port);
         cJSON_AddNumber(usb, "baud", d->usb.baud);
         cJSON_AddNumber(usb, "addr", d->usb.addr);
@@ -594,6 +597,9 @@ void mf_config_overlay_merge(mf_daemon_config_t *base_cfg,
         if (ov->usb.serial_id[0])
             strncpy(base->usb.serial_id, ov->usb.serial_id,
                     sizeof(base->usb.serial_id) - 1);
+        if (ov->usb.by_id[0])
+            strncpy(base->usb.by_id, ov->usb.by_id,
+                    sizeof(base->usb.by_id) - 1);
         if (ov->usb.baud > 0)
             base->usb.baud = ov->usb.baud;
         if (ov->usb.addr > 0)

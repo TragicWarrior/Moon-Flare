@@ -20,6 +20,7 @@ typedef struct cJSON cJSON;
 #define MF_DEV_KIND_SIZE      32
 #define MF_DEV_USB_PATH_SIZE  128
 #define MF_DEV_USB_SERIAL_SIZE 64
+#define MF_DEV_USB_BYID_SIZE  256
 #define MF_DEV_BLE_ADDR_SIZE  32
 #define MF_DEV_BLE_ADAPTER_SIZE 16
 #define MF_DEV_BLE_PROTO_SIZE 32
@@ -36,6 +37,7 @@ typedef struct {
 typedef struct {
     char path[MF_DEV_USB_PATH_SIZE];
     char serial_id[MF_DEV_USB_SERIAL_SIZE];
+    char by_id[MF_DEV_USB_BYID_SIZE];
     bool auto_port;
     int baud;
     int addr;

@@ -1,10 +1,12 @@
 /*
  * libmf_battery_xd.so — non-blocking RS485 wrap of bms_txrx_*.
- * Prelude 0x33 / 0x42 then poll 0x01. No 0x05/0x06 writes. No USB automode.
+ * Prelude 0x33 / 0x42 then poll 0x01. No 0x05/0x06 writes.
+ * USB auto-port via usb_id on open/error only (not every poll).
  */
 
 #include "bms_proto.h"
 #include "mf_plugin.h"
+#include "usb_id.h"
 
 #include <errno.h>
 #include <stdarg.h>
@@ -26,7 +28,10 @@ enum {
 };
 
 typedef struct {
+    char     uuid[40];
     char     path[128];
+    char     serial_id[64];
+    char     by_id[256];
     int      baud;
     int      addr;
     int      auto_port;
@@ -188,6 +193,49 @@ static int try_open_fd(xd_ctx_t *c)
     return 0;
 }
 
+static int apply_usb_policy(xd_ctx_t *c, int opened)
+{
+    mf_usb_want_t w;
+    mf_usb_id_t got;
+    int rc;
+
+    memset(&w, 0, sizeof(w));
+    snprintf(w.path, sizeof(w.path), "%s", c->path);
+    snprintf(w.serial_id, sizeof(w.serial_id), "%s", c->serial_id);
+    snprintf(w.by_id, sizeof(w.by_id), "%s", c->by_id);
+    w.auto_port = c->auto_port;
+    w.path_ok = opened ? 1 : 0;
+    rc = mf_usb_resolve(c->uuid, &w, &got);
+    if (rc == MF_USB_LEARN || rc == MF_USB_USE) {
+        if (got.serial_id[0])
+            snprintf(c->serial_id, sizeof(c->serial_id), "%s", got.serial_id);
+        if (got.by_id[0])
+            snprintf(c->by_id, sizeof(c->by_id), "%s", got.by_id);
+        return 0;
+    }
+    if (rc == MF_USB_RELOCATE) {
+        if (c->fd >= 0) {
+            close(c->fd);
+            c->fd = -1;
+            c->io_active = 0;
+        }
+        snprintf(c->path, sizeof(c->path), "%s", got.path);
+        if (got.serial_id[0])
+            snprintf(c->serial_id, sizeof(c->serial_id), "%s", got.serial_id);
+        if (got.by_id[0])
+            snprintf(c->by_id, sizeof(c->by_id), "%s", got.by_id);
+        return try_open_fd(c);
+    }
+    if (opened && c->fd >= 0 && (c->serial_id[0] || c->by_id[0])) {
+        close(c->fd);
+        c->fd = -1;
+        c->io_active = 0;
+        set_err(c, "usb identity mismatch");
+        return -1;
+    }
+    return opened ? 0 : -1;
+}
+
 static void start_cmd(xd_ctx_t *c, int phase)
 {
     c->cmd_phase = phase;
@@ -212,7 +260,10 @@ static void *xd_open(const char *spec_json, char *err, size_t errsz)
     c->auto_port = 0;
     c->poll_interval_s = POLL_DEFAULT;
     usb = json_usb_scope(spec_json ? spec_json : "");
+    json_str(spec_json ? spec_json : "", "uuid", c->uuid, sizeof(c->uuid));
     json_str(usb, "path", c->path, sizeof(c->path));
+    json_str(usb, "serial_id", c->serial_id, sizeof(c->serial_id));
+    json_str(usb, "by_id", c->by_id, sizeof(c->by_id));
     c->baud = json_int(usb, "baud", 9600);
     c->addr = json_int(usb, "addr", 1);
     c->auto_port = json_bool(usb, "auto_port", 0);
@@ -227,13 +278,20 @@ static void *xd_open(const char *spec_json, char *err, size_t errsz)
         c->poll_interval_s = POLL_MIN;
     c->next_poll = 0;
     c->cmd_phase = CMD_FW;
-    if (try_open_fd(c) != 0) {
+    if (try_open_fd(c) == 0) {
+        if (apply_usb_policy(c, 1) != 0) {
+            if (err && errsz)
+                snprintf(err, errsz, "%s", c->err);
+            c->reopen_at = mono_now() + c->poll_interval_s;
+        } else {
+            start_cmd(c, CMD_FW);
+        }
+    } else if (apply_usb_policy(c, 0) == 0 && c->fd >= 0) {
+        start_cmd(c, CMD_FW);
+    } else {
         if (err && errsz)
             snprintf(err, errsz, "%s", c->err);
         c->reopen_at = mono_now() + c->poll_interval_s;
-        /* ctx still returned: step retries. */
-    } else {
-        start_cmd(c, CMD_FW);
     }
     return c;
 }
@@ -272,7 +330,12 @@ static mf_step_t xd_step(void *v)
     if (c->fd < 0) {
         if (now < c->reopen_at)
             return MF_STEP_IDLE;
-        if (try_open_fd(c) != 0) {
+        if (try_open_fd(c) == 0) {
+            if (apply_usb_policy(c, 1) != 0) {
+                c->reopen_at = now + c->poll_interval_s;
+                return MF_STEP_ERROR;
+            }
+        } else if (apply_usb_policy(c, 0) != 0 || c->fd < 0) {
             c->reopen_at = now + c->poll_interval_s;
             return MF_STEP_ERROR;
         }
@@ -418,10 +481,11 @@ static int xd_get_settings(void *v, char *json, size_t cap)
     if (!c || !json || cap == 0)
         return -1;
     snprintf(json, cap,
-             "{\"usb.path\":\"%s\",\"usb.baud\":%d,\"usb.addr\":%d,"
-             "\"usb.auto_port\":%s,\"poll_interval_s\":%.1f}",
-             c->path, c->baud, c->addr, c->auto_port ? "true" : "false",
-             c->poll_interval_s);
+             "{\"usb.path\":\"%s\",\"usb.serial_id\":\"%s\",\"usb.by_id\":\"%s\","
+             "\"usb.baud\":%d,\"usb.addr\":%d,\"usb.auto_port\":%s,"
+             "\"poll_interval_s\":%.1f}",
+             c->path, c->serial_id, c->by_id, c->baud, c->addr,
+             c->auto_port ? "true" : "false", c->poll_interval_s);
     return 0;
 }
 

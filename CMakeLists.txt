@@ -146,9 +146,11 @@ add_test(NAME classic_plugin COMMAND test_classic_plugin
 
 add_library(mf_battery_xd SHARED
     src/plugins/battery_xd/plugin.c
-    src/xd/bms_proto.c)
+    src/xd/bms_proto.c
+    src/usb/usb_id.c)
 target_include_directories(mf_battery_xd PRIVATE
-    ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src/xd)
+    ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src/xd
+    ${CMAKE_SOURCE_DIR}/src/usb)
 set_target_properties(mf_battery_xd PROPERTIES
     PREFIX "lib" OUTPUT_NAME "mf_battery_xd"
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/xd_plugins)
@@ -170,6 +172,12 @@ target_compile_options(test_xd_plugin PRIVATE ${MF_WARN_PT})
 set_target_properties(test_xd_plugin PROPERTIES
     BUILD_RPATH ${CMAKE_BINARY_DIR}/xd_plugins)
 add_test(NAME xd_plugin COMMAND test_xd_plugin $<TARGET_FILE:mf_battery_xd>)
+
+add_executable(test_usb_id tests/test_usb_id.c src/usb/usb_id.c)
+target_include_directories(test_usb_id PRIVATE ${CMAKE_SOURCE_DIR}/src/usb)
+target_compile_definitions(test_usb_id PRIVATE _GNU_SOURCE)
+target_compile_options(test_usb_id PRIVATE ${MF_WARN_PT})
+add_test(NAME usb_id COMMAND test_usb_id)
 
 add_executable(test_classic_discover tests/test_classic_discover.c)
 target_include_directories(test_classic_discover PRIVATE ${CMAKE_SOURCE_DIR}/include)
