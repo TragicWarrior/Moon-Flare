@@ -172,12 +172,23 @@ static void test_tui_defaults(void)
 /* 3. Round-trip moonflared.json.example                              */
 /* ------------------------------------------------------------------ */
 
+static const mf_config_device_t *find_dev(const mf_daemon_config_t *cfg,
+                                          const char *uuid)
+{
+    int i;
+    for (i = 0; i < cfg->n_devices; i++) {
+        if (strcmp(cfg->devices[i].uuid, uuid) == 0)
+            return &cfg->devices[i];
+    }
+    return NULL;
+}
+
 static void test_roundtrip_example(void)
 {
     /* Copy the example file to a temp location. */
     char example_src[4096];
     snprintf(example_src, sizeof(example_src),
-             "/home/bryanc/devel/repos-git/moon-flare/etc/moonflared.json.example");
+             "%s/etc/moonflared.json.example", MF_SOURCE_DIR);
 
     char tmpdir[] = "/tmp/mf-test-rt-XXXXXX";
     char *dir = mkdtemp(tmpdir);
@@ -190,24 +201,27 @@ static void test_roundtrip_example(void)
     int rc = mf_config_load(cfg_path, &cfg);
     assert_int_eq(0, rc, "roundtrip: load example");
 
-    /* Verify Classic device values from the example. */
-    assert_int_eq(3, cfg.n_devices, "roundtrip: 3 devices");
+    /* Soak starter: demo + Classic on; XD/JK templates stay disabled. */
+    assert_int_eq(4, cfg.n_devices, "roundtrip: 4 devices");
 
-    /* Find the classic-1 device (uuid: ...0003). */
-    int classic_idx = -1;
-    for (int i = 0; i < cfg.n_devices; i++) {
-        if (strcmp(cfg.devices[i].uuid,
-                   "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0003") == 0) {
-            classic_idx = i;
-            break;
-        }
-    }
-    assert_int_eq(1, classic_idx >= 0 ? 1 : 0,
-                  "roundtrip: classic-1 device found");
+    const mf_config_device_t *demo = find_dev(
+        &cfg, "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0004");
+    const mf_config_device_t *classic = find_dev(
+        &cfg, "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0003");
+    const mf_config_device_t *xd = find_dev(
+        &cfg, "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0001");
+    const mf_config_device_t *jk = find_dev(
+        &cfg, "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0002");
+    assert_int_eq(1, demo && classic && xd && jk ? 1 : 0,
+                  "roundtrip: all four example uuids present");
+    assert_int_eq(1, demo->enabled ? 1 : 0, "roundtrip: pack-demo enabled");
+    assert_int_eq(1, classic->enabled ? 1 : 0, "roundtrip: classic-1 enabled");
+    assert_int_eq(0, xd->enabled ? 1 : 0, "roundtrip: pack-xd disabled");
+    assert_int_eq(0, jk->enabled ? 1 : 0, "roundtrip: pack-jk disabled");
 
-    assert_str_eq("172.16.0.20", cfg.devices[classic_idx].modbus.ip,
+    assert_str_eq("172.16.0.20", classic->modbus.ip,
                   "roundtrip: classic modbus ip");
-    assert_int_eq(10, cfg.devices[classic_idx].modbus.unit_id,
+    assert_int_eq(10, classic->modbus.unit_id,
                   "roundtrip: classic unit_id");
 
     /* Serialize and re-parse (round-trip). */
@@ -221,16 +235,24 @@ static void test_roundtrip_example(void)
     mf_config_apply_json(&cfg2, root);
     cJSON_Delete(root);
 
-    /* Verify ip and unit_id survived serialize/parse. */
-    for (int i = 0; i < cfg2.n_devices; i++) {
-        if (strcmp(cfg2.devices[i].uuid,
-                   "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0003") == 0) {
-            assert_str_eq("172.16.0.20", cfg2.devices[i].modbus.ip,
-                          "roundtrip: ip survived round-trip");
-            assert_int_eq(10, cfg2.devices[i].modbus.unit_id,
-                          "roundtrip: unit_id survived round-trip");
-            break;
-        }
+    /* Verify ip, unit_id, and soak enabled flags survived serialize/parse. */
+    {
+        const mf_config_device_t *c2 = find_dev(
+            &cfg2, "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0003");
+        const mf_config_device_t *xd2 = find_dev(
+            &cfg2, "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0001");
+        const mf_config_device_t *jk2 = find_dev(
+            &cfg2, "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0002");
+        assert_int_eq(1, c2 && xd2 && jk2 ? 1 : 0,
+                      "roundtrip: devices survived re-parse");
+        assert_str_eq("172.16.0.20", c2->modbus.ip,
+                      "roundtrip: ip survived round-trip");
+        assert_int_eq(10, c2->modbus.unit_id,
+                      "roundtrip: unit_id survived round-trip");
+        assert_int_eq(0, xd2->enabled ? 1 : 0,
+                      "roundtrip: pack-xd stayed disabled");
+        assert_int_eq(0, jk2->enabled ? 1 : 0,
+                      "roundtrip: pack-jk stayed disabled");
     }
 
     free(json);

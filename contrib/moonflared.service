@@ -1,3 +1,40 @@
+# Moon Flare collector. Additive: a third daemon on :5250.
+#
+# Do NOT add Conflicts=xd_bmsd.service or Conflicts=jkbmsd.service.
+# Do NOT systemctl disable/stop those prototypes from this unit.
+# xd_bmsd :5252 and jkbmsd :5253 stay up until an operator claims their
+# hardware in a maintenance window. moonflared never binds 5252/5253.
+#
+# Soak order (do not skip to JK):
+#   1. demo + Classic — prototypes untouched. Classic is unused by them.
+#      Classic is a single Modbus TCP client; do not run Local App / HA
+#      on :502 at the same time.
+#   2. XD USB — ttyUSB0 cannot be shared. Leave pack-xd enabled:false
+#      while xd_bmsd holds the fd, or stop xd_bmsd for a cutover.
+#   3. JK BLE last — exclusive per MAC. Disable jkbmsd only at cutover,
+#      then set pack-jk enabled:true.
+#
+# Rollback:
+#   Demo / Classic-only soak: systemctl stop moonflared.
+#     Prototypes were never stopped.
+#   After XD USB cutover: restore
+#     xd_bmsd --battery ttyUSB0:/dev/ttyUSB0:9600:1
+#     (jkbms-tui/contrib/xd_bmsd.service) and keep pack-xd enabled:false
+#     (or omit it) so moonflared does not reopen ttyUSB0.
+#   After JK BLE cutover: systemctl enable --now jkbmsd so it reclaims
+#     the MAC; set pack-jk enabled:false in moonflared.json. Both
+#     daemons cannot own 28:D4:1E:A7:23:39.
+#
+# This file is installed to $prefix/share/moon-flare/, not to
+# /etc/systemd/system. Copy it there yourself; cmake --install does
+# not enable the unit.
+#
+# Health: curl -sS http://127.0.0.1:5250/api/v1/health
+#
+# User=bryanc from t=0 (unlike xd_bmsd, which is root). dialout for
+# USB-RS485; bluetooth for BlueZ/D-Bus. StateDirectory is the overlay
+# + history path when /etc/moonflare/ is not writable.
+
 [Unit]
 Description=Moon Flare collector (moonflared)
 After=network.target bluetooth.service

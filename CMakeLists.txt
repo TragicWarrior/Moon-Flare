@@ -110,6 +110,7 @@ add_executable(test_config
 )
 target_include_directories(test_config PRIVATE src third_party/cJSON)
 target_link_libraries(test_config PRIVATE mf_cjson)
+target_compile_definitions(test_config PRIVATE MF_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 add_test(NAME config COMMAND test_config)
 
 add_library(mf_demo SHARED src/plugins/demo/plugin.c)
@@ -288,6 +289,9 @@ add_test(NAME moonflare_dump_charger COMMAND moonflare --dump-layout charger)
 
 install(TARGETS moonflared moonflare RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(TARGETS mf_gatt RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR})
+# Match KD 20 / example plugin_dir: $prefix/lib/moon-flare, not multiarch LIBDIR.
+install(TARGETS mf_demo mf_charger_classic mf_battery_xd mf_battery_jk
+        LIBRARY DESTINATION lib/moon-flare)
 install(FILES contrib/moonflared.service
         DESTINATION ${CMAKE_INSTALL_DATADIR}/moon-flare)
 install(FILES etc/moonflared.json.example etc/moonflare.json.example
