@@ -190,10 +190,11 @@ static void open_dropdown(int idx)
     snprintf(cap, sizeof(cap), " %s ", titles[idx]);
     win = vk_window_create(max_w + 2, max_h + 2);
     vk_window_set_title(win, cap);
-    vk_window_set_border_style(win, VK_BORDER_SINGLE | VK_RELIEF_RAISED);
-    vk_widget_set_relief_colors(VK_WIDGET(win), COLOR_WHITE, COLOR_BLACK);
+    vk_window_set_border_style(win, VK_BORDER_SINGLE);
     vk_window_set_border_colors(win, COL_DROP_FG, COL_MENU_BG);
+    vk_window_set_border_attrs(win, A_BOLD);
     vk_widget_set_colors(VK_WIDGET(win), COL_DROP_FG, COL_MENU_BG);
+    vk_widget_set_attrs(VK_WIDGET(win), A_BOLD);
     vk_window_set_child(win, VK_WIDGET(lb));
 
     vk_widget_get_position(VK_WIDGET(g_bar), &bar_x, &bar_y);

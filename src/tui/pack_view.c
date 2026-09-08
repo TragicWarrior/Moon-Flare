@@ -11,14 +11,23 @@
 #define COL_TROUGH COLOR_BLACK /* dark trough; 8-color has no gray */
 #define NCELL_SHOW 16
 #define CELL_LAB_W 8
+#define CELL_GAP   1
 #define CELL_BAR_W 8
+#define NAME_W     5
+#define METER_W    22
+#define VAL_W      10
+#define LEFT_X     2
+#define RIGHT_X    42
 
 static int g_kind; /* 0 pack, 1 charger */
 static vk_label_t *g_chrome1, *g_chrome2, *g_hints;
 static vk_frame_t *g_fr_pack, *g_fr_cells, *g_fr_classic;
 static vk_meter_t *g_mt_pack, *g_mt_soc, *g_mt_batt, *g_mt_watts;
 static vk_progress_t *g_pr_cap;
+static vk_label_t *g_lb_npack, *g_lb_nsoc, *g_lb_ncap;
+static vk_label_t *g_lb_vpack, *g_lb_vsoc, *g_lb_vcap;
 static vk_label_t *g_lb_cur, *g_lb_temp, *g_lb_mos, *g_lb_spread;
+static vk_label_t *g_lb_nbatt, *g_lb_nwatts, *g_lb_vbatt, *g_lb_vwatts;
 static vk_label_t *g_lb_stage, *g_lb_energy, *g_lb_ctemp;
 static vk_meter_t *g_mt_cell[NCELL_SHOW];
 static vk_label_t *g_lb_cell[NCELL_SHOW];
@@ -42,7 +51,7 @@ static void style_frame(vk_frame_t *f)
 {
     vk_widget_set_colors(VK_WIDGET(f), COL_TEXT, COL_BG);
     vk_widget_set_relief_colors(VK_WIDGET(f), COLOR_WHITE, COLOR_BLACK);
-    vk_frame_set_border_style(f, VK_BORDER_SINGLE | VK_RELIEF_RAISED);
+    vk_frame_set_border_style(f, VK_BORDER_SINGLE | VK_RELIEF_SUNKEN);
     vk_frame_set_border_colors(f, COL_TEXT, COL_BG);
 }
 
@@ -51,6 +60,16 @@ static vk_label_t *mk_lab(int x, int y, int w)
     vk_label_t *l = vk_label_create(w);
     vk_widget_set_colors(VK_WIDGET(l), COL_TEXT, COL_BG);
     mf_ui_attach(VK_WIDGET(l), x, y);
+    return l;
+}
+
+static vk_label_t *mk_lab_txt(int x, int y, int w, const char *txt)
+{
+    vk_label_t *l = mk_lab(x, y, w);
+    if (txt) {
+        vk_label_set_text(l, txt);
+        vk_label_update(l);
+    }
     return l;
 }
 
@@ -113,17 +132,23 @@ void mf_pack_init(void)
     mf_ui_attach(VK_WIDGET(g_fr_pack), 0, 3);
     vk_object_register_event(VK_OBJECT(g_fr_pack), VK_EVENT_ON_FINALIZE,
                              frame_caption, "Pack");
-    g_mt_pack = mk_meter(2, 4, 28, 40.0, 58.4);
+    g_lb_npack = mk_lab_txt(LEFT_X, 4, NAME_W, "Pack");
+    g_mt_pack = mk_meter(LEFT_X + NAME_W, 4, METER_W, 40.0, 58.4);
     band_cell_v(g_mt_pack, 16.0);
-    g_mt_soc = mk_meter(42, 4, 28, 0.0, 100.0);
+    g_lb_vpack = mk_lab(LEFT_X + NAME_W + METER_W + 1, 4, VAL_W);
+    g_lb_nsoc = mk_lab_txt(RIGHT_X, 4, NAME_W, "SOC");
+    g_mt_soc = mk_meter(RIGHT_X + NAME_W, 4, METER_W, 0.0, 100.0);
     band_pct(g_mt_soc);
-    g_pr_cap = vk_progress_create(VK_PROGRESS_HORIZONTAL, 28, 1);
+    g_lb_vsoc = mk_lab(RIGHT_X + NAME_W + METER_W + 1, 4, VAL_W);
+    g_lb_ncap = mk_lab_txt(LEFT_X, 5, NAME_W, "Cap");
+    g_pr_cap = vk_progress_create(VK_PROGRESS_HORIZONTAL, METER_W, 1);
     vk_widget_set_colors(VK_WIDGET(g_pr_cap), COL_TEXT, COL_BG);
     vk_progress_set_range(g_pr_cap, 0, 100);
     vk_progress_set_trough(g_pr_cap, VK_TROUGH_SOLID, COL_TROUGH, COL_BG);
     vk_progress_set_style(g_pr_cap, VK_PROGRESS_UNDERBAR);
-    mf_ui_attach(VK_WIDGET(g_pr_cap), 2, 5);
-    g_lb_cur = mk_lab(42, 5, 30);
+    mf_ui_attach(VK_WIDGET(g_pr_cap), LEFT_X + NAME_W, 5);
+    g_lb_vcap = mk_lab(LEFT_X + NAME_W + METER_W + 1, 5, VAL_W);
+    g_lb_cur = mk_lab(RIGHT_X, 5, 30);
     g_lb_temp = mk_lab(2, 6, iw);
     g_lb_mos = mk_lab(2, 7, iw);
 
@@ -137,7 +162,8 @@ void mf_pack_init(void)
         row = i / 4;
         ccx = 2 + col * (iw / 4);
         ccy = 10 + row;
-        g_mt_cell[i] = mk_meter(ccx + CELL_LAB_W, ccy, CELL_BAR_W, 2.80, 3.65);
+        g_mt_cell[i] = mk_meter(ccx + CELL_LAB_W + CELL_GAP, ccy, CELL_BAR_W,
+                                2.80, 3.65);
         band_cell_v(g_mt_cell[i], 1.0);
         g_lb_cell[i] = mk_lab(ccx, ccy, CELL_LAB_W);
     }
@@ -148,8 +174,12 @@ void mf_pack_init(void)
     mf_ui_attach(VK_WIDGET(g_fr_classic), 0, 3);
     vk_object_register_event(VK_OBJECT(g_fr_classic), VK_EVENT_ON_FINALIZE,
                              frame_caption, "Classic");
-    g_mt_batt = mk_meter(2, 4, 28, 40.0, 64.0);
-    g_mt_watts = mk_meter(2, 5, 28, 0.0, 4000.0);
+    g_lb_nbatt = mk_lab_txt(LEFT_X, 4, NAME_W, "Batt");
+    g_mt_batt = mk_meter(LEFT_X + NAME_W, 4, 28, 40.0, 64.0);
+    g_lb_vbatt = mk_lab(LEFT_X + NAME_W + 28 + 1, 4, VAL_W);
+    g_lb_nwatts = mk_lab_txt(LEFT_X, 5, NAME_W, "Watts");
+    g_mt_watts = mk_meter(LEFT_X + NAME_W, 5, 28, 0.0, 4000.0);
+    g_lb_vwatts = mk_lab(LEFT_X + NAME_W + 28 + 1, 5, VAL_W);
     g_lb_stage = mk_lab(2, 7, iw);
     g_lb_energy = mk_lab(2, 8, iw);
     g_lb_ctemp = mk_lab(2, 10, iw);
@@ -169,12 +199,22 @@ void mf_pack_hide(void)
     hide_w(VK_WIDGET(g_mt_pack));
     hide_w(VK_WIDGET(g_mt_soc));
     hide_w(VK_WIDGET(g_pr_cap));
+    hide_w(VK_WIDGET(g_lb_npack));
+    hide_w(VK_WIDGET(g_lb_nsoc));
+    hide_w(VK_WIDGET(g_lb_ncap));
+    hide_w(VK_WIDGET(g_lb_vpack));
+    hide_w(VK_WIDGET(g_lb_vsoc));
+    hide_w(VK_WIDGET(g_lb_vcap));
     hide_w(VK_WIDGET(g_lb_cur));
     hide_w(VK_WIDGET(g_lb_temp));
     hide_w(VK_WIDGET(g_lb_mos));
     hide_w(VK_WIDGET(g_lb_spread));
     hide_w(VK_WIDGET(g_mt_batt));
     hide_w(VK_WIDGET(g_mt_watts));
+    hide_w(VK_WIDGET(g_lb_nbatt));
+    hide_w(VK_WIDGET(g_lb_nwatts));
+    hide_w(VK_WIDGET(g_lb_vbatt));
+    hide_w(VK_WIDGET(g_lb_vwatts));
     hide_w(VK_WIDGET(g_lb_stage));
     hide_w(VK_WIDGET(g_lb_energy));
     hide_w(VK_WIDGET(g_lb_ctemp));
@@ -196,6 +236,12 @@ static void show_pack_widgets(void)
     show_w(VK_WIDGET(g_mt_pack));
     show_w(VK_WIDGET(g_mt_soc));
     show_w(VK_WIDGET(g_pr_cap));
+    show_w(VK_WIDGET(g_lb_npack));
+    show_w(VK_WIDGET(g_lb_nsoc));
+    show_w(VK_WIDGET(g_lb_ncap));
+    show_w(VK_WIDGET(g_lb_vpack));
+    show_w(VK_WIDGET(g_lb_vsoc));
+    show_w(VK_WIDGET(g_lb_vcap));
     show_w(VK_WIDGET(g_lb_cur));
     show_w(VK_WIDGET(g_lb_temp));
     show_w(VK_WIDGET(g_lb_mos));
@@ -214,6 +260,10 @@ static void show_charger_widgets(void)
     show_w(VK_WIDGET(g_fr_classic));
     show_w(VK_WIDGET(g_mt_batt));
     show_w(VK_WIDGET(g_mt_watts));
+    show_w(VK_WIDGET(g_lb_nbatt));
+    show_w(VK_WIDGET(g_lb_nwatts));
+    show_w(VK_WIDGET(g_lb_vbatt));
+    show_w(VK_WIDGET(g_lb_vwatts));
     show_w(VK_WIDGET(g_lb_stage));
     show_w(VK_WIDGET(g_lb_energy));
     show_w(VK_WIDGET(g_lb_ctemp));
@@ -351,12 +401,39 @@ void mf_pack_update(const char *json)
         pack_v = jnum(data, "pack_voltage_v", 0);
         soc = jnum(data, "soc_pct", 0);
         cur = jnum(data, "current_a", 0);
-        vk_progress_set_value(VK_PROGRESS(g_mt_pack), pack_v);
-        vk_progress_set_value(VK_PROGRESS(g_mt_soc), soc);
-        vk_progress_set_value(g_pr_cap, jnum(data, "soh_pct", 0));
+        {
+            int ns = (int)jnum(data, "cell_count", 16);
+            double full = jnum(data, "full_capacity_ah", 0);
+            double rem = jnum(data, "remaining_capacity_ah", 0);
+
+            if (ns < 1)
+                ns = 16;
+            vk_progress_set_range(VK_PROGRESS(g_mt_pack), 2.80 * ns, 3.65 * ns);
+            band_cell_v(g_mt_pack, (double)ns);
+            vk_progress_set_value(VK_PROGRESS(g_mt_pack), pack_v);
+            vk_progress_set_value(VK_PROGRESS(g_mt_soc), soc);
+            if (full > 0) {
+                vk_progress_set_range(g_pr_cap, 0, full);
+                vk_progress_set_value(g_pr_cap, rem > 0 ? rem : 0);
+                snprintf(line, sizeof(line), "%.0f Ah", rem);
+            } else {
+                vk_progress_set_range(g_pr_cap, 0, 100);
+                vk_progress_set_value(g_pr_cap, jnum(data, "soh_pct", 0));
+                snprintf(line, sizeof(line), "SOH %.0f%%",
+                         jnum(data, "soh_pct", 0));
+            }
+        }
         vk_progress_update(VK_PROGRESS(g_mt_pack));
         vk_progress_update(VK_PROGRESS(g_mt_soc));
         vk_progress_update(g_pr_cap);
+        vk_label_set_text(g_lb_vcap, line);
+        vk_label_update(g_lb_vcap);
+        snprintf(line, sizeof(line), "%.2f V", pack_v);
+        vk_label_set_text(g_lb_vpack, line);
+        vk_label_update(g_lb_vpack);
+        snprintf(line, sizeof(line), "%.0f%%", soc);
+        vk_label_set_text(g_lb_vsoc, line);
+        vk_label_update(g_lb_vsoc);
         snprintf(line, sizeof(line), "%+.2f A", cur);
         vk_label_set_text(g_lb_cur, line);
         vk_label_update(g_lb_cur);
@@ -417,6 +494,12 @@ void mf_pack_update(const char *json)
         vk_progress_set_value(VK_PROGRESS(g_mt_watts), w);
         vk_progress_update(VK_PROGRESS(g_mt_batt));
         vk_progress_update(VK_PROGRESS(g_mt_watts));
+        snprintf(line, sizeof(line), "%.2f V", bv);
+        vk_label_set_text(g_lb_vbatt, line);
+        vk_label_update(g_lb_vbatt);
+        snprintf(line, sizeof(line), "%.0f W", w);
+        vk_label_set_text(g_lb_vwatts, line);
+        vk_label_update(g_lb_vwatts);
         snprintf(line, sizeof(line), "stage %s", jstr(data, "charge_stage", "--"));
         vk_label_set_text(g_lb_stage, line);
         vk_label_update(g_lb_stage);
@@ -444,12 +527,22 @@ void mf_pack_shutdown(void)
     destroy_w(VK_WIDGET(g_mt_pack));
     destroy_w(VK_WIDGET(g_mt_soc));
     destroy_w(VK_WIDGET(g_pr_cap));
+    destroy_w(VK_WIDGET(g_lb_npack));
+    destroy_w(VK_WIDGET(g_lb_nsoc));
+    destroy_w(VK_WIDGET(g_lb_ncap));
+    destroy_w(VK_WIDGET(g_lb_vpack));
+    destroy_w(VK_WIDGET(g_lb_vsoc));
+    destroy_w(VK_WIDGET(g_lb_vcap));
     destroy_w(VK_WIDGET(g_lb_cur));
     destroy_w(VK_WIDGET(g_lb_temp));
     destroy_w(VK_WIDGET(g_lb_mos));
     destroy_w(VK_WIDGET(g_lb_spread));
     destroy_w(VK_WIDGET(g_mt_batt));
     destroy_w(VK_WIDGET(g_mt_watts));
+    destroy_w(VK_WIDGET(g_lb_nbatt));
+    destroy_w(VK_WIDGET(g_lb_nwatts));
+    destroy_w(VK_WIDGET(g_lb_vbatt));
+    destroy_w(VK_WIDGET(g_lb_vwatts));
     destroy_w(VK_WIDGET(g_lb_stage));
     destroy_w(VK_WIDGET(g_lb_energy));
     destroy_w(VK_WIDGET(g_lb_ctemp));

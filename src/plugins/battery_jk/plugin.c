@@ -631,10 +631,12 @@ static int jk_get_reading(void *v, char *json, size_t cap)
     js_append(json, cap, &off,
               "{\"pack_voltage_v\":%.3f,\"current_a\":%.2f,\"soc_pct\":%.1f,"
               "\"soh_pct\":%.1f,\"cell_count\":%u,"
+              "\"full_capacity_ah\":%.2f,\"remaining_capacity_ah\":%.2f,"
               "\"charge_mosfet_on\":%s,\"discharge_mosfet_on\":%s,"
               "\"balancer_switch\":%s,\"cells\":[",
               (double)r->pack_voltage_v, (double)r->current_a,
               (double)r->soc_pct, (double)r->soh_pct, (unsigned)r->cell_count,
+              (double)r->nominal_ah, (double)r->remaining_ah,
               r->charge_mosfet_on ? "true" : "false",
               r->discharge_mosfet_on ? "true" : "false",
               r->balancing_indicator ? "true" : "false");
