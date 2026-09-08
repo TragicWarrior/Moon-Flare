@@ -30,6 +30,13 @@ extern const uint8_t JK_HEADER_CMD[4];
 /* Register addresses for writes */
 #define JK_REG_BALANCE_TRIGGER 0x06
 #define JK_REG_START_BALANCE_JK02_32S  0x22
+#define JK_REG_START_BALANCE_JK02_24S  0x26
+
+/* Python models.clamp_trigger_v / clamp_start_v (saturate, 3 decimals). */
+#define JK_TRIGGER_MIN_V 0.003
+#define JK_TRIGGER_MAX_V 1.0
+#define JK_START_MIN_V   1.20
+#define JK_START_MAX_V   4.25
 
 /* MOSFET switch registers */
 #define JK_REG_CHARGE          0x1D
@@ -183,6 +190,11 @@ const uint8_t *jk_build_switch_cmd(uint8_t reg, bool on);
  * reg: register address (JK_REG_BALANCE_TRIGGER=0x06, etc.)
  * value: value in millivolts/milliamps */
 const uint8_t *jk_build_register_cmd(uint8_t reg, uint32_t value);
+
+/* Saturate like Python clamp_trigger_v / clamp_start_v (round 3 decimals). */
+double   jk_clamp_trigger_v(double volts);
+double   jk_clamp_start_v(double volts);
+uint32_t jk_volts_to_mv(double volts); /* nearest millivolt; no clamp */
 
 /* --- Frame Assembler --- */
 

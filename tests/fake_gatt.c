@@ -36,6 +36,8 @@ typedef struct {
     size_t   frame_off;
     int      charge, discharge, balance;
     int      cell_mv;
+    uint32_t trigger_mv;
+    uint32_t start_mv;
     unsigned tick_wait;
 } cli_t;
 
@@ -230,6 +232,12 @@ static void seed_mac(cli_t *c)
         c->cell_mv = 3200;
 }
 
+static uint32_t le32(const uint8_t *p)
+{
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
 static void apply_write(cli_t *c, const uint8_t *cmd, int n)
 {
     uint8_t reg, on;
@@ -245,6 +253,10 @@ static void apply_write(cli_t *c, const uint8_t *cmd, int n)
         c->discharge = on;
     else if (reg == JK_REG_BALANCE)
         c->balance = on;
+    else if (reg == JK_REG_BALANCE_TRIGGER && n >= 10)
+        c->trigger_mv = le32(cmd + 6);
+    else if (reg == JK_REG_START_BALANCE_JK02_32S && n >= 10)
+        c->start_mv = le32(cmd + 6);
 }
 
 static void handle_line(cli_t *c, int idx, const char *line)

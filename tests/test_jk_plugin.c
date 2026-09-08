@@ -279,6 +279,28 @@ int main(int argc, char **argv)
     CHECK(ops->get_reading(b, json, sizeof(json)) == 0, "read B after SET A");
     CHECK(json_true(json, "charge_mosfet_on"), "B charge still on (SET isolation)");
 
+    CHECK(ops->action(a, "set_balance_trigger", "{\"volts\":0.030}",
+                      err, sizeof(err)) == MF_OK, "trigger 0.030 A");
+    CHECK(ops->action(b, "set_balance_trigger", "{\"volts\":2.0}",
+                      err, sizeof(err)) == MF_OK, "trigger 2.0 B clamps");
+    CHECK(ops->action(a, "set_start_balance", "{\"volts\":3.300}",
+                      err, sizeof(err)) == MF_OK, "start 3.300 A");
+    CHECK(ops->action(b, "set_start_balance", "{\"volts\":0.5}",
+                      err, sizeof(err)) == MF_OK, "start 0.5 B clamps");
+    drive_both(ops, a, b, 400);
+    CHECK(ops->get_settings(a, json, sizeof(json)) == 0, "settings A");
+    CHECK(json_num(json, "balance_trigger_v") > 0.029 &&
+          json_num(json, "balance_trigger_v") < 0.031, "A trigger 0.030");
+    CHECK(json_num(json, "start_balance_v") > 3.29 &&
+          json_num(json, "start_balance_v") < 3.31, "A start 3.300");
+    CHECK(ops->get_settings(b, json, sizeof(json)) == 0, "settings B");
+    CHECK(json_num(json, "balance_trigger_v") > 0.99 &&
+          json_num(json, "balance_trigger_v") < 1.01, "B trigger clamped 1.0");
+    CHECK(json_num(json, "start_balance_v") > 1.19 &&
+          json_num(json, "start_balance_v") < 1.21, "B start clamped 1.20");
+    CHECK(ops->action(a, "set_balance_trigger", "{}", err, sizeof(err))
+          == MF_ERR_INVAL, "trigger missing volts");
+
     ops->close(a);
     ops->close(b);
     dlclose(dl);

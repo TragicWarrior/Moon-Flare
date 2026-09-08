@@ -569,6 +569,47 @@ TEST(test_wrong_header)
     free(raw);
 }
 
+/* Test: clamp_trigger_v, clamp_start_v, jk_volts_to_mv. */
+TEST(test_clamp_trigger_and_start)
+{
+    /* --- trigger in range --- */
+    ASSERT_FLOAT_EQ(jk_clamp_trigger_v(0.030), 0.030, "trigger in range");
+    ASSERT_EQ(jk_volts_to_mv(jk_clamp_trigger_v(0.030)), 30U,
+              "trigger 0.030V -> 30mV");
+
+    /* --- trigger below min --- */
+    ASSERT_FLOAT_EQ(jk_clamp_trigger_v(0.001), 0.003, "trigger below min clamped");
+    ASSERT_EQ(jk_volts_to_mv(jk_clamp_trigger_v(0.001)), 3U,
+              "clamped 0.003V -> 3mV");
+
+    /* --- trigger above max --- */
+    ASSERT_FLOAT_EQ(jk_clamp_trigger_v(2.0), 1.0, "trigger above max clamped");
+    ASSERT_EQ(jk_volts_to_mv(jk_clamp_trigger_v(2.0)), 1000U,
+              "clamped 1.0V -> 1000mV");
+
+    /* --- trigger rounding --- */
+    ASSERT_FLOAT_EQ(jk_clamp_trigger_v(0.0304), 0.030, "trigger 0.0304 rounds down");
+    ASSERT_FLOAT_EQ(jk_clamp_trigger_v(0.0306), 0.031, "trigger 0.0306 rounds up");
+
+    /* --- start in range --- */
+    ASSERT_FLOAT_EQ(jk_clamp_start_v(3.300), 3.300, "start in range");
+    ASSERT_EQ(jk_volts_to_mv(jk_clamp_start_v(3.300)), 3300U,
+              "start 3.300V -> 3300mV");
+
+    /* --- start below min --- */
+    ASSERT_FLOAT_EQ(jk_clamp_start_v(1.0), 1.20, "start below min clamped");
+    ASSERT_EQ(jk_volts_to_mv(jk_clamp_start_v(1.0)), 1200U,
+              "clamped 1.20V -> 1200mV");
+
+    /* --- start above max --- */
+    ASSERT_FLOAT_EQ(jk_clamp_start_v(5.0), 4.25, "start above max clamped");
+    ASSERT_EQ(jk_volts_to_mv(jk_clamp_start_v(5.0)), 4250U,
+              "clamped 4.25V -> 4250mV");
+
+    /* --- jk_volts_to_mv does not clamp --- */
+    ASSERT_EQ(jk_volts_to_mv(2.0), 2000U, "volts_to_mv(2.0) not clamped");
+}
+
 /* ---- Main ---- */
 
 int main(void)
@@ -579,6 +620,7 @@ int main(void)
     RUN_TEST(test_build_command_counter);
     RUN_TEST(test_switch_commands);
     RUN_TEST(test_register_writes);
+    RUN_TEST(test_clamp_trigger_and_start);
     RUN_TEST(test_decode_cell_info_16s);
     RUN_TEST(test_decode_cell_info_spread);
     RUN_TEST(test_crc_mismatch);

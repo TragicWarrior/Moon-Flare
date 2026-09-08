@@ -53,6 +53,10 @@ typedef struct {
     uint8_t              frame[JK_FRAME_SIZE];
     jk_cell_info_t       cell;
     int                  have_data;
+    int                  have_trigger;
+    int                  have_start;
+    double               trigger_v;
+    double               start_v;
     char                 err[96];
 } jk_ctx_t;
 
@@ -502,8 +506,23 @@ static int jk_get_settings(void *v, char *json, size_t cap)
         return -1;
     snprintf(json, cap,
              "{\"ble.address\":\"%s\",\"ble.adapter\":\"%s\","
-             "\"poll_interval_s\":%.1f}",
+             "\"poll_interval_s\":%.1f",
              c->mac, c->adapter, c->poll_interval_s);
+    if (c->have_trigger) {
+        size_t n = strlen(json);
+        snprintf(json + n, cap - n, ",\"balance_trigger_v\":%.3f", c->trigger_v);
+    }
+    if (c->have_start) {
+        size_t n = strlen(json);
+        snprintf(json + n, cap - n, ",\"start_balance_v\":%.3f", c->start_v);
+    }
+    {
+        size_t n = strlen(json);
+        if (n + 2 <= cap) {
+            json[n] = '}';
+            json[n + 1] = '\0';
+        }
+    }
     return 0;
 }
 
@@ -527,6 +546,18 @@ static int jk_put_settings(void *v, const char *json, char *err, size_t errsz)
     return MF_OK;
 }
 
+static int queue_hex_write(jk_ctx_t *c, const uint8_t *cmd)
+{
+    char hex[48], line[192];
+    hex_encode(cmd, JK_CMD_FRAME_SIZE, hex, sizeof(hex));
+    snprintf(line, sizeof(line),
+             "{\"cmd\":\"write\",\"address\":\"%s\",\"hex\":\"%s\","
+             "\"response\":false}",
+             c->mac, hex);
+    queue_str(c, line);
+    return MF_OK;
+}
+
 static int jk_action(void *v, const char *action, const char *json,
                      char *err, size_t errsz)
 {
@@ -534,7 +565,8 @@ static int jk_action(void *v, const char *action, const char *json,
     uint8_t reg = 0;
     int on = 1;
     const uint8_t *cmd;
-    char hex[48], line[192];
+    double volts;
+    uint32_t mv;
     if (err && errsz)
         err[0] = '\0';
     if (!c || !action)
@@ -546,13 +578,33 @@ static int jk_action(void *v, const char *action, const char *json,
     }
     if (strcmp(action, "refresh") == 0) {
         cmd = jk_build_command(JK_CMD_CELL_INFO, NULL, 0, 0);
-        hex_encode(cmd, JK_CMD_FRAME_SIZE, hex, sizeof(hex));
-        snprintf(line, sizeof(line),
-                 "{\"cmd\":\"write\",\"address\":\"%s\",\"hex\":\"%s\","
-                 "\"response\":false}",
-                 c->mac, hex);
-        queue_str(c, line);
-        return MF_OK;
+        return queue_hex_write(c, cmd);
+    }
+    if (strcmp(action, "set_balance_trigger") == 0) {
+        if (!json || !json_find_key(json, "volts")) {
+            if (err && errsz)
+                snprintf(err, errsz, "volts required");
+            return MF_ERR_INVAL;
+        }
+        volts = jk_clamp_trigger_v(json_double(json, "volts", 0.0));
+        mv = jk_volts_to_mv(volts);
+        c->trigger_v = volts;
+        c->have_trigger = 1;
+        cmd = jk_build_register_cmd(JK_REG_BALANCE_TRIGGER, mv);
+        return queue_hex_write(c, cmd);
+    }
+    if (strcmp(action, "set_start_balance") == 0) {
+        if (!json || !json_find_key(json, "volts")) {
+            if (err && errsz)
+                snprintf(err, errsz, "volts required");
+            return MF_ERR_INVAL;
+        }
+        volts = jk_clamp_start_v(json_double(json, "volts", 0.0));
+        mv = jk_volts_to_mv(volts);
+        c->start_v = volts;
+        c->have_start = 1;
+        cmd = jk_build_register_cmd(JK_REG_START_BALANCE_JK02_32S, mv);
+        return queue_hex_write(c, cmd);
     }
     if (strcmp(action, "set_switch") != 0) {
         if (err && errsz)
@@ -568,13 +620,7 @@ static int jk_action(void *v, const char *action, const char *json,
     else
         reg = JK_REG_CHARGE;
     cmd = jk_build_switch_cmd(reg, on != 0);
-    hex_encode(cmd, JK_CMD_FRAME_SIZE, hex, sizeof(hex));
-    snprintf(line, sizeof(line),
-             "{\"cmd\":\"write\",\"address\":\"%s\",\"hex\":\"%s\","
-             "\"response\":false}",
-             c->mac, hex);
-    queue_str(c, line);
-    return MF_OK;
+    return queue_hex_write(c, cmd);
 }
 
 static int jk_probe_start(const char *args_json, void **job, char *err, size_t errsz)

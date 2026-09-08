@@ -58,6 +58,40 @@ const uint8_t *jk_build_register_cmd(uint8_t reg, uint32_t value)
     return jk_build_command(reg, payload, 4, 0);
 }
 
+static double round3(double v)
+{
+    if (v >= 0.0)
+        return (double)((long)(v * 1000.0 + 0.5)) / 1000.0;
+    return (double)((long)(v * 1000.0 - 0.5)) / 1000.0;
+}
+
+double jk_clamp_trigger_v(double volts)
+{
+    double v = round3(volts);
+    if (v < JK_TRIGGER_MIN_V)
+        return JK_TRIGGER_MIN_V;
+    if (v > JK_TRIGGER_MAX_V)
+        return JK_TRIGGER_MAX_V;
+    return v;
+}
+
+double jk_clamp_start_v(double volts)
+{
+    double v = round3(volts);
+    if (v < JK_START_MIN_V)
+        return JK_START_MIN_V;
+    if (v > JK_START_MAX_V)
+        return JK_START_MAX_V;
+    return v;
+}
+
+uint32_t jk_volts_to_mv(double volts)
+{
+    if (volts >= 0.0)
+        return (uint32_t)(volts * 1000.0 + 0.5);
+    return 0;
+}
+
 /* ---- Assembler ---- */
 
 void jk_assembler_init(jk_frame_assembler_t *asm_)
