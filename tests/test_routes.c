@@ -17,6 +17,12 @@ void mf_log(int prio, const char *fmt, ...)
     (void)fmt;
 }
 
+int mf_http_rebind_listen(const char *spec)
+{
+    (void)spec;
+    return 0;
+}
+
 static int g_fail = 0;
 
 static void check(int cond, const char *desc)
@@ -482,6 +488,146 @@ static void test_pr10(void)
           "GET /drivers still 200");
 }
 
+static uint64_t gen_from(const char *body)
+{
+    cJSON *root = cJSON_Parse(body);
+    uint64_t g = 0;
+    if (root) {
+        cJSON *it = cJSON_GetObjectItem(root, "config_gen");
+        if (it && cJSON_IsNumber(it))
+            g = (uint64_t)it->valuedouble;
+        cJSON_Delete(root);
+    }
+    return g;
+}
+
+static void test_config_apply(void)
+{
+    mf_rest_request_t req;
+    mf_rest_response_t resp;
+    char put[768];
+    uint64_t gen;
+    const char *id_a = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee01";
+    const char *id_b = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
+
+    printf("10. config apply (KD 29)\n");
+
+    memset(&req, 0, sizeof(req));
+    req.method = "GET";
+    req.path = "/api/v1/config";
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 200,
+          "GET config before apply");
+    gen = gen_from(resp.body);
+
+    snprintf(put, sizeof(put),
+             "{\"listen\":\"127.0.0.1:5250\",\"config_gen\":%llu,"
+             "\"devices\":[{\"uuid\":\"%s\",\"name\":\"cfg-batt\","
+             "\"kind\":\"battery\",\"driver\":\"demo\",\"enabled\":true,"
+             "\"poll_interval_s\":2.0}]}",
+             (unsigned long long)gen, id_a);
+    memset(&req, 0, sizeof(req));
+    req.method = "PUT";
+    req.path = "/api/v1/config";
+    req.body = put;
+    req.body_len = strlen(put);
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 200,
+          "PUT config ADD cfg-batt → 200");
+
+    memset(&req, 0, sizeof(req));
+    req.method = "GET";
+    req.path = "/api/v1/devices";
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 200,
+          "GET devices after apply");
+    check(strstr(resp.body, "cfg-batt") != NULL, "live list has cfg-batt");
+    check(strstr(resp.body, "pr10-batt") == NULL, "removed pr10-batt");
+
+    memset(&req, 0, sizeof(req));
+    req.method = "GET";
+    req.path = "/api/v1/config";
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0, "GET config after ADD");
+    gen = gen_from(resp.body);
+    check(strstr(resp.body, "cfg-batt") != NULL, "config has cfg-batt");
+
+    snprintf(put, sizeof(put),
+             "{\"config_gen\":%llu,\"devices\":[{\"uuid\":\"%s\","
+             "\"name\":\"cfg-renamed\",\"kind\":\"battery\",\"driver\":\"demo\","
+             "\"enabled\":true,\"poll_interval_s\":3.0}]}",
+             (unsigned long long)gen, id_a);
+    memset(&req, 0, sizeof(req));
+    req.method = "PUT";
+    req.path = "/api/v1/config";
+    req.body = put;
+    req.body_len = strlen(put);
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 200,
+          "PUT rename/poll patch → 200");
+
+    memset(&req, 0, sizeof(req));
+    req.method = "GET";
+    req.path = "/api/v1/devices";
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0, "GET after rename");
+    check(strstr(resp.body, "cfg-renamed") != NULL, "patched name live");
+
+    memset(&req, 0, sizeof(req));
+    req.method = "GET";
+    req.path = "/api/v1/config";
+    memset(&resp, 0, sizeof(resp));
+    mf_rest_dispatch(&req, &resp);
+    gen = gen_from(resp.body);
+
+    snprintf(put, sizeof(put),
+             "{\"config_gen\":%llu,\"devices\":["
+             "{\"uuid\":\"%s\",\"name\":\"dup\",\"kind\":\"battery\","
+             "\"driver\":\"demo\",\"enabled\":true},"
+             "{\"uuid\":\"%s\",\"name\":\"dup\",\"kind\":\"battery\","
+             "\"driver\":\"demo\",\"enabled\":true}]}",
+             (unsigned long long)gen, id_a, id_b);
+    memset(&req, 0, sizeof(req));
+    req.method = "PUT";
+    req.path = "/api/v1/config";
+    req.body = put;
+    req.body_len = strlen(put);
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 400,
+          "PUT duplicate name → 400");
+
+    snprintf(put, sizeof(put),
+             "{\"config_gen\":%llu,\"devices\":["
+             "{\"uuid\":\"%s\",\"name\":\"c1\",\"kind\":\"charger\","
+             "\"driver\":\"demo\",\"enabled\":true,"
+             "\"modbus\":{\"ip\":\"10.0.0.1\",\"port\":502}},"
+             "{\"uuid\":\"%s\",\"name\":\"c2\",\"kind\":\"charger\","
+             "\"driver\":\"demo\",\"enabled\":true,"
+             "\"modbus\":{\"ip\":\"10.0.0.1\",\"port\":502}}]}",
+             (unsigned long long)gen, id_a, id_b);
+    req.body = put;
+    req.body_len = strlen(put);
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 400,
+          "PUT duplicate endpoint → 400");
+
+    snprintf(put, sizeof(put),
+             "{\"config_gen\":%llu,\"devices\":[]}",
+             (unsigned long long)gen);
+    req.body = put;
+    req.body_len = strlen(put);
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 200,
+          "PUT empty devices → 200");
+
+    memset(&req, 0, sizeof(req));
+    req.method = "GET";
+    req.path = "/api/v1/devices";
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0, "GET after empty apply");
+    check(strcmp(resp.body, "[]") == 0, "no live devices");
+}
+
 int main(void)
 {
     srand((unsigned)time(NULL));
@@ -499,6 +645,7 @@ int main(void)
     test_malformed_json();
     test_delete();
     test_pr10();
+    test_config_apply();
 
     printf("\n");
     if (g_fail > 0) {

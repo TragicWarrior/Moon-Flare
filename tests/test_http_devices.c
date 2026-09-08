@@ -179,7 +179,8 @@ static const char *body_of(const char *resp)
     return b ? b + 4 : resp;
 }
 
-static pid_t spawn_daemon(const char *bin, const char *plugindir, int port, int logfd)
+static pid_t spawn_daemon(const char *bin, const char *plugindir, int port,
+                          int logfd, const char *cfgpath)
 {
     pid_t pid = fork();
     char spec[64];
@@ -194,8 +195,13 @@ static pid_t spawn_daemon(const char *bin, const char *plugindir, int port, int 
         }
         snprintf(spec, sizeof(spec), "127.0.0.1:%d", port);
         snprintf(portstr, sizeof(portstr), "%d", port);
-        execl(bin, bin, "--listen", spec, "--foreground",
-              "--plugin-dir", plugindir, (char *)NULL);
+        if (cfgpath && cfgpath[0])
+            execl(bin, bin, "--listen", spec, "--foreground",
+                  "--plugin-dir", plugindir, "--config", cfgpath,
+                  (char *)NULL);
+        else
+            execl(bin, bin, "--listen", spec, "--foreground",
+                  "--plugin-dir", plugindir, (char *)NULL);
         _exit(127);
     }
     return pid;
@@ -216,6 +222,34 @@ static void stop_daemon(pid_t pid)
     waitpid(pid, NULL, 0);
 }
 
+static uint64_t gen_of_body(const char *body)
+{
+    const char *p = strstr(body, "\"config_gen\":");
+    if (!p)
+        return 0;
+    return strtoull(p + 13, NULL, 10);
+}
+
+static int write_startup_cfg(const char *path)
+{
+    FILE *f = fopen(path, "w");
+    if (!f)
+        return -1;
+    fputs("{\n"
+          "  \"devices\": [{\n"
+          "    \"uuid\": \"aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee01\",\n"
+          "    \"name\": \"pack-cfg\",\n"
+          "    \"kind\": \"battery\",\n"
+          "    \"driver\": \"demo\",\n"
+          "    \"enabled\": true,\n"
+          "    \"poll_interval_s\": 2.0,\n"
+          "    \"bus\": \"demo\"\n"
+          "  }]\n"
+          "}\n", f);
+    fclose(f);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     const char *bin, *plugindir;
@@ -223,8 +257,9 @@ int main(int argc, char **argv)
     pid_t pid;
     char resp[8192];
     char uuid[40];
-    char req[512];
+    char req[2048];
     char delpath[256];
+    const char *cfgpath = "/tmp/mf-http-devices-cfg.json";
 
     if (argc < 3) {
         fprintf(stderr, "usage: %s moonflared plugin-dir\n", argv[0]);
@@ -237,8 +272,12 @@ int main(int argc, char **argv)
         FAIL("pick_port");
         return 1;
     }
+    if (write_startup_cfg(cfgpath) != 0) {
+        FAIL("write startup cfg");
+        return 1;
+    }
     logfd = open("/tmp/mf-http-devices.log", O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    pid = spawn_daemon(bin, plugindir, port, logfd);
+    pid = spawn_daemon(bin, plugindir, port, logfd, cfgpath);
     if (logfd >= 0)
         close(logfd);
     if (pid < 0) {
@@ -269,6 +308,8 @@ int main(int argc, char **argv)
     else if (!strstr(body_of(resp), "\"inverters\":[]") ||
              !strstr(body_of(resp), "\"phantoms\":[]"))
         FAIL("status missing empty inverters/phantoms");
+    else if (!strstr(body_of(resp), "pack-cfg"))
+        FAIL("startup did not open pack-cfg");
 
     if (http_exchange(port,
                       "GET /api/v1/drivers HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
@@ -391,6 +432,55 @@ int main(int argc, char **argv)
         FAIL("GET config");
     else if (!strstr(body_of(resp), "config_gen"))
         FAIL("config missing config_gen");
+    else if (!strstr(body_of(resp), "pack-cfg"))
+        FAIL("config missing startup pack-cfg");
+    else if (uuid[0] && !strstr(body_of(resp), "pack-demo"))
+        FAIL("config missing POSTed pack-demo");
+    {
+        uint64_t gen = gen_of_body(body_of(resp));
+        char body[1024];
+        snprintf(body, sizeof(body),
+                 "{\"config_gen\":%llu,\"devices\":["
+                 "{\"uuid\":\"aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee01\","
+                 "\"name\":\"pack-cfg\",\"kind\":\"battery\",\"driver\":\"demo\","
+                 "\"enabled\":true,\"poll_interval_s\":2.0,\"bus\":\"demo\"},"
+                 "{\"uuid\":\"%s\",\"name\":\"pack-demo\",\"kind\":\"battery\","
+                 "\"driver\":\"demo\",\"enabled\":true,\"poll_interval_s\":2.0},"
+                 "{\"uuid\":\"cccccccc-dddd-4eee-8fff-aaaaaaaaaa03\","
+                 "\"name\":\"charger-cfg\",\"kind\":\"charger\",\"driver\":\"demo\","
+                 "\"enabled\":true,\"poll_interval_s\":2.0}]}",
+                 (unsigned long long)gen, uuid[0] ? uuid : "00000000-0000-4000-8000-000000000000");
+        snprintf(req, sizeof(req),
+                 "PUT /api/v1/config HTTP/1.1\r\nHost: x\r\n"
+                 "If-Match: \"%llu\"\r\nContent-Type: application/json\r\n"
+                 "Content-Length: %zu\r\nConnection: close\r\n\r\n%s",
+                 (unsigned long long)gen, strlen(body), body);
+        if (http_exchange(port, req, resp, sizeof(resp)) < 0 ||
+            (status_of(resp) != 200 && status_of(resp) != 202))
+            FAIL("PUT config ADD charger-cfg");
+        else if (http_exchange(port,
+                 "GET /api/v1/status HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+                 resp, sizeof(resp)) == 0 &&
+                 !strstr(body_of(resp), "charger-cfg"))
+            FAIL("status missing charger-cfg after PUT");
+    }
+    if (http_exchange(port,
+                      "GET /api/v1/config HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+                      resp, sizeof(resp)) == 0 && status_of(resp) == 200) {
+        uint64_t gen = gen_of_body(body_of(resp));
+        const char *body = "{\"listen\":\"127.0.0.1:99999\"}";
+        snprintf(req, sizeof(req),
+                 "PUT /api/v1/config HTTP/1.1\r\nHost: x\r\n"
+                 "If-Match: \"%llu\"\r\nContent-Type: application/json\r\n"
+                 "Content-Length: %zu\r\nConnection: close\r\n\r\n%s",
+                 (unsigned long long)gen, strlen(body), body);
+        if (http_exchange(port, req, resp, sizeof(resp)) < 0 || status_of(resp) != 500)
+            FAIL("PUT listen invalid port should 500");
+        if (http_exchange(port,
+                "GET /api/v1/status HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+                resp, sizeof(resp)) == 0 && !strstr(body_of(resp), "pack-cfg"))
+            FAIL("listen fail applied device diffs");
+    }
     {
         const char *body = "{\"listen\":\"127.0.0.1:5250\"}";
         snprintf(req, sizeof(req),

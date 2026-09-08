@@ -43,6 +43,55 @@ static mf_daemon_config_t *live_cfg(void)
     return g_live;
 }
 
+static void cfg_remove_uuid(const char *uuid)
+{
+    mf_daemon_config_t *cfg = live_cfg();
+    int i;
+    if (!uuid || !uuid[0])
+        return;
+    for (i = 0; i < cfg->n_devices; i++) {
+        if (strcmp(cfg->devices[i].uuid, uuid) != 0)
+            continue;
+        if (i + 1 < cfg->n_devices)
+            memmove(&cfg->devices[i], &cfg->devices[i + 1],
+                    (size_t)(cfg->n_devices - i - 1) * sizeof(cfg->devices[0]));
+        cfg->n_devices--;
+        memset(&cfg->devices[cfg->n_devices], 0, sizeof(cfg->devices[0]));
+        return;
+    }
+}
+
+static void cfg_upsert_from_json(const char *uuid, const cJSON *root)
+{
+    mf_daemon_config_t *cfg = live_cfg();
+    mf_config_device_t *d = NULL;
+    cJSON *copy;
+    int i;
+    if (!uuid || !uuid[0] || !root)
+        return;
+    for (i = 0; i < cfg->n_devices; i++) {
+        if (strcmp(cfg->devices[i].uuid, uuid) == 0) {
+            d = &cfg->devices[i];
+            break;
+        }
+    }
+    if (!d) {
+        if (cfg->n_devices >= MF_MAX_DEVICES)
+            return;
+        d = &cfg->devices[cfg->n_devices++];
+        memset(d, 0, sizeof(*d));
+    }
+    copy = cJSON_Duplicate(root, 1);
+    if (!copy)
+        return;
+    cJSON_DeleteItemFromObjectCaseSensitive(copy, "uuid");
+    cJSON_AddStringToObject(copy, "uuid", uuid);
+    (void)mf_config_device_from_json(d, copy);
+    cJSON_Delete(copy);
+    snprintf(d->uuid, sizeof(d->uuid), "%s", uuid);
+    d->enabled = true;
+}
+
 static void set_error(mf_rest_response_t *resp, int status, const char *msg)
 {
     cJSON *root = cJSON_CreateObject();
@@ -294,8 +343,10 @@ static int handle_devices_create(const mf_rest_request_t *req, mf_rest_response_
     snprintf(kindbuf, sizeof(kindbuf), "%s", kind);
     snprintf(driverbuf, sizeof(driverbuf), "%s", driver);
     spec = cJSON_PrintUnformatted(root);
-    rc = mf_devices_add(namebuf, kindbuf, driverbuf, spec, uuid, sizeof(uuid),
-                        err, sizeof(err));
+    rc = mf_devices_add(namebuf, kindbuf, driverbuf, spec, NULL,
+                        uuid, sizeof(uuid), err, sizeof(err));
+    if (rc == 0)
+        cfg_upsert_from_json(uuid, root);
     free(spec);
     cJSON_Delete(root);
     if (rc == -2) {
@@ -369,6 +420,7 @@ static int handle_device_delete(const char *id, mf_rest_response_t *resp)
     int st = mf_devices_delete(id);
     if (st == 202) {
         cJSON *o = cJSON_CreateObject();
+        cfg_remove_uuid(id);
         cJSON_AddStringToObject(o, "status", "stopping");
         set_json(resp, 202, o, NULL);
         return 0;
@@ -498,7 +550,9 @@ static int handle_config_put(const mf_rest_request_t *req, mf_rest_response_t *r
     mf_daemon_config_t *live = live_cfg();
     mf_daemon_config_t next;
     cJSON *root;
-    int i, j;
+    char err[96];
+    int rc;
+    int listen_changed;
 
     if (!req->body || req->body_len == 0) {
         set_error(resp, 400, "bad request");
@@ -514,21 +568,28 @@ static int handle_config_put(const mf_rest_request_t *req, mf_rest_response_t *r
         set_error(resp, 409, "config_gen mismatch");
         return 0;
     }
-    mf_config_defaults(&next);
+    next = *live;
     mf_config_apply_json(&next, root);
     cJSON_Delete(root);
-    for (i = 0; i < next.n_devices; i++) {
-        for (j = i + 1; j < next.n_devices; j++) {
-            if (next.devices[i].name[0] &&
-                strcmp(next.devices[i].name, next.devices[j].name) == 0) {
-                set_error(resp, 400, "duplicate name");
-                return 0;
-            }
-        }
+    if (mf_devices_validate_config(next.devices, next.n_devices,
+                                   err, sizeof(err)) != 0) {
+        set_error(resp, 400, err[0] ? err : "bad request");
+        return 0;
+    }
+    listen_changed = strcmp(next.listen, live->listen) != 0;
+    if (listen_changed && mf_http_rebind_listen(next.listen) != 0) {
+        set_error(resp, 500, "listen bind failed");
+        return 0;
+    }
+    rc = mf_devices_apply_config(next.devices, next.n_devices,
+                                 err, sizeof(err));
+    if (rc < 0) {
+        set_error(resp, 400, err[0] ? err : "bad request");
+        return 0;
     }
     next.config_gen = live->config_gen + 1;
     *live = next;
-    if (mf_devices_any_dying()) {
+    if (rc == 1 || mf_devices_any_dying()) {
         cJSON *o = cJSON_CreateObject();
         cJSON_AddNumberToObject(o, "config_gen", (double)live->config_gen);
         cJSON_AddBoolToObject(o, "pending_apply", 1);
@@ -562,12 +623,46 @@ static int handle_config_save(const mf_rest_request_t *req, mf_rest_response_t *
 static int handle_config_load(mf_rest_response_t *resp)
 {
     mf_daemon_config_t *live = live_cfg();
-    uint64_t gen = live->config_gen;
-    if (!g_cfg_path[0] || mf_config_load(g_cfg_path, live) != 0) {
+    mf_daemon_config_t next;
+    char err[96];
+    int rc;
+    int listen_changed;
+
+    if (!g_cfg_path[0]) {
         set_error(resp, 404, "not found");
         return 0;
     }
-    live->config_gen = gen + 1;
+    mf_config_defaults(&next);
+    if (mf_config_load(g_cfg_path, &next) != 0) {
+        set_error(resp, 404, "not found");
+        return 0;
+    }
+    if (mf_devices_validate_config(next.devices, next.n_devices,
+                                   err, sizeof(err)) != 0) {
+        set_error(resp, 400, err[0] ? err : "bad request");
+        return 0;
+    }
+    listen_changed = strcmp(next.listen, live->listen) != 0;
+    if (listen_changed && mf_http_rebind_listen(next.listen) != 0) {
+        set_error(resp, 500, "listen bind failed");
+        return 0;
+    }
+    rc = mf_devices_apply_config(next.devices, next.n_devices,
+                                 err, sizeof(err));
+    if (rc < 0) {
+        set_error(resp, 400, err[0] ? err : "bad request");
+        return 0;
+    }
+    next.config_gen = live->config_gen + 1;
+    *live = next;
+    if (rc == 1 || mf_devices_any_dying()) {
+        cJSON *o = cJSON_CreateObject();
+        cJSON_AddNumberToObject(o, "config_gen", (double)live->config_gen);
+        cJSON_AddBoolToObject(o, "pending_apply", 1);
+        set_json(resp, 202, o, NULL);
+        set_etag_gen(resp, live->config_gen);
+        return 0;
+    }
     return handle_config_get(resp);
 }
 

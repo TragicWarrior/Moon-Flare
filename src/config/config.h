@@ -116,6 +116,15 @@ int mf_tui_config_load(const char *config_path_override, mf_tui_config_t *cfg);
 char *mf_config_serialize(const mf_daemon_config_t *cfg);
 char *mf_tui_config_serialize(const mf_tui_config_t *cfg);
 
+/* One device object as JSON (plugin open() spec). Caller free. */
+char *mf_config_device_serialize(const mf_config_device_t *d);
+
+/* Fill *dev from a device JSON object (uuid required). 0 ok, -1 skip. */
+int mf_config_device_from_json(mf_config_device_t *dev, const cJSON *obj);
+
+/* Identity key for uniqueness: usb:path, ble:addr, tcp:ip:port, or "". */
+void mf_config_device_endpoint(const mf_config_device_t *d, char *buf, size_t cap);
+
 /* Parse from JSON (caller must cJSON_free the returned cJSON*).
  * Returns NULL on parse error. */
 cJSON *mf_config_deserialize_json(const char *json);

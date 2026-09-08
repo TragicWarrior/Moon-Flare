@@ -2,8 +2,9 @@
  * moonflared -- Moon Flare collector daemon.
  *
  * PR-2: bind --listen, 50 ms select() tick, picohttpparser HTTP on
- * accepted fds. GET /api/v1/health is in-memory. Plugins/config apply
- * are later PRs. Default bind 0.0.0.0:5250 (not 5252/5253).
+ * accepted fds. GET /api/v1/health is in-memory. PUT /config applies a
+ * slot diff (KD 29); startup opens devices[]. Default bind 0.0.0.0:5250
+ * (not 5252/5253).
  *
  * Concurrency: Larry Ruane protothreads (protothread.h) + select().
  * HTTP conn PTs run on fd-ready or tick; always pt_wait on g_chan_tick.
@@ -228,6 +229,7 @@ int main(int argc, char **argv)
     g_listen_fd = listen_tcp(listen_spec);
     if (g_listen_fd < 0)
         return 1;
+    snprintf(g_cfg.listen, sizeof(g_cfg.listen), "%s", listen_spec);
 
     if (!g_foreground) {
         if (daemon(0, 0) < 0) {
@@ -255,6 +257,13 @@ int main(int argc, char **argv)
     }
 
     mf_devices_init(g_pts, &g_chan_tick, &g_quit, &g_plugins);
+    {
+        char err[96];
+        int rc = mf_devices_apply_config(g_cfg.devices, g_cfg.n_devices,
+                                         err, sizeof(err));
+        if (rc < 0)
+            LOG_W("startup config apply: %s", err[0] ? err : "failed");
+    }
     mf_rest_set_live_config(&g_cfg, config_path);
     mf_rest_init();
     mf_http_init(&g_http, g_pts, &g_chan_tick, &g_quit, g_listen_fd,
@@ -288,6 +297,7 @@ int main(int argc, char **argv)
         pt_broadcast(g_pts, &g_chan_tick);
         while (protothread_run(g_pts))
             ;
+        mf_devices_apply_pending();
         mf_discover_step();
     }
 

@@ -13,6 +13,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <stdio.h>
@@ -32,6 +33,7 @@
 
 static pt_t http_conn_pt(env_t e_);
 static pt_t http_accept_pt(env_t e_);
+static mf_http_t *g_http_rebind;
 
 double mf_mono_now(void)
 {
@@ -544,9 +546,83 @@ static pt_t http_accept_pt(env_t e_)
         pt_wait(env, h->chan_tick);
         if (*(h->quit))
             break;
+        if (h->pending_listen_fd >= 0) {
+            if (h->listen_fd >= 0)
+                close(h->listen_fd);
+            h->listen_fd = h->pending_listen_fd;
+            h->pending_listen_fd = -1;
+            LOG_I("listen rebound");
+        }
         accept_drain(h);
     }
     return PT_DONE;
+}
+
+static int bind_listen_spec(const char *spec)
+{
+    const char *colon;
+    char host[128];
+    char portstr[16];
+    int port = 0;
+    int fd = -1;
+    struct addrinfo hints, *ai = NULL, *p;
+    int rc, n;
+
+    if (!spec || !spec[0])
+        return -1;
+    colon = strrchr(spec, ':');
+    if (!colon) {
+        snprintf(host, sizeof(host), "0.0.0.0");
+        port = atoi(spec);
+    } else {
+        size_t hlen = (size_t)(colon - spec);
+        if (hlen == 0 || hlen >= sizeof(host))
+            return -1;
+        memcpy(host, spec, hlen);
+        host[hlen] = '\0';
+        port = atoi(colon + 1);
+    }
+    if (port <= 0 || port > 65535)
+        return -1;
+    n = snprintf(portstr, sizeof(portstr), "%d", port);
+    if (n < 0 || (size_t)n >= sizeof(portstr))
+        return -1;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
+    rc = getaddrinfo(host[0] ? host : NULL, portstr, &hints, &ai);
+    if (rc != 0)
+        return -1;
+    for (p = ai; p; p = p->ai_next) {
+        int one = 1;
+        fd = socket(p->ai_family,
+                    p->ai_socktype | SOCK_NONBLOCK | SOCK_CLOEXEC,
+                    p->ai_protocol);
+        if (fd < 0)
+            continue;
+        (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+        if (bind(fd, p->ai_addr, p->ai_addrlen) == 0 && listen(fd, 16) == 0)
+            break;
+        close(fd);
+        fd = -1;
+    }
+    freeaddrinfo(ai);
+    return fd;
+}
+
+int mf_http_rebind_listen(const char *spec)
+{
+    int fd;
+    if (!g_http_rebind)
+        return 0;
+    fd = bind_listen_spec(spec);
+    if (fd < 0)
+        return -1;
+    if (g_http_rebind->pending_listen_fd >= 0)
+        close(g_http_rebind->pending_listen_fd);
+    g_http_rebind->pending_listen_fd = fd;
+    return 0;
 }
 
 void mf_http_init(mf_http_t *h, protothread_t pts, char *chan_tick,
@@ -558,6 +634,8 @@ void mf_http_init(mf_http_t *h, protothread_t pts, char *chan_tick,
     h->chan_tick = chan_tick;
     h->quit = quit;
     h->listen_fd = listen_fd;
+    h->pending_listen_fd = -1;
+    g_http_rebind = h;
     h->idle_s = idle_s > 0.0 ? idle_s : MF_HTTP_IDLE_S;
     h->start_mono = mf_mono_now();
     h->debug = debug;
@@ -603,4 +681,10 @@ void mf_http_close_all(mf_http_t *h)
         if (h->conns[i].in_use || h->conns[i].fd >= 0)
             conn_close(&h->conns[i]);
     }
+    if (h->pending_listen_fd >= 0) {
+        close(h->pending_listen_fd);
+        h->pending_listen_fd = -1;
+    }
+    if (g_http_rebind == h)
+        g_http_rebind = NULL;
 }

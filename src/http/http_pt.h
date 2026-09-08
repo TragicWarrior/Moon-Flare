@@ -75,6 +75,7 @@ typedef struct mf_http {
     char                  *chan_tick;
     volatile sig_atomic_t *quit;
     int                    listen_fd;
+    int                    pending_listen_fd; /* swap on next accept tick */
     double                 idle_s;
     double                 start_mono;
     bool                   debug;
@@ -94,5 +95,9 @@ void mf_http_init(mf_http_t *h, protothread_t pts, char *chan_tick,
 void mf_http_start(mf_http_t *h);
 void mf_http_prepare_fds(mf_http_t *h, fd_set *rset, fd_set *wset, int *maxfd);
 void mf_http_close_all(mf_http_t *h);
+
+/* Bind spec now; accept PT swaps onto listen_fd on the next tick.
+ * 0 ok (or no HTTP instance — unit tests). -1 bind failed, old listen kept. */
+int mf_http_rebind_listen(const char *spec);
 
 #endif

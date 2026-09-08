@@ -299,6 +299,11 @@ static int apply_device(mf_config_device_t *dev, const cJSON *obj)
     return 0;
 }
 
+int mf_config_device_from_json(mf_config_device_t *dev, const cJSON *obj)
+{
+    return apply_device(dev, obj);
+}
+
 void mf_config_apply_json(mf_daemon_config_t *cfg, const cJSON *root)
 {
     if (!root || root->type != cJSON_Object) return;
@@ -350,6 +355,91 @@ cJSON *mf_tui_config_deserialize_json(const char *json)
     return cJSON_Parse(json);
 }
 
+void mf_config_device_endpoint(const mf_config_device_t *d, char *buf, size_t cap)
+{
+    if (!buf || cap == 0)
+        return;
+    buf[0] = '\0';
+    if (!d)
+        return;
+    if (d->usb.path[0]) {
+        snprintf(buf, cap, "usb:%s", d->usb.path);
+        return;
+    }
+    if (d->usb.serial_id[0]) {
+        snprintf(buf, cap, "usb-id:%s", d->usb.serial_id);
+        return;
+    }
+    if (d->ble.address[0]) {
+        snprintf(buf, cap, "ble:%s", d->ble.address);
+        return;
+    }
+    if (d->modbus.ip[0]) {
+        int port = d->modbus.port > 0 ? d->modbus.port : 502;
+        snprintf(buf, cap, "tcp:%s:%d", d->modbus.ip, port);
+    }
+}
+
+static cJSON *device_to_json(const mf_config_device_t *d)
+{
+    cJSON *dev = cJSON_CreateObject();
+    if (!dev)
+        return NULL;
+    cJSON_AddStringOrNull(dev, "uuid", d->uuid);
+    cJSON_AddStringOrNull(dev, "name", d->name);
+    cJSON_AddStringOrNull(dev, "kind", d->kind);
+    cJSON_AddStringOrNull(dev, "driver", d->driver);
+    cJSON_AddBool(dev, "enabled", d->enabled);
+    cJSON_AddNumber(dev, "poll_interval_s", d->poll_interval_s);
+    cJSON_AddStringOrNull(dev, "bus", d->bus);
+    {
+        cJSON *usb = cJSON_CreateObject();
+        cJSON_AddStringOrNull(usb, "path", d->usb.path);
+        cJSON_AddStringOrNull(usb, "serial_id", d->usb.serial_id);
+        cJSON_AddBool(usb, "auto_port", d->usb.auto_port);
+        cJSON_AddNumber(usb, "baud", d->usb.baud);
+        cJSON_AddNumber(usb, "addr", d->usb.addr);
+        cJSON_AddItemToObject(dev, "usb", usb);
+    }
+    {
+        cJSON *ble = cJSON_CreateObject();
+        cJSON_AddStringOrNull(ble, "address", d->ble.address);
+        cJSON_AddStringOrNull(ble, "adapter", d->ble.adapter);
+        cJSON_AddStringOrNull(ble, "protocol", d->ble.protocol);
+        cJSON_AddStringOrNull(ble, "password", d->ble.password);
+        cJSON_AddBool(ble, "write_response", d->ble.write_response);
+        cJSON_AddNumber(ble, "connect_timeout_s",
+                        d->ble.connect_timeout_s);
+        cJSON_AddItemToObject(dev, "ble", ble);
+    }
+    {
+        cJSON *mod = cJSON_CreateObject();
+        cJSON_AddStringOrNull(mod, "ip", d->modbus.ip);
+        cJSON_AddNumber(mod, "port", d->modbus.port);
+        cJSON_AddNumber(mod, "unit_id", d->modbus.unit_id);
+        cJSON_AddStringOrNull(mod, "mac", d->modbus.mac);
+        cJSON_AddNumber(mod, "unit_device_id",
+                        d->modbus.unit_device_id);
+        cJSON_AddBool(mod, "auto_net", d->modbus.auto_net);
+        cJSON_AddItemToObject(dev, "modbus", mod);
+    }
+    return dev;
+}
+
+char *mf_config_device_serialize(const mf_config_device_t *d)
+{
+    cJSON *dev;
+    char *s;
+    if (!d)
+        return NULL;
+    dev = device_to_json(d);
+    if (!dev)
+        return NULL;
+    s = cJSON_PrintUnformatted(dev);
+    cJSON_Delete(dev);
+    return s;
+}
+
 char *mf_config_serialize(const mf_daemon_config_t *cfg)
 {
     cJSON *root = cJSON_CreateObject();
@@ -372,52 +462,9 @@ char *mf_config_serialize(const mf_daemon_config_t *cfg)
     {
         cJSON *arr = cJSON_CreateArray();
         for (int i = 0; i < cfg->n_devices; i++) {
-            const mf_config_device_t *d = &cfg->devices[i];
-            cJSON *dev = cJSON_CreateObject();
-            cJSON_AddStringOrNull(dev, "uuid", d->uuid);
-            cJSON_AddStringOrNull(dev, "name", d->name);
-            cJSON_AddStringOrNull(dev, "kind", d->kind);
-            cJSON_AddStringOrNull(dev, "driver", d->driver);
-            cJSON_AddBool(dev, "enabled", d->enabled);
-            cJSON_AddNumber(dev, "poll_interval_s", d->poll_interval_s);
-            cJSON_AddStringOrNull(dev, "bus", d->bus);
-
-            /* usb */
-            {
-                cJSON *usb = cJSON_CreateObject();
-                cJSON_AddStringOrNull(usb, "path", d->usb.path);
-                cJSON_AddStringOrNull(usb, "serial_id", d->usb.serial_id);
-                cJSON_AddBool(usb, "auto_port", d->usb.auto_port);
-                cJSON_AddNumber(usb, "baud", d->usb.baud);
-                cJSON_AddNumber(usb, "addr", d->usb.addr);
-                cJSON_AddItemToObject(dev, "usb", usb);
-            }
-            /* ble */
-            {
-                cJSON *ble = cJSON_CreateObject();
-                cJSON_AddStringOrNull(ble, "address", d->ble.address);
-                cJSON_AddStringOrNull(ble, "adapter", d->ble.adapter);
-                cJSON_AddStringOrNull(ble, "protocol", d->ble.protocol);
-                cJSON_AddStringOrNull(ble, "password", d->ble.password);
-                cJSON_AddBool(ble, "write_response", d->ble.write_response);
-                cJSON_AddNumber(ble, "connect_timeout_s",
-                                d->ble.connect_timeout_s);
-                cJSON_AddItemToObject(dev, "ble", ble);
-            }
-            /* modbus */
-            {
-                cJSON *mod = cJSON_CreateObject();
-                cJSON_AddStringOrNull(mod, "ip", d->modbus.ip);
-                cJSON_AddNumber(mod, "port", d->modbus.port);
-                cJSON_AddNumber(mod, "unit_id", d->modbus.unit_id);
-                cJSON_AddStringOrNull(mod, "mac", d->modbus.mac);
-                cJSON_AddNumber(mod, "unit_device_id",
-                                d->modbus.unit_device_id);
-                cJSON_AddBool(mod, "auto_net", d->modbus.auto_net);
-                cJSON_AddItemToObject(dev, "modbus", mod);
-            }
-
-            cJSON_AddItemToArray(arr, dev);
+            cJSON *dev = device_to_json(&cfg->devices[i]);
+            if (dev)
+                cJSON_AddItemToArray(arr, dev);
         }
         cJSON_AddItemToObject(root, "devices", arr);
     }

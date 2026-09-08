@@ -1,6 +1,7 @@
 #ifndef MF_DEVICE_H
 #define MF_DEVICE_H
 
+#include "config.h"
 #include "loader.h"
 #include "protothread.h"
 
@@ -37,8 +38,17 @@ int  mf_devices_find_live(const char *uuid, mf_devinfo_t *out);
 
 /* 0 ok; -1 bad; -2 unknown kind/driver; -3 name in use; -4 full; -5 open fail. */
 int  mf_devices_add(const char *name, const char *kind, const char *driver,
-                    const char *spec_json, char *uuid_out, size_t uuid_cap,
+                    const char *spec_json, const char *uuid_in,
+                    char *uuid_out, size_t uuid_cap,
                     char *err, size_t errsz);
+
+/* KD 29: diff live slots vs config devices[]. 0 applied, 1 pending (dying
+ * stop+reopen), -1 validate error (err set). Call apply_pending on each tick. */
+int  mf_devices_validate_config(const mf_config_device_t *devs, int n,
+                                char *err, size_t errsz);
+int  mf_devices_apply_config(const mf_config_device_t *devs, int n,
+                             char *err, size_t errsz);
+void mf_devices_apply_pending(void);
 
 /* 202 if slot was live or dying; 404 if unknown. */
 int  mf_devices_delete(const char *uuid);

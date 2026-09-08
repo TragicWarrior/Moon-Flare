@@ -30,6 +30,9 @@ void mf_rest_init(void);
 void mf_rest_set_live_config(void *daemon_cfg, const char *path);
 const char *mf_rest_listen_spec(void);
 
+/* HTTP layer. moonflared implements via http_pt; unit tests stub as 0. */
+int mf_http_rebind_listen(const char *spec);
+
 /* Fill resp. Always writes JSON into resp->body (NUL-terminated).
  * Returns 0 on dispatch (including 4xx); -1 if method/path buffer is unusable. */
 int mf_rest_dispatch(const mf_rest_request_t *req, mf_rest_response_t *resp);
