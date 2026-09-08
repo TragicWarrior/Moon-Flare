@@ -42,9 +42,10 @@ static vk_box_t *g_set_vbox, *g_set_form, *g_set_bar, *g_set_row[3];
 static vk_label_t *g_set_lab[3];
 static vk_input_t *g_set_in[3];
 static vk_button_t *g_set_ok, *g_set_cancel;
-static vk_filler_t *g_set_fill;
+static vk_filler_t *g_set_fill, *g_set_form_fill;
 static int g_set_focus;
 static void close_settings(void);
+static void paint_settings(void);
 static void apply_settings(void);
 static vk_window_t *g_help_win;
 static int g_view_idx = -1;
@@ -119,6 +120,38 @@ static int on_set_cancel(vk_widget_t *w, void *a)
     return 1;
 }
 
+static void paint_settings(void)
+{
+    int i;
+    WINDOW *c;
+
+    for (i = 0; i < 3; i++) {
+        if (g_set_lab[i])
+            vk_label_update(g_set_lab[i]);
+        if (g_set_in[i])
+            vk_input_update(g_set_in[i]);
+        if (g_set_row[i])
+            vk_box_update(g_set_row[i]);
+    }
+    if (g_set_form)
+        vk_box_update(g_set_form);
+    if (g_set_ok)
+        vk_button_update(g_set_ok);
+    if (g_set_cancel)
+        vk_button_update(g_set_cancel);
+    if (g_set_bar)
+        vk_box_update(g_set_bar);
+    if (g_set_vbox)
+        vk_box_update(g_set_vbox);
+    if (g_set_win) {
+        c = vk_widget_get_canvas(VK_WIDGET(g_set_win));
+        if (c)
+            wbkgd(c, VDK_COLORS(COL_TEXT, COL_MENU));
+        vk_window_update(g_set_win);
+    }
+    mf_ui_refresh();
+}
+
 static vk_button_t *mk_set_btn(const char *txt, VkWidgetFunc fn)
 {
     vk_button_t *b = vk_button_create(txt);
@@ -167,6 +200,10 @@ static void close_settings(void)
         vk_filler_destroy(g_set_fill);
         g_set_fill = NULL;
     }
+    if (g_set_form_fill) {
+        vk_filler_destroy(g_set_form_fill);
+        g_set_form_fill = NULL;
+    }
     if (g_set_bar) {
         vk_box_destroy(g_set_bar);
         g_set_bar = NULL;
@@ -207,7 +244,7 @@ void mf_ui_open_settings(void)
     vk_window_set_border_attrs(g_set_win, A_BOLD);
     vk_widget_set_colors(VK_WIDGET(g_set_win), COL_TEXT, COL_MENU);
 
-    g_set_form = vk_box_create(iw, ih - 3, VK_BOX_VERTICAL, 3);
+    g_set_form = vk_box_create(iw, ih - 3, VK_BOX_VERTICAL, 4);
     vk_box_set_homogeneous(g_set_form, false);
     vk_widget_set_colors(VK_WIDGET(g_set_form), COL_TEXT, COL_MENU);
     vk_widget_set_expand(VK_WIDGET(g_set_form));
@@ -216,6 +253,7 @@ void mf_ui_open_settings(void)
         vk_box_set_homogeneous(g_set_row[i], false);
         vk_widget_set_colors(VK_WIDGET(g_set_row[i]), COL_TEXT, COL_MENU);
         g_set_lab[i] = vk_label_create(12);
+        vk_widget_resize(VK_WIDGET(g_set_lab[i]), 12, 3);
         vk_widget_set_colors(VK_WIDGET(g_set_lab[i]), COL_TEXT, COL_MENU);
         vk_label_set_text(g_set_lab[i], names[i]);
         vk_label_update(g_set_lab[i]);
@@ -229,6 +267,10 @@ void mf_ui_open_settings(void)
         vk_box_set_widget(g_set_row[i], 1, VK_WIDGET(g_set_in[i]));
         vk_box_set_widget(g_set_form, i, VK_WIDGET(g_set_row[i]));
     }
+    g_set_form_fill = vk_filler_create();
+    vk_widget_set_colors(VK_WIDGET(g_set_form_fill), COL_TEXT, COL_MENU);
+    vk_widget_set_expand(VK_WIDGET(g_set_form_fill));
+    vk_box_set_widget(g_set_form, 3, VK_WIDGET(g_set_form_fill));
     vk_input_set_text(g_set_in[0], g_host);
     snprintf(buf, sizeof(buf), "%d", g_port);
     vk_input_set_text(g_set_in[1], buf);
@@ -259,10 +301,7 @@ void mf_ui_open_settings(void)
     vk_box_set_widget(g_set_vbox, 1, VK_WIDGET(g_set_bar));
     vk_window_set_child(g_set_win, VK_WIDGET(g_set_vbox));
     mf_ui_attach(VK_WIDGET(g_set_win), x, y);
-    vk_box_update(g_set_form);
-    vk_box_update(g_set_bar);
-    vk_box_update(g_set_vbox);
-    vk_window_update(g_set_win);
+    paint_settings();
 
     g_set_focus = 0;
     g_settings_open = 1;
@@ -329,11 +368,7 @@ static int settings_key(wint_t c)
                                  COL_MENU);
             vk_button_update(g_set_cancel);
         }
-        if (g_set_bar)
-            vk_box_update(g_set_bar);
-        if (g_set_win)
-            vk_window_update(g_set_win);
-        mf_ui_refresh();
+        paint_settings();
         return 1;
     }
     if (c == '\n' || c == KEY_ENTER) {
@@ -348,26 +383,22 @@ static int settings_key(wint_t c)
     in = g_set_in[g_set_focus];
     if (c == KEY_BACKSPACE || c == 127) {
         vk_input_backspace(in);
-        vk_input_update(in);
-        mf_ui_refresh();
+        paint_settings();
         return 1;
     }
     if (c == KEY_LEFT) {
         vk_input_move_cursor(in, -1);
-        vk_input_update(in);
-        mf_ui_refresh();
+        paint_settings();
         return 1;
     }
     if (c == KEY_RIGHT) {
         vk_input_move_cursor(in, 1);
-        vk_input_update(in);
-        mf_ui_refresh();
+        paint_settings();
         return 1;
     }
     if (c >= 32 && c < 127) {
         vk_input_insert_char(in, (int)c);
-        vk_input_update(in);
-        mf_ui_refresh();
+        paint_settings();
         return 1;
     }
     return 1;

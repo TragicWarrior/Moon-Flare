@@ -20,7 +20,7 @@ static vk_box_t    *g_row[MAX_FIELDS];
 static vk_label_t  *g_lab[MAX_FIELDS];
 static vk_input_t  *g_in[MAX_FIELDS];
 static vk_button_t *g_btn_save, *g_btn_exit;
-static vk_filler_t *g_fill;
+static vk_filler_t *g_fill, *g_form_fill;
 static int          g_nfields;
 static int          g_focus;
 static int          g_open;
@@ -84,17 +84,7 @@ static void set_field_focus(int idx)
         if (!g_in[i])
             continue;
         vk_input_show_cursor(g_in[i], i == idx);
-        vk_input_update(g_in[i]);
     }
-    highlight_buttons();
-    if (g_form)
-        vk_box_update(g_form);
-    if (g_bar)
-        vk_box_update(g_bar);
-    if (g_vbox)
-        vk_box_update(g_vbox);
-    if (g_win)
-        vk_window_update(g_win);
 }
 
 static vk_button_t *mk_btn(const char *txt, VkWidgetFunc fn)
@@ -143,6 +133,10 @@ static void destroy_form(void)
         vk_filler_destroy(g_fill);
         g_fill = NULL;
     }
+    if (g_form_fill) {
+        vk_filler_destroy(g_form_fill);
+        g_form_fill = NULL;
+    }
     if (g_bar) {
         vk_box_destroy(g_bar);
         g_bar = NULL;
@@ -178,6 +172,8 @@ static void add_field(const char *key, const char *val, int row_h, int iw)
     style_menu(VK_WIDGET(row));
 
     lab = vk_label_create(LAB_W);
+    if (row_h > 1)
+        vk_widget_resize(VK_WIDGET(lab), LAB_W, row_h);
     style_menu(VK_WIDGET(lab));
     vk_label_set_text(lab, key);
     vk_label_update(lab);
@@ -230,7 +226,7 @@ static void build_form(int iw, int ih, const char *json)
         n = 1;
     row_h = (n * 3 + 3 <= ih) ? 3 : 1;
 
-    g_form = vk_box_create(iw, ih - 3, VK_BOX_VERTICAL, n);
+    g_form = vk_box_create(iw, ih - 3, VK_BOX_VERTICAL, n + 1);
     vk_box_set_homogeneous(g_form, false);
     style_menu(VK_WIDGET(g_form));
     vk_widget_set_expand(VK_WIDGET(g_form));
@@ -266,6 +262,10 @@ static void build_form(int iw, int ih, const char *json)
     }
     for (i = 0; i < g_nfields; i++)
         vk_box_set_widget(g_form, i, VK_WIDGET(g_row[i]));
+    g_form_fill = vk_filler_create();
+    style_menu(VK_WIDGET(g_form_fill));
+    vk_widget_set_expand(VK_WIDGET(g_form_fill));
+    vk_box_set_widget(g_form, g_nfields, VK_WIDGET(g_form_fill));
 
     g_bar = vk_box_create(iw, 3, VK_BOX_HORIZONTAL, 3);
     vk_box_set_homogeneous(g_bar, false);
@@ -370,15 +370,31 @@ const char *mf_devset_payload(void)
 
 static void paint_dialog(void)
 {
+    int i;
+    WINDOW *c;
+
+    /* Nested boxes blit children; leaves must be painted first. */
+    for (i = 0; i < g_nfields; i++) {
+        if (g_in[i])
+            vk_input_update(g_in[i]);
+        if (g_lab[i])
+            vk_label_update(g_lab[i]);
+        if (g_row[i])
+            vk_box_update(g_row[i]);
+    }
+    highlight_buttons();
     if (g_form)
         vk_box_update(g_form);
     if (g_bar)
         vk_box_update(g_bar);
     if (g_vbox)
         vk_box_update(g_vbox);
-    if (g_win)
+    if (g_win) {
+        c = vk_widget_get_canvas(VK_WIDGET(g_win));
+        if (c)
+            wbkgd(c, VDK_COLORS(COL_TEXT, COL_MENU));
         vk_window_update(g_win);
-    highlight_buttons();
+    }
     mf_ui_refresh();
 }
 
