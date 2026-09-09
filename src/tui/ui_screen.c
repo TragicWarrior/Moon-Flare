@@ -57,6 +57,9 @@ static char g_view_path[192];
 static char g_view_json[65536];
 static char g_view_name[32];
 static int g_devset_fetch;
+static int g_devset_wait_ovp;
+static int g_devset_ovp_tries;
+static double g_devset_next_try;
 
 static double mono_now(void)
 {
@@ -664,6 +667,9 @@ void mf_ui_open_device_settings(int idx)
     mf_devset_show(id, name, NULL);
     snprintf(path, sizeof(path), "/api/v1/devices/%s/settings", id);
     g_devset_fetch = 1;
+    g_devset_wait_ovp = 1;
+    g_devset_ovp_tries = 0;
+    g_devset_next_try = 0;
     (void)mf_http_cli_get(&g_cli, path);
 }
 
@@ -786,7 +792,8 @@ int mf_tui_run(const char *connect, const char *config_path)
                          g_cli.fd >= 0 && FD_ISSET(g_cli.fd, &w), t);
 
         if (g_cli.state == MF_CONN_UP && !g_cli.inflight &&
-            t - g_last_get >= g_refresh && !g_devset_fetch) {
+            t - g_last_get >= g_refresh && !g_devset_fetch &&
+            !mf_devset_open()) {
             if (mf_http_cli_get(&g_cli, mf_ui_poll_path()) == 1)
                 g_last_get = t;
         }
@@ -807,15 +814,45 @@ int mf_tui_run(const char *connect, const char *config_path)
                 snprintf(last_tag, sizeof(last_tag), "%s", tag);
                 dirty = 1;
             }
-            if (g_devset_fetch && !mf_devset_open())
+            if (g_devset_fetch && !mf_devset_open()) {
                 g_devset_fetch = 0;
+                g_devset_wait_ovp = 0;
+            }
+            if (mf_devset_touched())
+                g_devset_wait_ovp = 0;
+            if (mf_devset_has_key("cell_ovp_v"))
+                g_devset_wait_ovp = 0;
+            if (mf_devset_open() && g_devset_wait_ovp && !g_devset_fetch &&
+                !g_cli.inflight && g_cli.state == MF_CONN_UP &&
+                !mf_devset_touched() &&
+                t >= g_devset_next_try && g_devset_ovp_tries < 15) {
+                char spath[192];
+
+                snprintf(spath, sizeof(spath),
+                         "/api/v1/devices/%s/settings", mf_devset_id());
+                if (mf_http_cli_get(&g_cli, spath) == 1) {
+                    g_devset_fetch = 1;
+                    g_devset_ovp_tries++;
+                    g_devset_next_try = t + 1.0;
+                }
+            }
             if (dirty) {
                 int is_status = last_json[0] &&
                     (strstr(last_json, "\"batteries\"") != NULL ||
                      strstr(last_json, "\"chargers\"") != NULL);
+                int is_devset = last_json[0] &&
+                    strstr(last_json, "\"uuid\"") != NULL && !is_status;
                 if (g_devset_fetch && mf_devset_open()) {
                     g_devset_fetch = 0;
-                    mf_devset_apply_json(last_json);
+                    if (is_devset && !mf_devset_touched()) {
+                        mf_devset_apply_json(last_json);
+                        /* JK waits for a settings frame with OVP. XD/Classic
+                         * never send those keys — stop retrying or the form
+                         * rebuilds every second and flashes. */
+                        if (strstr(last_json, "\"cell_ovp_v\"") ||
+                            strstr(last_json, "\"ble.address\"") == NULL)
+                            g_devset_wait_ovp = 0;
+                    }
                 } else if (g_view_idx >= 0 && strstr(last_json, "\"data\"")) {
                     snprintf(g_view_json, sizeof(g_view_json), "%s", last_json);
                     mf_pack_update(g_view_json);

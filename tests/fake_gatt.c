@@ -38,6 +38,8 @@ typedef struct {
     int      cell_mv;
     uint32_t trigger_mv;
     uint32_t start_mv;
+    uint32_t ovp_mv;
+    uint32_t ovpr_mv;
     unsigned tick_wait;
 } cli_t;
 
@@ -100,6 +102,38 @@ static void build_frame(cli_t *c)
     buf[198] = (uint8_t)c->charge;
     buf[199] = (uint8_t)c->discharge;
     buf[201] = (uint8_t)c->balance;
+    buf[JK_CELL_CRC_OFFSET] = jk_crc8(buf, JK_CELL_CRC_OFFSET);
+    c->frame_off = 0;
+}
+
+static void build_settings_frame(cli_t *c)
+{
+    uint8_t *buf = c->frame;
+
+    memset(buf, 0, JK_FRAME_SIZE);
+    memcpy(buf, JK_HEADER_RSP, 4);
+    buf[4] = JK_FRAME_SETTINGS;
+    buf[5] = 1;
+    put_u32(buf, 10, 2500);
+    put_u32(buf, 14, 2700);
+    put_u32(buf, 18, c->ovp_mv ? c->ovp_mv : 3650);
+    put_u32(buf, 22, c->ovpr_mv ? c->ovpr_mv : 3550);
+    put_u32(buf, 26, c->trigger_mv ? c->trigger_mv : 10);
+    put_u32(buf, 38, 3600); /* RCV */
+    put_u32(buf, 46, 2400);
+    put_u32(buf, 50, 80000);
+    put_u32(buf, 62, 80000);
+    put_u32(buf, 78, 2000);
+    put_u32(buf, 82, 600);
+    put_u32(buf, 90, 600);
+    put_i32(buf, 98, -100);
+    put_i32(buf, 106, 900);
+    buf[114] = 16;
+    buf[118] = 1;
+    buf[122] = 1;
+    buf[126] = (uint8_t)c->balance;
+    put_u32(buf, 130, 200000);
+    put_u32(buf, 138, c->start_mv ? c->start_mv : 3000);
     buf[JK_CELL_CRC_OFFSET] = jk_crc8(buf, JK_CELL_CRC_OFFSET);
     c->frame_off = 0;
 }
@@ -224,6 +258,10 @@ static void seed_mac(cli_t *c)
     c->charge = 1;
     c->discharge = 1;
     c->balance = 0;
+    c->ovp_mv = 3650;
+    c->ovpr_mv = 3550;
+    c->trigger_mv = 10;
+    c->start_mv = 3000;
     if (mac_eq(c->mac, MAC_A))
         c->cell_mv = 3300;
     else if (mac_eq(c->mac, MAC_B))
@@ -257,6 +295,10 @@ static void apply_write(cli_t *c, const uint8_t *cmd, int n)
         c->trigger_mv = le32(cmd + 6);
     else if (reg == JK_REG_START_BALANCE_JK02_32S && n >= 10)
         c->start_mv = le32(cmd + 6);
+    else if (reg == JK_REG_CELL_OVP && n >= 10)
+        c->ovp_mv = le32(cmd + 6);
+    else if (reg == JK_REG_CELL_OVPR && n >= 10)
+        c->ovpr_mv = le32(cmd + 6);
 }
 
 static void handle_line(cli_t *c, int idx, const char *line)
@@ -282,7 +324,7 @@ static void handle_line(cli_t *c, int idx, const char *line)
         seed_mac(c);
         queue_ok(c, "connect");
         c->acked = 1;
-        build_frame(c);
+        build_settings_frame(c);
         c->tick_wait = 2; /* flush ACK before the first notify */
         return;
     }
@@ -300,7 +342,15 @@ static void handle_line(cli_t *c, int idx, const char *line)
         n = hex_decode(hex, raw, sizeof(raw));
         apply_write(c, raw, n);
         queue_ok(c, "write");
-        build_frame(c);
+        /* 0x96/0x97 polls must not clobber an in-flight settings notify. */
+        if (n >= 5 && (raw[4] == JK_REG_CELL_OVP || raw[4] == JK_REG_CELL_OVPR))
+            build_settings_frame(c);
+        else if (n >= 5 && (raw[4] == JK_REG_CHARGE ||
+                            raw[4] == JK_REG_DISCHARGE ||
+                            raw[4] == JK_REG_BALANCE ||
+                            raw[4] == JK_REG_BALANCE_TRIGGER ||
+                            raw[4] == JK_REG_START_BALANCE_JK02_32S))
+            build_frame(c);
         return;
     }
     if (strcmp(cmd, "disconnect") == 0) {

@@ -85,6 +85,32 @@ double jk_clamp_start_v(double volts)
     return v;
 }
 
+double jk_clamp_ovp_v(double volts)
+{
+    double v = round3(volts);
+    if (v < JK_OVP_MIN_V)
+        return JK_OVP_MIN_V;
+    if (v > JK_OVP_MAX_V)
+        return JK_OVP_MAX_V;
+    return v;
+}
+
+double jk_clamp_ovpr_v(double volts, double ovp_v)
+{
+    double cap, v;
+
+    ovp_v = jk_clamp_ovp_v(ovp_v);
+    cap = round3(ovp_v - JK_OVPR_GAP_V);
+    if (cap < JK_OVP_MIN_V - JK_OVPR_GAP_V)
+        cap = JK_OVP_MIN_V - JK_OVPR_GAP_V;
+    v = round3(volts);
+    if (v > cap)
+        v = cap;
+    if (v < 2.40)
+        v = 2.40;
+    return v;
+}
+
 uint32_t jk_volts_to_mv(double volts)
 {
     if (volts >= 0.0)
@@ -418,6 +444,7 @@ jk_result_t jk_decode_settings(const uint8_t *data, size_t len,
     out->cell_uvpr_v    = jk_u32(data, 14) * 0.001f;
     out->cell_ovp_v     = jk_u32(data, 18) * 0.001f;
     out->cell_ovpr_v    = jk_u32(data, 22) * 0.001f;
+    out->cell_rcv_v     = jk_u32(data, 38) * 0.001f;
     out->balance_trigger_v = jk_u32(data, 26) * 0.001f;
     out->start_balance_v   = jk_u32(data, 138) * 0.001f;
     out->power_off_v      = jk_u32(data, 46) * 0.001f;

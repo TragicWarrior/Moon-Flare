@@ -306,6 +306,25 @@ int main(int argc, char **argv)
     CHECK(ops->action(a, "set_balance_trigger", "{}", err, sizeof(err))
           == MF_ERR_INVAL, "trigger missing volts");
 
+    CHECK(ops->get_settings(a, json, sizeof(json)) == 0, "settings A live OVP");
+    CHECK(json_num(json, "cell_ovp_v") > 3.64 &&
+          json_num(json, "cell_ovp_v") < 3.66, "OVP from device 3.65");
+    CHECK(json_num(json, "cell_ovpr_v") > 3.54 &&
+          json_num(json, "cell_ovpr_v") < 3.56, "OVPR from device 3.55");
+    CHECK(json_num(json, "cell_rcv_v") > 3.59 &&
+          json_num(json, "cell_rcv_v") < 3.61, "RCV from device 3.60");
+    CHECK(ops->put_settings(a, "{\"cell_ovp_v\":3.55,\"cell_ovpr_v\":3.45}",
+                            err, sizeof(err)) == MF_OK, "PUT OVP 3.55 OVPR 3.45");
+    drive_both(ops, a, b, 2000);
+    CHECK(ops->get_settings(a, json, sizeof(json)) == 0, "settings A after OVP");
+    CHECK(json_num(json, "cell_ovp_v") > 3.54 &&
+          json_num(json, "cell_ovp_v") < 3.56, "OVP live 3.55");
+    CHECK(json_num(json, "cell_ovpr_v") > 3.44 &&
+          json_num(json, "cell_ovpr_v") < 3.46, "OVPR live 3.45");
+    CHECK(ops->get_settings(b, json, sizeof(json)) == 0, "settings B after A OVP");
+    CHECK(json_num(json, "cell_ovp_v") > 3.64 &&
+          json_num(json, "cell_ovp_v") < 3.66, "B OVP unchanged");
+
     ops->close(a);
     ops->close(b);
     dlclose(dl);

@@ -288,6 +288,14 @@ TEST(test_register_writes)
     ASSERT(start[4] == JK_REG_START_BALANCE_JK02_32S, "reg 0x22");
     uint32_t val = start[6] | (start[7]<<8) | (start[8]<<16) | (start[9]<<24);
     ASSERT_EQ(val, 3000U, "LE 3000");
+
+    const uint8_t *ovp = jk_build_register_cmd(JK_REG_CELL_OVP, 3500);
+    ASSERT(ovp[4] == JK_REG_CELL_OVP, "reg 0x04");
+    val = ovp[6] | (ovp[7]<<8) | (ovp[8]<<16) | (ovp[9]<<24);
+    ASSERT_EQ(val, 3500U, "LE 3500 mV");
+    ASSERT_FLOAT_EQ(jk_clamp_ovp_v(3.50), 3.50, "OVP 3.50");
+    ASSERT_FLOAT_EQ(jk_clamp_ovp_v(5.0), JK_OVP_MAX_V, "OVP clamp high");
+    ASSERT_FLOAT_EQ(jk_clamp_ovpr_v(3.55, 3.50), 3.40, "OVPR stays below OVP");
 }
 
 /* Test: decode_cell_info with 16 equal-voltage cells. */

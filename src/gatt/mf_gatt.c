@@ -21,7 +21,7 @@
 #define MAX_CLI     8
 #define LINE_CAP    8192
 #define HEX_CAP     1024
-#define NOTIFY_MAX  256
+#define NOTIFY_MAX  512
 #define CONNECT_S   20.0
 #define GATT_WAIT_S 4.0
 #define SCAN_S      8.0
@@ -311,6 +311,7 @@ static int discover_ffe1(cli_t *c)
     int r;
     char write_path[192] = "", notify_path[192] = "";
     int write_h = 0, notify_h = 0;
+    int write_rank = 0; /* 1 combined, 2 write-only (preferred) */
 
     c->write_path[0] = c->notify_path[0] = '\0';
     r = sd_bus_call_method(g_bus, BLUEZ, "/", OM_IF, "GetManagedObjects",
@@ -375,16 +376,26 @@ static int discover_ffe1(cli_t *c)
                     }
                     if (uuid[0] && strcasecmp(uuid, FFE1) == 0) {
                         int h = char_handle_from_path(opath);
+                        int rank;
                         /* Combined FFE1 (notify+write on one char): if Flags
                          * did not parse, still use this characteristic. */
                         if (!has_notify && !has_write && !has_wnr)
                             has_notify = has_write = 1;
-                        if (has_notify)
-                            snprintf(notify_path, sizeof(notify_path), "%s", opath),
-                                notify_h = h;
+                        log_msg("ffe1 %s h=%d n=%d w=%d wnr=%d",
+                                opath, h, has_notify, has_write, has_wnr);
+                        if (has_notify) {
+                            snprintf(notify_path, sizeof(notify_path), "%s", opath);
+                            notify_h = h;
+                        }
+                        /* Prefer a write-only FFE1 (handle 0x03) over notify. */
+                        rank = 0;
                         if (has_write || has_wnr)
-                            snprintf(write_path, sizeof(write_path), "%s", opath),
-                                write_h = h;
+                            rank = has_notify ? 1 : 2;
+                        if (rank > write_rank) {
+                            snprintf(write_path, sizeof(write_path), "%s", opath);
+                            write_h = h;
+                            write_rank = rank;
+                        }
                     }
                 } else {
                     sd_bus_message_skip(rep, "a{sv}");

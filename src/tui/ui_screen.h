@@ -53,6 +53,8 @@ void mf_devset_show(const char *id, const char *name, const char *json);
 void mf_devset_apply_json(const char *json);
 void mf_devset_close(void);
 int  mf_devset_open(void);
+int  mf_devset_touched(void);
+int  mf_devset_has_key(const char *key);
 int  mf_devset_key(wint_t c);
 int  mf_devset_mouse(int x, int y, mmask_t bstate);
 const char *mf_devset_id(void);

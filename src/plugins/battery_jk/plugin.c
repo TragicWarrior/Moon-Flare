@@ -58,11 +58,17 @@ typedef struct {
     jk_settings_t        settings;
     int                  have_data;
     int                  have_settings;
+    int                  want_settings;
     int                  bal_want; /* -1 unknown, else last SET */
     int                  have_trigger;
     int                  have_start;
     int                  need_cell_req;
     double               last_cell_mono;
+    double               last_settings_req;
+    uint8_t              wq_reg[6];
+    uint32_t             wq_val[6];
+    int                  wq_n, wq_i;
+    double               wq_next;
     double               trigger_v;
     double               start_v;
     char                 err[96];
@@ -236,6 +242,7 @@ static void sock_close(jk_ctx_t *c)
     c->state = ST_IDLE;
     c->handshake_ok = 0;
     c->in_len = c->out_len = c->out_off = 0;
+    c->wq_n = c->wq_i = 0;
     c->next_try = mono_now() + 0.5;
 }
 
@@ -366,7 +373,7 @@ static void on_line(jk_ctx_t *c, const char *line)
         return;
     }
     if (strcmp(type, "notify") == 0 && c->handshake_ok && hex[0]) {
-        uint8_t raw[256];
+        uint8_t raw[JK_FRAME_SIZE];
         int n = hex_decode(hex, raw, sizeof(raw));
         static unsigned nlog;
         if (nlog < 8) {
@@ -398,7 +405,12 @@ static void on_line(jk_ctx_t *c, const char *line)
                     if (jk_decode_settings(c->frame, JK_FRAME_SIZE,
                                            &c->settings) == JK_OK) {
                         c->have_settings = 1;
+                        c->want_settings = 0;
                         c->bal_want = -1;
+                        fprintf(stderr, "jk: settings ovp=%.3f ovpr=%.3f rcv=%.3f\n",
+                                (double)c->settings.cell_ovp_v,
+                                (double)c->settings.cell_ovpr_v,
+                                (double)c->settings.cell_rcv_v);
                     }
                 }
             } while (got > 0);
@@ -494,11 +506,30 @@ static mf_step_t pump(jk_ctx_t *c)
     if (c->fd >= 0)
         drain_in(c);
     if (c->handshake_ok && c->fd >= 0) {
-        if (c->need_cell_req) {
+        if (c->wq_i < c->wq_n && now >= c->wq_next) {
+            const uint8_t *wcmd;
+
+            wcmd = jk_build_register_cmd(c->wq_reg[c->wq_i], c->wq_val[c->wq_i]);
+            (void)queue_hex_write(c, wcmd);
+            c->wq_i++;
+            c->wq_next = now + 0.35;
+            if (c->wq_i >= c->wq_n) {
+                c->wq_n = c->wq_i = 0;
+                c->want_settings = 1;
+                c->last_settings_req = now;
+            }
+        } else if (c->wq_n > 0) {
+            /* wait for the next paced register write */
+        } else if (c->need_cell_req) {
             queue_hex_write(c, jk_build_command(JK_CMD_DEVICE_INFO, NULL, 0, 0));
             queue_hex_write(c, jk_build_command(JK_CMD_CELL_INFO, NULL, 0, 0));
             c->need_cell_req = 0;
             c->last_cell_mono = now;
+            c->last_settings_req = now;
+        } else if ((!c->have_settings || c->want_settings) &&
+                   now - c->last_settings_req > 1.5) {
+            queue_hex_write(c, jk_build_command(JK_CMD_CELL_INFO, NULL, 0, 0));
+            c->last_settings_req = now;
         } else if (now - c->last_cell_mono > 8.0) {
             queue_hex_write(c, jk_build_command(JK_CMD_CELL_INFO, NULL, 0, 0));
             c->last_cell_mono = now;
@@ -721,6 +752,19 @@ static int jk_get_reading(void *v, char *json, size_t cap)
     return 0;
 }
 
+static int queue_hex_write(jk_ctx_t *c, const uint8_t *cmd);
+
+static void wq_push(jk_ctx_t *c, uint8_t reg, uint32_t mv)
+{
+    if (!c || c->wq_n >= (int)(sizeof(c->wq_reg) / sizeof(c->wq_reg[0])))
+        return;
+    c->wq_reg[c->wq_n] = reg;
+    c->wq_val[c->wq_n] = mv;
+    c->wq_n++;
+    if (c->wq_n == 1)
+        c->wq_next = 0;
+}
+
 static int jk_get_settings(void *v, char *json, size_t cap)
 {
     jk_ctx_t *c = v;
@@ -737,6 +781,16 @@ static int jk_get_settings(void *v, char *json, size_t cap)
     if (c->have_start) {
         size_t n = strlen(json);
         snprintf(json + n, cap - n, ",\"start_balance_v\":%.3f", c->start_v);
+    }
+    /* Live BMS settings frame only — never a file-backed default. */
+    if (c->have_settings) {
+        size_t n = strlen(json);
+        snprintf(json + n, cap - n,
+                 ",\"cell_ovp_v\":%.3f,\"cell_ovpr_v\":%.3f,"
+                 "\"cell_rcv_v\":%.3f",
+                 (double)c->settings.cell_ovp_v,
+                 (double)c->settings.cell_ovpr_v,
+                 (double)c->settings.cell_rcv_v);
     }
     {
         size_t n = strlen(json);
@@ -764,6 +818,50 @@ static int jk_put_settings(void *v, const char *json, char *err, size_t errsz)
             return MF_ERR_INVAL;
         }
         c->poll_interval_s = iv;
+    }
+    if (json && (json_find_key(json, "cell_ovp_v") ||
+                 json_find_key(json, "cell_ovpr_v"))) {
+        double ovp, ovpr;
+
+        if (!c->handshake_ok) {
+            if (err && errsz)
+                snprintf(err, errsz, "offline");
+            return MF_ERR_OFFLINE;
+        }
+        if (json_find_key(json, "cell_ovp_v"))
+            ovp = json_double(json, "cell_ovp_v", 0.0);
+        else if (c->have_settings)
+            ovp = (double)c->settings.cell_ovp_v;
+        else
+            ovp = 3.65;
+        ovp = jk_clamp_ovp_v(ovp);
+        /* Cell OVP only opens the charge MOS. OVPR must stay below trip. */
+        if (json_find_key(json, "cell_ovpr_v"))
+            ovpr = json_double(json, "cell_ovpr_v", ovp - JK_OVPR_GAP_V);
+        else if (c->have_settings)
+            ovpr = (double)c->settings.cell_ovpr_v;
+        else
+            ovpr = ovp - JK_OVPR_GAP_V;
+        ovpr = jk_clamp_ovpr_v(ovpr, ovp);
+        /* JK rejects Cell OVP below Request Charge Voltage. */
+        if (c->have_settings && (double)c->settings.cell_rcv_v >= ovp - 0.001) {
+            double rcv = ovp - 0.05;
+
+            if (rcv < 3.40)
+                rcv = 3.40;
+            if (rcv >= ovp)
+                rcv = ovp - 0.01;
+            fprintf(stderr, "jk: write rcv=%.3f (was %.3f, ovp %.3f)\n",
+                    rcv, (double)c->settings.cell_rcv_v, ovp);
+            wq_push(c, JK_REG_CELL_RCV, jk_volts_to_mv(rcv));
+            c->settings.cell_rcv_v = (float)rcv;
+        }
+        fprintf(stderr, "jk: write ovp=%.3f ovpr=%.3f\n", ovp, ovpr);
+        wq_push(c, JK_REG_CELL_OVP, jk_volts_to_mv(ovp));
+        wq_push(c, JK_REG_CELL_OVPR, jk_volts_to_mv(ovpr));
+        c->settings.cell_ovp_v = (float)ovp;
+        c->settings.cell_ovpr_v = (float)ovpr;
+        c->have_settings = 1;
     }
     return MF_OK;
 }

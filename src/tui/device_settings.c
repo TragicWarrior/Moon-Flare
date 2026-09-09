@@ -32,6 +32,7 @@ static int          g_edit[MAX_FIELDS];
 static int          g_ro[MAX_FIELDS];
 static int          g_focus;
 static int          g_open;
+static int          g_touched;
 static char         g_name[32];
 static char         g_id[40];
 static char         g_keys[MAX_FIELDS][40];
@@ -82,6 +83,9 @@ static void field_caption(const char *key, char *lab, size_t lab_cap,
         { "modbus.unit_id", "Modbus Unit", "(unit)" },
         { "balance_trigger_v", "Balance Trigger", "(Volts)" },
         { "start_balance_v", "Start Balance", "(Volts)" },
+        { "cell_ovp_v", "Cell OVP", "(protect)" },
+        { "cell_ovpr_v", "Cell OVPR", "(resume)" },
+        { "cell_rcv_v", "Cell RCV", "(request)" },
         { "cell_count", "Cell Count", "(cells)" },
     };
     char tmp[64], *tok, *save;
@@ -355,6 +359,7 @@ static void destroy_form(void)
     }
     g_nfields = 0;
     g_nedit = 0;
+    g_touched = 0;
 }
 
 static int key_already(const char *key)
@@ -368,6 +373,14 @@ static int key_already(const char *key)
     return 0;
 }
 
+static int skip_form_key(const char *key)
+{
+    /* Pack-view / identity extras; keep 80x25 for OVP/OVPR/RCV. */
+    return key && (strcmp(key, "balance_trigger_v") == 0 ||
+                   strcmp(key, "start_balance_v") == 0 ||
+                   strcmp(key, "ble.adapter") == 0);
+}
+
 static int field_readonly(const char *key)
 {
     static const char *ro[] = {
@@ -377,6 +390,7 @@ static int field_readonly(const char *key)
         "modbus.ip", "modbus.port", "modbus.unit_id",
         "cell_count",
         "balance_trigger_v", "start_balance_v",
+        "cell_rcv_v",
     };
     size_t i;
 
@@ -531,6 +545,8 @@ static void add_json_group(cJSON *root, int want_ro, int row_h, int iw, int n)
             continue;
         if (json_key_dup(root, it))
             continue;
+        if (skip_form_key(it->string))
+            continue;
         ro = field_readonly(it->string);
         if ((want_ro && !ro) || (!want_ro && ro))
             continue;
@@ -569,6 +585,8 @@ static void build_form(int iw, int ih, const char *json)
             }
             if (dup)
                 continue;
+            if (skip_form_key(it->string))
+                continue;
             if (field_readonly(it->string))
                 nro++;
             else
@@ -606,6 +624,14 @@ static void build_form(int iw, int ih, const char *json)
     add_field("poll_interval_s", buf[0] ? buf : "2.0", row_h, iw - 2);
 
     add_json_group(root, 0, row_h, iw - 2, n);
+
+    buf[0] = '\0';
+    if (root)
+        json_scalar(cJSON_GetObjectItemCaseSensitive(root, "cell_rcv_v"),
+                    buf, sizeof(buf));
+    if (buf[0])
+        add_field("cell_rcv_v", buf, 1, iw - 2);
+
     add_json_group(root, 1, row_h, iw - 2, n);
 
     buf[0] = '\0';
@@ -703,6 +729,21 @@ void mf_devset_close(void)
 }
 
 int mf_devset_open(void) { return g_open; }
+int mf_devset_touched(void) { return g_touched; }
+
+int mf_devset_has_key(const char *key)
+{
+    int i;
+
+    if (!key || !key[0])
+        return 0;
+    for (i = 0; i < g_nfields; i++) {
+        if (strcmp(g_keys[i], key) == 0)
+            return 1;
+    }
+    return 0;
+}
+
 const char *mf_devset_id(void) { return g_id; }
 
 const char *mf_devset_poll_text(void)
@@ -885,6 +926,7 @@ int mf_devset_key(wint_t c)
     if (!in)
         return 1;
     if (c == KEY_BACKSPACE || c == 127) {
+        g_touched = 1;
         vk_input_backspace(in);
         vk_input_update(in);
         paint_dialog();
@@ -903,6 +945,7 @@ int mf_devset_key(wint_t c)
         return 1;
     }
     if (c >= 32 && c < 127) {
+        g_touched = 1;
         vk_input_insert_char(in, (int)c);
         vk_input_update(in);
         paint_dialog();

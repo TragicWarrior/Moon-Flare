@@ -28,7 +28,10 @@ extern const uint8_t JK_HEADER_CMD[4];
 #define JK_CMD_LOGBOOK         0xA1
 
 /* Register addresses for writes */
+#define JK_REG_CELL_OVP        0x04
+#define JK_REG_CELL_OVPR       0x05
 #define JK_REG_BALANCE_TRIGGER 0x06
+#define JK_REG_CELL_RCV        0x09
 #define JK_REG_START_BALANCE_JK02_32S  0x22
 #define JK_REG_START_BALANCE_JK02_24S  0x26
 
@@ -37,6 +40,9 @@ extern const uint8_t JK_HEADER_CMD[4];
 #define JK_TRIGGER_MAX_V 1.0
 #define JK_START_MIN_V   1.20
 #define JK_START_MAX_V   4.25
+#define JK_OVP_MIN_V     2.50
+#define JK_OVP_MAX_V     4.20
+#define JK_OVPR_GAP_V    0.10
 
 /* MOSFET switch registers */
 #define JK_REG_CHARGE          0x1D
@@ -130,6 +136,7 @@ typedef struct {
     float    cell_uvpr_v;
     float    cell_ovp_v;
     float    cell_ovpr_v;
+    float    cell_rcv_v;
     float    balance_trigger_v;
     float    start_balance_v;
     float    power_off_v;
@@ -194,6 +201,9 @@ const uint8_t *jk_build_register_cmd(uint8_t reg, uint32_t value);
 /* Saturate like Python clamp_trigger_v / clamp_start_v (round 3 decimals). */
 double   jk_clamp_trigger_v(double volts);
 double   jk_clamp_start_v(double volts);
+double   jk_clamp_ovp_v(double volts);
+/* Recovery must stay below trip; Cell OVP only opens charge MOS. */
+double   jk_clamp_ovpr_v(double volts, double ovp_v);
 uint32_t jk_volts_to_mv(double volts); /* nearest millivolt; no clamp */
 
 /* --- Frame Assembler --- */
