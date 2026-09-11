@@ -25,6 +25,7 @@
 #define CONNECT_S   20.0
 #define GATT_WAIT_S 4.0
 #define SCAN_S      8.0
+#define RECONNECT_S 1.0
 
 #define BLUEZ      "org.bluez"
 #define ADAPTER_IF "org.bluez.Adapter1"
@@ -63,7 +64,12 @@ struct cli {
     int      notify_handle;
     int      write_response;
     sd_bus_slot *notify_slot;
+    sd_bus_slot *dev_slot;
+    double   reconnect_at;
 };
+
+static void sess_fail(cli_t *c, const char *msg);
+static void begin_connect(cli_t *c, int idx);
 
 static cli_t g_cli[MAX_CLI];
 static const char *g_adapter = "hci0";
@@ -267,9 +273,28 @@ static void sess_reset(cli_t *c)
         sd_bus_slot_unref(c->notify_slot);
         c->notify_slot = NULL;
     }
+    if (c->dev_slot) {
+        sd_bus_slot_unref(c->dev_slot);
+        c->dev_slot = NULL;
+    }
     c->sess = SESS_IDLE;
     c->dev_path[0] = c->write_path[0] = c->notify_path[0] = '\0';
     c->write_handle = c->notify_handle = 0;
+}
+
+static int is_link_lost(const char *m)
+{
+    if (!m || !m[0])
+        return 0;
+    if (strcasestr(m, "not connected"))
+        return 1;
+    if (strstr(m, "doesn't exist") || strstr(m, "does not exist"))
+        return 1;
+    if (strcasestr(m, "unknown object"))
+        return 1;
+    if (strcasestr(m, "no such"))
+        return 1;
+    return 0;
 }
 
 static int char_handle_from_path(const char *path)
@@ -596,6 +621,85 @@ static int start_notify(cli_t *c)
     return 0;
 }
 
+static int on_device_props(sd_bus_message *m, void *userdata, sd_bus_error *ret_err)
+{
+    cli_t *c = userdata;
+    const char *iface = NULL;
+    (void)ret_err;
+    if (!c || c->fd < 0 || (c->sess != SESS_READY && c->sess != SESS_WAIT_GATT))
+        return 0;
+    if (sd_bus_message_read(m, "s", &iface) < 0)
+        return 0;
+    if (!iface || strcmp(iface, DEVICE_IF) != 0)
+        return 0;
+    if (sd_bus_message_enter_container(m, 'a', "{sv}") < 0)
+        return 0;
+    while (sd_bus_message_enter_container(m, 'e', "sv") > 0) {
+        const char *key = NULL;
+        const char *contents = NULL;
+        int on = 1;
+
+        sd_bus_message_read(m, "s", &key);
+        sd_bus_message_peek_type(m, NULL, &contents);
+        if (key && strcmp(key, "Connected") == 0 && contents &&
+            strcmp(contents, "b") == 0) {
+            if (sd_bus_message_enter_container(m, 'v', "b") >= 0) {
+                (void)sd_bus_message_read(m, "b", &on);
+                sd_bus_message_exit_container(m);
+            }
+            if (!on) {
+                sess_fail(c, "disconnected");
+                return 0;
+            }
+        } else if (contents) {
+            sd_bus_message_skip(m, "v");
+        }
+        sd_bus_message_exit_container(m);
+    }
+    return 0;
+}
+
+static void watch_device(cli_t *c)
+{
+    if (!g_bus || !c || !c->dev_path[0])
+        return;
+    if (c->dev_slot) {
+        sd_bus_slot_unref(c->dev_slot);
+        c->dev_slot = NULL;
+    }
+    if (sd_bus_match_signal(g_bus, &c->dev_slot, BLUEZ, c->dev_path,
+                            PROPS_IF, "PropertiesChanged",
+                            on_device_props, c) < 0)
+        log_msg("watch %s: match failed", c->mac);
+}
+
+static int on_if_removed(sd_bus_message *m, void *userdata, sd_bus_error *ret_err)
+{
+    const char *opath = NULL;
+    int i;
+
+    (void)userdata;
+    (void)ret_err;
+    if (sd_bus_message_read(m, "o", &opath) < 0 || !opath)
+        return 0;
+    for (i = 0; i < MAX_CLI; i++) {
+        cli_t *c = &g_cli[i];
+        size_t n;
+
+        if (c->fd < 0 || !c->bound || !c->dev_path[0])
+            continue;
+        if (c->sess != SESS_READY && c->sess != SESS_WAIT_GATT)
+            continue;
+        n = strlen(c->dev_path);
+        if (strcmp(opath, c->dev_path) == 0 ||
+            (strncmp(opath, c->dev_path, n) == 0 && opath[n] == '/')) {
+            sess_fail(c, "disconnected");
+            break;
+        }
+    }
+    return 0;
+}
+
 static int gatt_write(cli_t *c, const uint8_t *data, size_t n, int response)
 {
     sd_bus_error err = SD_BUS_ERROR_NULL;
@@ -619,7 +723,13 @@ static int gatt_write(cli_t *c, const uint8_t *data, size_t n, int response)
     r = sd_bus_call(g_bus, m, 0, &err, NULL);
     sd_bus_message_unref(m);
     if (r < 0) {
-        log_msg("WriteValue: %s", err.message ? err.message : "fail");
+        const char *em = err.message ? err.message : "fail";
+        log_msg("WriteValue: %s", em);
+        if (is_link_lost(em)) {
+            sd_bus_error_free(&err);
+            sess_fail(c, "disconnected");
+            return -2;
+        }
         sd_bus_error_free(&err);
         return -1;
     }
@@ -639,6 +749,8 @@ static void device_disconnect(cli_t *c)
 
 static void sess_fail(cli_t *c, const char *msg)
 {
+    int retry = c->bound && c->mac[0];
+
     log_msg("sess_fail %s: %s", c->mac[0] ? c->mac : "?", msg ? msg : "");
     if (g_scan_owner >= 0 && &g_cli[g_scan_owner] == c) {
         stop_discovery();
@@ -646,6 +758,9 @@ static void sess_fail(cli_t *c, const char *msg)
     }
     queue_err(c, msg);
     sess_reset(c);
+    c->acked = 0;
+    if (retry)
+        c->reconnect_at = mono_now() + RECONNECT_S;
 }
 
 static void sess_advance(cli_t *c, int idx)
@@ -782,6 +897,7 @@ static void collect_scan_results(char *out, size_t cap)
 
 static void begin_connect(cli_t *c, int idx)
 {
+    c->reconnect_at = 0;
     if (!g_bus) {
         queue_err(c, "no system bus");
         return;
@@ -794,6 +910,7 @@ static void begin_connect(cli_t *c, int idx)
     }
     adapter_power_on();
     mac_to_path(c->mac, c->dev_path, sizeof(c->dev_path));
+    watch_device(c);
     if (device_in_objects(c->dev_path)) {
         c->sess = SESS_CONNECT;
         if (device_connect(c) != 0) {
@@ -855,7 +972,7 @@ static void handle_line(cli_t *c, int idx, const char *line)
     }
     if (strcmp(cmd, "write") == 0) {
         uint8_t raw[256];
-        int n, resp;
+        int n, resp, r;
         if (!c->acked || !c->bound) {
             queue_err(c, "handshake required");
             return;
@@ -866,7 +983,10 @@ static void handle_line(cli_t *c, int idx, const char *line)
         }
         n = hex_decode(hex, raw, sizeof(raw));
         resp = json_bool(line, "response", c->write_response);
-        if (gatt_write(c, raw, (size_t)n, resp) != 0)
+        r = gatt_write(c, raw, (size_t)n, resp);
+        if (r == -2)
+            return;
+        if (r != 0)
             queue_err(c, "write failed");
         else
             queue_ok(c, "write");
@@ -881,6 +1001,7 @@ static void handle_line(cli_t *c, int idx, const char *line)
         sess_reset(c);
         c->acked = 0;
         c->bound = 0;
+        c->reconnect_at = 0;
         queue_ok(c, "disconnect");
         c->mac[0] = '\0';
         return;
@@ -1013,6 +1134,10 @@ int main(int argc, char **argv)
         log_msg("sd_bus_open_system failed (BlueZ commands will error)");
         g_bus = NULL;
     }
+    if (g_bus &&
+        sd_bus_match_signal(g_bus, NULL, BLUEZ, "/", OM_IF,
+                            "InterfacesRemoved", on_if_removed, NULL) < 0)
+        log_msg("InterfacesRemoved match failed");
     lfd = bind_abs(g_adapter);
     if (lfd < 0) {
         fprintf(stderr, "mf_gatt: bind @mf-gatt/%s: %s\n",
@@ -1079,6 +1204,13 @@ int main(int argc, char **argv)
             cli_read(&g_cli[i], i);
             if (g_cli[i].fd < 0)
                 continue;
+            if (g_cli[i].bound && g_cli[i].mac[0] &&
+                g_cli[i].sess == SESS_IDLE &&
+                g_cli[i].reconnect_at > 0 &&
+                mono_now() >= g_cli[i].reconnect_at) {
+                log_msg("reconnect %s", g_cli[i].mac);
+                begin_connect(&g_cli[i], i);
+            }
             if (g_cli[i].sess == SESS_SCAN || g_cli[i].sess == SESS_WAIT_GATT)
                 sess_advance(&g_cli[i], i);
             cli_flush(&g_cli[i]);

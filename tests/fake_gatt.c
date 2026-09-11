@@ -310,6 +310,26 @@ static void handle_line(cli_t *c, int idx, const char *line)
     (void)json_str(line, "hex", hex, sizeof(hex));
     if (strcmp(cmd, "quit") == 0)
         exit(0);
+    if (strcmp(cmd, "drop") == 0) {
+        const char *mac = addr[0] ? addr : c->mac;
+        int j;
+
+        if (!mac[0]) {
+            queue_err(c, "missing address");
+            return;
+        }
+        for (j = 0; j < MAX_CLI; j++) {
+            if (g_cli[j].fd < 0 || !g_cli[j].bound)
+                continue;
+            if (!mac_eq(g_cli[j].mac, mac))
+                continue;
+            queue_err(&g_cli[j], "disconnected");
+            g_cli[j].acked = 0;
+            g_cli[j].frame_off = JK_FRAME_SIZE;
+        }
+        queue_ok(c, "drop");
+        return;
+    }
     if (strcmp(cmd, "connect") == 0) {
         if (!addr[0]) {
             queue_err(c, "missing address");

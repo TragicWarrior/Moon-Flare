@@ -26,6 +26,8 @@
 #define POLL_MIN     1.0
 #define LINE_CAP     4096
 #define HEX_CAP      1024
+#define CELL_RETRY_S 8.0
+#define CELL_STALE_S 15.0
 
 enum {
     ST_IDLE = 0,
@@ -64,6 +66,7 @@ typedef struct {
     int                  have_start;
     int                  need_cell_req;
     double               last_cell_mono;
+    double               last_cell_req;
     double               last_settings_req;
     uint8_t              wq_reg[6];
     uint32_t             wq_val[6];
@@ -228,9 +231,39 @@ static const char *json_ble_scope(const char *js)
     return p ? p : (js ? js : "");
 }
 
+static void send_connect(jk_ctx_t *c);
+
 static void set_err(jk_ctx_t *c, const char *m)
 {
     snprintf(c->err, sizeof(c->err), "%s", m ? m : "");
+}
+
+static int ble_drop_msg(const char *m)
+{
+    if (!m || !m[0])
+        return 0;
+    if (strcasestr(m, "disconnected"))
+        return 1;
+    if (strcasestr(m, "not connected"))
+        return 1;
+    if (strstr(m, "doesn't exist") || strstr(m, "does not exist"))
+        return 1;
+    if (strcasestr(m, "unknown object"))
+        return 1;
+    if (strcasestr(m, "no such"))
+        return 1;
+    return 0;
+}
+
+static void mark_dropped(jk_ctx_t *c)
+{
+    c->have_data = 0;
+    if (!c->handshake_ok)
+        return;
+    c->handshake_ok = 0;
+    c->need_cell_req = 1;
+    if (c->fd >= 0)
+        send_connect(c);
 }
 
 static void sock_close(jk_ctx_t *c)
@@ -241,6 +274,7 @@ static void sock_close(jk_ctx_t *c)
     c->select_mask = 0;
     c->state = ST_IDLE;
     c->handshake_ok = 0;
+    c->have_data = 0;
     c->in_len = c->out_len = c->out_off = 0;
     c->wq_n = c->wq_i = 0;
     c->next_try = mono_now() + 0.5;
@@ -370,6 +404,8 @@ static void on_line(jk_ctx_t *c, const char *line)
     }
     if (strcmp(type, "error") == 0) {
         json_str(line, "message", c->err, sizeof(c->err));
+        if (ble_drop_msg(c->err))
+            mark_dropped(c);
         return;
     }
     if (strcmp(type, "notify") == 0 && c->handshake_ok && hex[0]) {
@@ -524,15 +560,20 @@ static mf_step_t pump(jk_ctx_t *c)
             queue_hex_write(c, jk_build_command(JK_CMD_DEVICE_INFO, NULL, 0, 0));
             queue_hex_write(c, jk_build_command(JK_CMD_CELL_INFO, NULL, 0, 0));
             c->need_cell_req = 0;
-            c->last_cell_mono = now;
+            c->last_cell_req = now;
             c->last_settings_req = now;
         } else if ((!c->have_settings || c->want_settings) &&
                    now - c->last_settings_req > 1.5) {
             queue_hex_write(c, jk_build_command(JK_CMD_CELL_INFO, NULL, 0, 0));
             c->last_settings_req = now;
-        } else if (now - c->last_cell_mono > 8.0) {
+        } else if (now - c->last_cell_req > CELL_RETRY_S) {
             queue_hex_write(c, jk_build_command(JK_CMD_CELL_INFO, NULL, 0, 0));
-            c->last_cell_mono = now;
+            c->last_cell_req = now;
+        }
+        if (c->have_data && c->last_cell_mono > 0.0 &&
+            now - c->last_cell_mono > CELL_STALE_S) {
+            c->have_data = 0;
+            set_err(c, "stale");
         }
     }
     if (c->fd >= 0)
@@ -677,8 +718,8 @@ static int jk_get_reading(void *v, char *json, size_t cap)
     if (!c || !json || cap == 0)
         return -1;
     if (!c->have_data) {
-        snprintf(json, cap, "{}");
-        return 0;
+        json[0] = '\0';
+        return -1;
     }
     r = &c->cell;
     {

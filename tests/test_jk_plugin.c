@@ -168,6 +168,34 @@ static int json_true(const char *js, const char *key)
     return strncmp(p, "true", 4) == 0;
 }
 
+static int send_drop(const char *mac)
+{
+    int fd;
+    struct sockaddr_un a;
+    socklen_t alen;
+    char req[128];
+    ssize_t n, wr;
+    int i;
+
+    fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0)
+        return 0;
+    memset(&a, 0, sizeof(a));
+    a.sun_family = AF_UNIX;
+    a.sun_path[0] = '\0';
+    i = snprintf(a.sun_path + 1, sizeof(a.sun_path) - 1, "mf-gatt/hci0");
+    alen = (socklen_t)(offsetof(struct sockaddr_un, sun_path) + 1 + (size_t)i);
+    if (connect(fd, (struct sockaddr *)&a, alen) != 0) {
+        close(fd);
+        return 0;
+    }
+    n = snprintf(req, sizeof(req),
+                 "{\"cmd\":\"drop\",\"address\":\"%s\"}\n", mac);
+    wr = write(fd, req, (size_t)n);
+    close(fd);
+    return wr == n;
+}
+
 static int handshake_ack_raw(void)
 {
     int fd;
@@ -274,6 +302,15 @@ int main(int argc, char **argv)
     CHECK(vb > 54.3 && vb < 54.5, "MAC B pack ~54.4 V");
     CHECK(va != vb, "distinct voltages");
     CHECK(json_true(json, "charge_mosfet_on"), "B charge on");
+
+    CHECK(send_drop(MAC_A), "inject BLE drop A");
+    drive(ops, a, 400);
+    CHECK(ops->get_reading(a, json, sizeof(json)) != 0, "A offline after drop");
+    CHECK(ops->get_reading(b, json, sizeof(json)) == 0, "B still live after A drop");
+    CHECK(drive(ops, a, 3000), "A reconnects after drop");
+    CHECK(ops->get_reading(a, json, sizeof(json)) == 0, "read A after reconnect");
+    va = json_num(json, "pack_voltage_v");
+    CHECK(va > 52.7 && va < 52.9, "MAC A pack after reconnect");
 
     CHECK(ops->action(a, "set_switch",
                       "{\"key\":\"charge\",\"value\":false}",
