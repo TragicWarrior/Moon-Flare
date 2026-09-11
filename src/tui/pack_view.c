@@ -10,6 +10,7 @@
 #define COL_TEXT COLOR_WHITE
 #define COL_TROUGH COLOR_BLACK /* dark trough; 8-color has no gray */
 #define NCELL_SHOW 16
+#define CELL_IDX_W 2
 #define CELL_LAB_W 9
 #define CELL_GAP   1
 #define CELL_BAR_W 8
@@ -30,6 +31,7 @@ static vk_label_t *g_lb_cur, *g_lb_temp, *g_lb_mos, *g_lb_spread;
 static vk_label_t *g_lb_nbatt, *g_lb_nwatts, *g_lb_vbatt, *g_lb_vwatts;
 static vk_label_t *g_lb_stage, *g_lb_energy, *g_lb_ctemp;
 static vk_meter_t *g_mt_cell[NCELL_SHOW];
+static vk_label_t *g_lb_cidx[NCELL_SHOW];
 static vk_label_t *g_lb_cell[NCELL_SHOW];
 static int g_visible;
 static int g_has_switch;
@@ -92,6 +94,23 @@ static void band_cell_v(vk_meter_t *m, double scale)
     vk_meter_add_threshold(m, 3.00 * scale, COLOR_GREEN, COL_BG);
     vk_meter_add_threshold(m, 3.45 * scale, COLOR_YELLOW, COL_BG);
     vk_meter_add_threshold(m, 3.60 * scale, COLOR_RED, COL_BG);
+}
+
+/* role: 0 default, 1 high (bright green), 2 low (bright yellow). */
+static void style_cell_idx(vk_label_t *l, int role)
+{
+    if (!l)
+        return;
+    if (role == 1) {
+        vk_widget_set_colors(VK_WIDGET(l), COLOR_GREEN, COL_BG);
+        vk_widget_set_attrs(VK_WIDGET(l), A_BOLD);
+    } else if (role == 2) {
+        vk_widget_set_colors(VK_WIDGET(l), COLOR_YELLOW, COL_BG);
+        vk_widget_set_attrs(VK_WIDGET(l), A_BOLD);
+    } else {
+        vk_widget_set_colors(VK_WIDGET(l), COL_TEXT, COL_BG);
+        vk_widget_set_attrs(VK_WIDGET(l), A_NORMAL);
+    }
 }
 
 static void band_pct(vk_meter_t *m)
@@ -166,7 +185,8 @@ void mf_pack_init(void)
         g_mt_cell[i] = mk_meter(ccx + CELL_LAB_W + CELL_GAP, ccy, CELL_BAR_W,
                                 2.80, 3.65);
         band_cell_v(g_mt_cell[i], 1.0);
-        g_lb_cell[i] = mk_lab(ccx, ccy, CELL_LAB_W);
+        g_lb_cidx[i] = mk_lab(ccx, ccy, CELL_IDX_W);
+        g_lb_cell[i] = mk_lab(ccx + CELL_IDX_W, ccy, CELL_LAB_W - CELL_IDX_W);
     }
     g_lb_spread = mk_lab(2, 14, iw);
 
@@ -222,6 +242,7 @@ void mf_pack_hide(void)
     hide_w(VK_WIDGET(g_hints));
     for (i = 0; i < NCELL_SHOW; i++) {
         hide_w(VK_WIDGET(g_mt_cell[i]));
+        hide_w(VK_WIDGET(g_lb_cidx[i]));
         hide_w(VK_WIDGET(g_lb_cell[i]));
     }
     g_visible = 0;
@@ -250,6 +271,7 @@ static void show_pack_widgets(void)
     show_w(VK_WIDGET(g_hints));
     for (i = 0; i < NCELL_SHOW; i++) {
         show_w(VK_WIDGET(g_mt_cell[i]));
+        show_w(VK_WIDGET(g_lb_cidx[i]));
         show_w(VK_WIDGET(g_lb_cell[i]));
     }
 }
@@ -505,32 +527,52 @@ void mf_pack_update(const char *json)
         {
             double vsum = 0;
             int nv = 0;
+            double cv[NCELL_SHOW];
+            int cbal[NCELL_SHOW];
+            int spread;
+
             for (i = 0; i < NCELL_SHOW; i++) {
-                double v = 0;
-                int bal = 0;
-                char lab[12];
+                cv[i] = 0;
+                cbal[i] = 0;
                 if (i < ncell) {
                     cJSON *cell = cJSON_GetArrayItem(cells, i);
-                    v = jnum(cell, "voltage_v", 0);
-                    bal = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(cell,
-                                                                       "balancing"));
-                    if (v > 0) {
-                        vsum += v;
+                    cv[i] = jnum(cell, "voltage_v", 0);
+                    cbal[i] = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(
+                                               cell, "balancing"));
+                    if (cv[i] > 0) {
+                        vsum += cv[i];
                         nv++;
-                        if (v < vmin)
-                            vmin = v;
-                        if (v > vmax)
-                            vmax = v;
+                        if (cv[i] < vmin)
+                            vmin = cv[i];
+                        if (cv[i] > vmax)
+                            vmax = cv[i];
                     }
                 }
-                if (v > 0)
-                    snprintf(lab, sizeof(lab), "%02d %.3f%c", i + 1, v,
-                             bal ? 'b' : ' ');
+            }
+            spread = (nv > 1 && vmax > vmin);
+            for (i = 0; i < NCELL_SHOW; i++) {
+                char idx[4], lab[12];
+                int role = 0;
+
+                snprintf(idx, sizeof(idx), "%02d", i + 1);
+                if (cv[i] > 0)
+                    snprintf(lab, sizeof(lab), " %.3f%c", cv[i],
+                             cbal[i] ? 'b' : ' ');
                 else
-                    snprintf(lab, sizeof(lab), "%02d --", i + 1);
+                    snprintf(lab, sizeof(lab), " --");
+                if (spread && cv[i] > 0) {
+                    if (cv[i] == vmax)
+                        role = 1;
+                    else if (cv[i] == vmin)
+                        role = 2;
+                }
+                vk_label_set_text(g_lb_cidx[i], idx);
+                style_cell_idx(g_lb_cidx[i], role);
+                vk_label_update(g_lb_cidx[i]);
                 vk_label_set_text(g_lb_cell[i], lab);
                 vk_label_update(g_lb_cell[i]);
-                vk_progress_set_value(VK_PROGRESS(g_mt_cell[i]), v > 0 ? v : 2.80);
+                vk_progress_set_value(VK_PROGRESS(g_mt_cell[i]),
+                                      cv[i] > 0 ? cv[i] : 2.80);
                 vk_progress_update(VK_PROGRESS(g_mt_cell[i]));
             }
             {
@@ -620,6 +662,7 @@ void mf_pack_shutdown(void)
     destroy_w(VK_WIDGET(g_lb_ctemp));
     for (i = 0; i < NCELL_SHOW; i++) {
         destroy_w(VK_WIDGET(g_mt_cell[i]));
+        destroy_w(VK_WIDGET(g_lb_cidx[i]));
         destroy_w(VK_WIDGET(g_lb_cell[i]));
     }
     memset(&g_chrome1, 0, sizeof(g_chrome1));
