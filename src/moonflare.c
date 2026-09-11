@@ -4,6 +4,7 @@
 
 #include "ui_screen.h"
 #include "layout.h"
+#include "debug/mf_backtrace.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -57,5 +58,6 @@ int main(int argc, char **argv)
     }
     if (dump)
         return mf_tui_dump_layout_main(dump_kind);
+    mf_backtrace_install();
     return mf_tui_run(connect, config);
 }

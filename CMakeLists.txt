@@ -68,6 +68,7 @@ target_link_libraries(moonflared PRIVATE mf_phr mf_cjson ${CMAKE_DL_LIBS})
 
 add_executable(moonflare
     src/moonflare.c
+    src/debug/mf_backtrace.c
     src/tui/ui_screen.c
     src/tui/menubar.c
     src/tui/dashboard.c
@@ -89,7 +90,8 @@ target_link_libraries(moonflare PRIVATE
 target_compile_definitions(moonflare PRIVATE _GNU_SOURCE)
 target_compile_options(moonflare PRIVATE ${MF_WARN})
 set_target_properties(moonflare PROPERTIES
-    BUILD_RPATH ${LIBVIPER_SOURCE_DIR})
+    BUILD_RPATH ${LIBVIPER_SOURCE_DIR}
+    ENABLE_EXPORTS ON)
 
 add_executable(test_jk_proto
     src/jk/jk_proto.c
