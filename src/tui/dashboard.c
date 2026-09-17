@@ -67,6 +67,12 @@ static vk_frame_t *mk_card(int idx, char *cap)
     vk_frame_set_border_colors(f, COL_TEXT, COL_BG);
     vk_widget_set_expand(VK_WIDGET(f));
     lb = vk_listbox_create(MF_CARD_W - 2, MF_CARD_H - 2);
+    /* EXPAND so the frame's resize cascade sizes the list to the frame
+       interior.  Without it the list stays MF_CARD_H-2 rows; when a card is
+       shrunk below its MF_CARD_H creation height (terminals under 27 rows)
+       the fixed-height list overflows the interior and paints over the
+       frame's bottom border, erasing most of it. */
+    vk_widget_set_expand(VK_WIDGET(lb));
     vk_widget_set_colors(VK_WIDGET(lb), COL_TEXT, COL_BG);
     vk_listbox_set_wrap(lb, true);
     vk_frame_set_child(f, VK_WIDGET(lb), VK_INHERIT_NONE);
