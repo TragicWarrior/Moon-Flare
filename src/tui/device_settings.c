@@ -834,11 +834,13 @@ const char *mf_devset_payload(void)
         if (!v)
             v = "";
         if (json_bare(v))
-            snprintf(piece, sizeof(piece), "%s\"%s\":%s",
-                     off > 1 ? "," : "", g_keys[i], v);
+            n = snprintf(piece, sizeof(piece), "%s\"%s\":%s",
+                         off > 1 ? "," : "", g_keys[i], v);
         else
-            snprintf(piece, sizeof(piece), "%s\"%s\":\"%s\"",
-                     off > 1 ? "," : "", g_keys[i], v);
+            n = snprintf(piece, sizeof(piece), "%s\"%s\":\"%s\"",
+                         off > 1 ? "," : "", g_keys[i], v);
+        if (n < 0 || (size_t)n >= sizeof(piece))
+            continue;   /* value too long to encode safely; skip this field */
         n = snprintf(g_payload + off, sizeof(g_payload) - off, "%s", piece);
         if (n < 0)
             break;

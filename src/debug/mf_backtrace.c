@@ -29,16 +29,20 @@ static void crash_handler(int sig)
     hlen = snprintf(hdr, sizeof(hdr), "moonflare signal %d\n", sig);
     if (hlen < 0)
         hlen = 0;
-    if (hlen > 0)
-        (void)write(STDERR_FILENO, hdr, (size_t)hlen);
+    if (hlen > 0) {
+        ssize_t wr = write(STDERR_FILENO, hdr, (size_t)hlen);
+        (void)wr;
+    }
 
     n = backtrace(frames, BT_DEPTH);
     backtrace_symbols_fd(frames, n, STDERR_FILENO);
 
     fd = open(BT_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd >= 0) {
-        if (hlen > 0)
-            (void)write(fd, hdr, (size_t)hlen);
+        if (hlen > 0) {
+            ssize_t wr = write(fd, hdr, (size_t)hlen);
+            (void)wr;
+        }
         backtrace_symbols_fd(frames, n, fd);
         (void)close(fd);
     }

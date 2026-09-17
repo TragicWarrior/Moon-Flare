@@ -28,7 +28,8 @@ static void mkdtemp_copy(const char *src, char *dst, size_t dstsz)
     long sz = ftell(f);
     fseek(f, 0, SEEK_SET);
     char *buf = malloc((size_t)sz);
-    fread(buf, 1, (size_t)sz, f);
+    size_t rd = fread(buf, 1, (size_t)sz, f);
+    (void)rd;
     fclose(f);
     char tmp[4096];
     snprintf(tmp, sizeof(tmp), "%s/%s", dst, "moonflared.json");
@@ -88,7 +89,7 @@ static void test_search_order(void)
 
     /* Write user-level config (will be found via search order). */
     char user_cfg[4096];
-    snprintf(user_cfg, sizeof(user_cfg), "%s/moonflared.json", config_dir);
+    snprintf(user_cfg, sizeof(user_cfg), "%.4079s/moonflared.json", config_dir);
     write_text(user_cfg,
         "{\"listen\":\"10.0.0.1:9999\",\"devices\":[{\"uuid\":\"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\"name\":\"user-dev\",\"kind\":\"battery\",\"driver\":\"xd\"}]}");
 

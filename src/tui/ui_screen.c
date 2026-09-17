@@ -482,7 +482,7 @@ static void apply_settings(void)
     if (r > 10.0)
         r = 10.0;
     g_refresh = r;
-    snprintf(g_hostport, sizeof(g_hostport), "%.120s:%d", g_host, g_port);
+    snprintf(g_hostport, sizeof(g_hostport), "%.115s:%d", g_host, g_port);
     snprintf(g_tui_cfg.connect, sizeof(g_tui_cfg.connect), "%s", g_hostport);
     g_tui_cfg.refresh_interval_s = g_refresh;
     mf_http_cli_close(&g_cli);
@@ -875,7 +875,7 @@ static void parse_connect(const char *spec)
         snprintf(g_host, sizeof(g_host), "%s", spec);
         g_port = 5250;
     }
-    snprintf(g_hostport, sizeof(g_hostport), "%.120s:%d", g_host, g_port);
+    snprintf(g_hostport, sizeof(g_hostport), "%.115s:%d", g_host, g_port);
 }
 
 static int dump_layout(const char *which)
