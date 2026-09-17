@@ -10,6 +10,7 @@ void mf_ui_resize(void);
 void mf_ui_attach(vk_widget_t *w, int x, int y);
 void mf_ui_front_clear(void);
 void mf_ui_front_push(vk_widget_t *w);
+vk_frame_t *mf_ui_make_client_frame(int w, int h);
 void mf_ui_quit(void);
 int  mf_ui_cols(void);
 int  mf_ui_rows(void);
@@ -48,6 +49,18 @@ int  mf_pack_visible(void);
 int  mf_pack_is_charger(void);
 int  mf_pack_has_switch(void);
 int  mf_pack_switch_on(const char *key);
+void mf_pack_on_resize(void);
+void mf_pack_set_device_id(const char *id);
+const char *mf_pack_get_device_id(void);
+void mf_pack_set_history(const double *values, int count, double y_max,
+    const char * const *labels);
+void mf_pack_set_graph_interval(int minutes);
+int  mf_pack_get_graph_interval(void);
+int  mf_pack_graph_zoom(int finer);
+int  mf_pack_graph_bar_width(void);
+
+void mf_ui_request_history(const char *id);
+void mf_ui_handle_history(void);
 
 void mf_devset_show(const char *id, const char *name, const char *json);
 void mf_devset_apply_json(const char *json);
@@ -60,6 +73,8 @@ int  mf_devset_mouse(int x, int y, mmask_t bstate);
 const char *mf_devset_id(void);
 const char *mf_devset_poll_text(void);
 const char *mf_devset_payload(void);
+int mf_devset_get_graph_interval(void);
+void mf_devset_set_graph_interval(int minutes);
 
 void mf_confirm_show(const char *name, const char *action);
 void mf_confirm_close(void);

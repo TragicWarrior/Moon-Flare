@@ -17,7 +17,7 @@
 #define COL_DROP_HI_FG COLOR_WHITE
 #define COL_DROP_HI_BG COLOR_BLACK
 
-enum { MB_FILE = 0, MB_SETTINGS, MB_DEVICES, MB_VIEW, MB_HELP, MB_COUNT };
+enum { MB_FILE = 0, MB_SETTINGS, MB_DEVICES, MB_HELP, MB_COUNT };
 
 struct mb_item {
     const char *label;
@@ -41,7 +41,6 @@ static void on_about(void) { mf_ui_show_help(1); }
 static void on_noop(void) { }
 
 static int g_dyn_cat[32];
-static int g_dyn_kind; /* 0 settings, 1 view */
 
 static void on_dyn_item(void)
 {
@@ -64,10 +63,6 @@ static const struct mb_item devices_items[] = {
     { "Remove Device…", on_noop, 0 },
     { NULL, NULL, 1 }
 };
-static const struct mb_item view_items[] = {
-    { "Dashboard", on_dash, 0 },
-    { NULL, NULL, 1 }
-};
 static const struct mb_item help_items[] = {
     { "Keyboard", on_keys, 0 },
     { "About", on_about, 0 },
@@ -75,10 +70,10 @@ static const struct mb_item help_items[] = {
 };
 
 static const struct mb_item *const tables[MB_COUNT] = {
-    file_items, settings_items, devices_items, view_items, help_items
+    file_items, settings_items, devices_items, help_items
 };
 static const char *const titles[MB_COUNT] = {
-    "File", "Settings", "Devices", "View", "Help"
+    "File", "Settings", "Devices", "Help"
 };
 
 static void close_dropdown(void)
@@ -87,6 +82,7 @@ static void close_dropdown(void)
         vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_drop));
         vk_window_destroy(g_drop);
         g_drop = NULL;
+        mf_ui_front_clear();
     }
     g_drop_idx = -1;
 }
@@ -103,11 +99,7 @@ static int on_drop_item(vk_widget_t *w, void *idxp)
     }
     mf_ui_refresh();
     if (g_open_table && i >= 0 && g_open_table[i].fn == on_dyn_item) {
-        int cat = g_dyn_cat[i];
-        if (g_dyn_kind == 0)
-            mf_ui_open_device_settings(cat);
-        else
-            mf_ui_open_device_view(cat);
+        mf_ui_open_device_view(g_dyn_cat[i]);
         return 0;
     }
     if (g_open_table && i >= 0 && g_open_table[i].fn)
@@ -128,20 +120,16 @@ static void open_dropdown(int idx)
         return;
     close_dropdown();
     t = tables[idx];
-    if (idx == MB_DEVICES || idx == MB_VIEW) {
+    if (idx == MB_DEVICES) {
         static struct mb_item dyn[40];
-        int nd = 0, c, k;
+        int nd = 0, c;
         memset(dyn, 0, sizeof(dyn));
-        g_dyn_kind = (idx == MB_VIEW);
-        if (idx == MB_DEVICES) {
-            dyn[nd++] = (struct mb_item){ "Add Device…", on_noop, 0 };
-            dyn[nd++] = (struct mb_item){ "Remove Device…", on_noop, 0 };
-            dyn[nd++] = (struct mb_item){ NULL, NULL, 0 };
-        } else {
-            dyn[nd++] = (struct mb_item){ "Dashboard", on_dash, 0 };
-            dyn[nd++] = (struct mb_item){ NULL, NULL, 0 };
-        }
-        for (c = 0; c < mf_dash_catalog_n() && nd < 38; c++) {
+        dyn[nd++] = (struct mb_item){ "Dashboard", on_dash, 0 };
+        dyn[nd++] = (struct mb_item){ NULL, NULL, 0 };
+        dyn[nd++] = (struct mb_item){ "Add Device…", on_noop, 0 };
+        dyn[nd++] = (struct mb_item){ "Remove Device…", on_noop, 0 };
+        dyn[nd++] = (struct mb_item){ NULL, NULL, 0 };
+        for (c = 0; c < mf_dash_catalog_n() && nd < 34; c++) {
             const char *nm = mf_dash_catalog_name(c);
             if (!nm || !nm[0])
                 continue;
@@ -152,7 +140,6 @@ static void open_dropdown(int idx)
             nd++;
         }
         dyn[nd].end = 1;
-        (void)k;
         t = dyn;
     }
     g_open_table = t;
@@ -195,7 +182,7 @@ static void open_dropdown(int idx)
     vk_window_set_border_attrs(win, A_BOLD);
     vk_widget_set_colors(VK_WIDGET(win), COL_DROP_FG, COL_MENU_BG);
     vk_widget_set_attrs(VK_WIDGET(win), A_BOLD);
-    vk_window_set_child(win, VK_WIDGET(lb));
+    vk_window_set_child(win, VK_WIDGET(lb), VK_INHERIT_NONE);
 
     vk_widget_get_position(VK_WIDGET(g_bar), &bar_x, &bar_y);
     (void)bar_y;
@@ -251,8 +238,12 @@ void mf_menubar_on_resize(void)
     close_dropdown();
     if (width < 80)
         width = 80;
-    if (g_bar)
+    g_focused = 0;
+    if (g_bar) {
         vk_widget_resize(VK_WIDGET(g_bar), width, 1);
+        vk_menubar_set_focused(g_bar, false);
+        vk_menubar_update(g_bar);
+    }
 }
 
 void mf_menubar_shutdown(void)

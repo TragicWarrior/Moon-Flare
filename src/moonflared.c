@@ -21,6 +21,7 @@
 #include "config.h"
 #include "device.h"
 #include "discover.h"
+#include "history.h"
 #include "http_pt.h"
 #include "loader.h"
 #include "protothread.h"
@@ -263,6 +264,12 @@ int main(int argc, char **argv)
     }
 
     mf_devices_init(g_pts, &g_chan_tick, &g_quit, &g_plugins);
+    if (g_cfg.history.enabled && g_cfg.history.path[0]) {
+        if (mf_history_open(g_cfg.history.path) != 0)
+            LOG_W("history: open %s failed", g_cfg.history.path);
+        else
+            LOG_I("history: logging to %s", g_cfg.history.path);
+    }
     {
         char err[96];
         int rc = mf_devices_apply_config(g_cfg.devices, g_cfg.n_devices,
@@ -305,6 +312,8 @@ int main(int argc, char **argv)
             ;
         mf_devices_apply_pending();
         mf_discover_step();
+        if (mf_history_db())
+            mf_history_flush_slice(32);
         while (waitpid(-1, NULL, WNOHANG) > 0)
             ;
     }
@@ -315,6 +324,7 @@ int main(int argc, char **argv)
     pt_broadcast(g_pts, &g_chan_tick);
     while (protothread_run(g_pts))
         ;
+    mf_history_close();
     mf_discover_close();
     mf_http_close_all(&g_http);
     mf_plugins_unload(&g_plugins);

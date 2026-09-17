@@ -4,6 +4,7 @@
  */
 
 #include "device.h"
+#include "history.h"
 
 #include <cJSON.h>
 #include <stdio.h>
@@ -40,6 +41,7 @@ typedef struct mf_device {
     bool     have_data;
     uint64_t seq;
     double   poll_interval_s;
+    double   capture_interval_s;
     char     last_error[96];
     char     reading_json[MF_READING_JSON_SZ];
 
@@ -138,6 +140,71 @@ static void refresh_reading(mf_device_t *d)
     d->last_error[0] = '\0';
     if (d->ops->caps)
         d->caps = d->ops->caps(d->ctx);
+
+    if (mf_history_db()) {
+        mf_sample_t s;
+        cJSON *r;
+        struct timespec now;
+
+        memset(&s, 0, sizeof(s));
+        snprintf(s.uuid, sizeof(s.uuid), "%s", d->uuid);
+        clock_gettime(CLOCK_REALTIME, &now);
+        s.ts = (double)now.tv_sec + (double)now.tv_nsec / 1e9;
+        s.online = d->online ? 1 : 0;
+        s.capture_interval_s = d->capture_interval_s;
+        {
+            size_t rjlen = strlen(d->reading_json);
+
+            if (rjlen < sizeof(s.extra_json))
+                memcpy(s.extra_json, d->reading_json, rjlen + 1);
+            else
+                memcpy(s.extra_json, "{}", 3);
+        }
+        r = cJSON_Parse(d->reading_json);
+        if (r) {
+            cJSON *it;
+
+            if (strcmp(d->kind, "charger") == 0) {
+                it = cJSON_GetObjectItemCaseSensitive(r, "battery_voltage_v");
+                if (cJSON_IsNumber(it)) {
+                    s.pack_v = it->valuedouble;
+                    s.has_pack_v = 1;
+                }
+                it = cJSON_GetObjectItemCaseSensitive(r, "battery_current_a");
+                if (cJSON_IsNumber(it)) {
+                    s.current_a = it->valuedouble;
+                    s.has_current_a = 1;
+                }
+                it = cJSON_GetObjectItemCaseSensitive(r, "charging_watts");
+                if (cJSON_IsNumber(it)) {
+                    s.power_w = it->valuedouble;
+                    s.has_power_w = 1;
+                }
+            } else {
+                it = cJSON_GetObjectItemCaseSensitive(r, "pack_voltage_v");
+                if (cJSON_IsNumber(it)) {
+                    s.pack_v = it->valuedouble;
+                    s.has_pack_v = 1;
+                }
+                it = cJSON_GetObjectItemCaseSensitive(r, "current_a");
+                if (cJSON_IsNumber(it)) {
+                    s.current_a = it->valuedouble;
+                    s.has_current_a = 1;
+                }
+                it = cJSON_GetObjectItemCaseSensitive(r, "soc_pct");
+                if (cJSON_IsNumber(it)) {
+                    s.soc = it->valuedouble;
+                    s.has_soc = 1;
+                }
+                if (s.has_pack_v && s.has_current_a) {
+                    s.power_w = s.pack_v * s.current_a;
+                    s.has_power_w = 1;
+                }
+            }
+            cJSON_Delete(r);
+        }
+        mf_history_enqueue(&s);
+    }
 }
 
 static pt_t device_pt(env_t e_)
@@ -354,6 +421,19 @@ int mf_devices_add(const char *name, const char *kind, const char *driver,
         double mn = mf_poll_interval_min(d->driver);
         d->poll_interval_s = poll < mn ? mn : poll;
     }
+    {
+        double cap = 10.0;
+        cJSON *sroot = spec_json ? cJSON_Parse(spec_json) : NULL;
+        cJSON *cit = sroot ? cJSON_GetObjectItemCaseSensitive(sroot,
+                             "capture_interval_s") : NULL;
+        if (cit && cJSON_IsNumber(cit))
+            cap = cit->valuedouble;
+        if (sroot)
+            cJSON_Delete(sroot);
+        if (cap != 0.0 && cap < 1.0)
+            cap = 1.0;
+        d->capture_interval_s = cap;
+    }
     snprintf(d->reading_json, sizeof(d->reading_json), "{}");
 
     if (ops && ops->open) {
@@ -373,6 +453,13 @@ int mf_devices_add(const char *name, const char *kind, const char *driver,
     d->in_use = true;
     d->stop = false;
     d->env.idx = slot;
+    if (mf_history_db()) {
+        struct timespec now;
+
+        clock_gettime(CLOCK_REALTIME, &now);
+        mf_history_upsert_device(d->uuid, d->name, d->kind, d->driver,
+                                 (double)now.tv_sec + (double)now.tv_nsec / 1e9);
+    }
     /* Do not protothread_run() here: POST is called from http_conn_pt. */
     if (g_pts && g_chan_tick)
         pt_create(g_pts, &d->thr, device_pt, &d->env);
@@ -425,6 +512,7 @@ int mf_devices_get_settings(const char *uuid, char *json, size_t cap)
         return 500;
     cJSON_AddStringToObject(out, "name", d->name);
     cJSON_AddNumberToObject(out, "poll_interval_s", d->poll_interval_s);
+    cJSON_AddNumberToObject(out, "capture_interval_s", d->capture_interval_s);
     if (plug[0] == '{')
         plug_root = cJSON_Parse(plug);
     if (plug_root && cJSON_IsObject(plug_root)) {
@@ -434,6 +522,7 @@ int mf_devices_get_settings(const char *uuid, char *json, size_t cap)
             if (!it->string || !it->string[0])
                 continue;
             if (strcmp(it->string, "poll_interval_s") == 0 ||
+                strcmp(it->string, "capture_interval_s") == 0 ||
                 strcmp(it->string, "name") == 0 ||
                 strcmp(it->string, "uuid") == 0)
                 continue;
@@ -514,11 +603,26 @@ int mf_devices_put_settings(const char *uuid, const char *json,
             }
             d->poll_interval_s = iv;
         }
+        it = cJSON_GetObjectItemCaseSensitive(root, "capture_interval_s");
+        if (cJSON_IsNumber(it) ||
+            (cJSON_IsString(it) && it->valuestring)) {
+            double iv = cJSON_IsNumber(it) ? it->valuedouble
+                                           : atof(it->valuestring);
+            if (iv < 0.0 || (iv > 0.0 && iv < 1.0)) {
+                if (err && errsz)
+                    snprintf(err, errsz,
+                             "capture_interval_s must be 0 (off) or >= 1.0");
+                cJSON_Delete(root);
+                return 400;
+            }
+            d->capture_interval_s = iv;
+        }
         for (it = root->child; it; it = it->next) {
             if (!it->string || !it->string[0])
                 continue;
             if (strcmp(it->string, "name") == 0 ||
                 strcmp(it->string, "poll_interval_s") == 0 ||
+                strcmp(it->string, "capture_interval_s") == 0 ||
                 strcmp(it->string, "uuid") == 0)
                 continue;
             have_other = 1;
@@ -721,6 +825,13 @@ static int validate_apply(const mf_config_device_t *devs, int n,
                 return -1;
             }
         }
+        if (devs[i].capture_interval_s != 0.0 &&
+            devs[i].capture_interval_s < 1.0) {
+            if (err && errsz)
+                snprintf(err, errsz,
+                         "capture_interval_s must be 0 (off) or >= 1.0");
+            return -1;
+        }
     }
 
     for (i = 0; i < n; i++) {
@@ -802,6 +913,9 @@ int mf_devices_apply_config(const mf_config_device_t *devs, int n,
             d->poll_interval_s = want->poll_interval_s < mn ? mn
                                                             : want->poll_interval_s;
         }
+        d->capture_interval_s = want->capture_interval_s;
+        if (d->capture_interval_s != 0.0 && d->capture_interval_s < 1.0)
+            d->capture_interval_s = 1.0;
     }
 
     /* ADD new enabled UUIDs. */

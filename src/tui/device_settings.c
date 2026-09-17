@@ -70,6 +70,8 @@ static void field_caption(const char *key, char *lab, size_t lab_cap,
         { "name", "Name", "" },
         { "uuid", "UUID", "" },
         { "poll_interval_s", "Poll Interval", "(Seconds)" },
+        { "capture_interval_s", "Capture Interval", "(Sec 0=off)" },
+        { "graph_interval_min", "Graph Interval", "(minutes)" },
         { "ble.address", "BLE Address", "(MAC)" },
         { "ble.adapter", "BLE Adapter", "(hciN)" },
         { "usb.path", "USB Path", "(device)" },
@@ -268,7 +270,7 @@ static void box_vacate(vk_box_t *box)
         return;
     n = vk_box_get_slot_count(box);
     for (i = 0; i < n; i++)
-        vk_box_set_widget(box, i, NULL);
+        vk_box_set_widget(box, i, NULL, VK_INHERIT_NONE);
 }
 
 static void destroy_form(void)
@@ -373,12 +375,13 @@ static int key_already(const char *key)
     return 0;
 }
 
-static int skip_form_key(const char *key)
+static int skip_form_key(const char *k)
 {
-    /* Pack-view / identity extras; keep 80x25 for OVP/OVPR/RCV. */
-    return key && (strcmp(key, "balance_trigger_v") == 0 ||
-                   strcmp(key, "start_balance_v") == 0 ||
-                   strcmp(key, "ble.adapter") == 0);
+    /* TUI-only / pack-view extras; keep 80x25 for OVP/OVPR/RCV. */
+    return k && (strcmp(k, "balance_trigger_v") == 0 ||
+                 strcmp(k, "start_balance_v") == 0 ||
+                 strcmp(k, "ble.adapter") == 0 ||
+                 strcmp(k, "graph_interval_min") == 0);
 }
 
 static int field_readonly(const char *key)
@@ -458,8 +461,8 @@ static void add_field(const char *key, const char *val, int row_h, int iw)
     }
     vk_input_set_text(in, val ? val : "");
     style_input(in, 0, ro);
-    vk_grid_set_widget(fields, 0, 0, VK_WIDGET(lab));
-    vk_grid_set_widget(fields, 1, 0, VK_WIDGET(in));
+    vk_grid_set_widget(fields, 0, 0, VK_WIDGET(lab), VK_INHERIT_NONE);
+    vk_grid_set_widget(fields, 1, 0, VK_WIDGET(in), VK_INHERIT_NONE);
 
     hint = vk_label_create(HINT_W);
     style_menu(VK_WIDGET(hint));
@@ -482,8 +485,8 @@ static void add_field(const char *key, const char *val, int row_h, int iw)
     vk_grid_set_col_width(row, 1, HINT_W);
     vk_grid_set_row_height(row, 0, row_h);
     style_menu(VK_WIDGET(row));
-    vk_grid_set_widget(row, 0, 0, VK_WIDGET(fields));
-    vk_grid_set_widget(row, 1, 0, VK_WIDGET(hint));
+    vk_grid_set_widget(row, 0, 0, VK_WIDGET(fields), VK_INHERIT_NONE);
+    vk_grid_set_widget(row, 1, 0, VK_WIDGET(hint), VK_INHERIT_NONE);
 
     g_row[i] = row;
     g_fields[i] = fields;
@@ -541,7 +544,8 @@ static void add_json_group(cJSON *root, int want_ro, int row_h, int iw, int n)
             continue;
         if (strcmp(it->string, "name") == 0 ||
             strcmp(it->string, "uuid") == 0 ||
-            strcmp(it->string, "poll_interval_s") == 0)
+            strcmp(it->string, "poll_interval_s") == 0 ||
+            strcmp(it->string, "capture_interval_s") == 0)
             continue;
         if (json_key_dup(root, it))
             continue;
@@ -623,6 +627,14 @@ static void build_form(int iw, int ih, const char *json)
                     buf, sizeof(buf));
     add_field("poll_interval_s", buf[0] ? buf : "2.0", row_h, iw - 2);
 
+    buf[0] = '\0';
+    if (root)
+        json_scalar(cJSON_GetObjectItemCaseSensitive(root, "capture_interval_s"),
+                    buf, sizeof(buf));
+    add_field("capture_interval_s", buf[0] ? buf : "10", row_h, iw - 2);
+
+    add_field("graph_interval_min", "30", 3, iw - 2);
+
     add_json_group(root, 0, row_h, iw - 2, n);
 
     buf[0] = '\0';
@@ -643,7 +655,7 @@ static void build_form(int iw, int ih, const char *json)
     if (root)
         cJSON_Delete(root);
     for (i = 0; i < g_nfields; i++)
-        vk_box_set_widget(g_form, i, VK_WIDGET(g_row[i]));
+        vk_box_set_widget(g_form, i, VK_WIDGET(g_row[i]), VK_INHERIT_NONE);
     {
         int used = 0, j, rw, rh, slack;
 
@@ -667,7 +679,7 @@ static void build_form(int iw, int ih, const char *json)
                                 st & ~(uint32_t)VK_STATE_EXPAND);
             style_menu(VK_WIDGET(g_form_fill));
             vk_widget_resize(VK_WIDGET(g_form_fill), iw - 2, slack);
-            vk_box_set_widget(g_form, g_nfields, VK_WIDGET(g_form_fill));
+            vk_box_set_widget(g_form, g_nfields, VK_WIDGET(g_form_fill), VK_INHERIT_NONE);
         }
     }
 
@@ -679,16 +691,16 @@ static void build_form(int iw, int ih, const char *json)
     g_fill = vk_filler_create();
     style_menu(VK_WIDGET(g_fill));
     vk_widget_set_expand(VK_WIDGET(g_fill));
-    vk_box_set_widget(g_bar, 0, VK_WIDGET(g_btn_save));
-    vk_box_set_widget(g_bar, 1, VK_WIDGET(g_fill));
-    vk_box_set_widget(g_bar, 2, VK_WIDGET(g_btn_exit));
+    vk_box_set_widget(g_bar, 0, VK_WIDGET(g_btn_save), VK_INHERIT_NONE);
+    vk_box_set_widget(g_bar, 1, VK_WIDGET(g_fill), VK_INHERIT_NONE);
+    vk_box_set_widget(g_bar, 2, VK_WIDGET(g_btn_exit), VK_INHERIT_NONE);
 
     g_inner = vk_box_create(iw - 2, ih - 2, VK_BOX_VERTICAL, 2);
     vk_box_set_homogeneous(g_inner, false);
     style_menu(VK_WIDGET(g_inner));
     vk_widget_set_expand(VK_WIDGET(g_inner));
-    vk_box_set_widget(g_inner, 0, VK_WIDGET(g_form));
-    vk_box_set_widget(g_inner, 1, VK_WIDGET(g_bar));
+    vk_box_set_widget(g_inner, 0, VK_WIDGET(g_form), VK_INHERIT_NONE);
+    vk_box_set_widget(g_inner, 1, VK_WIDGET(g_bar), VK_INHERIT_NONE);
 
     g_pad_left = mk_pad(1, ih - 2);
     g_pad_right = mk_pad(1, ih - 2);
@@ -696,9 +708,9 @@ static void build_form(int iw, int ih, const char *json)
     vk_box_set_homogeneous(g_mid, false);
     style_menu(VK_WIDGET(g_mid));
     vk_widget_set_expand(VK_WIDGET(g_mid));
-    vk_box_set_widget(g_mid, 0, VK_WIDGET(g_pad_left));
-    vk_box_set_widget(g_mid, 1, VK_WIDGET(g_inner));
-    vk_box_set_widget(g_mid, 2, VK_WIDGET(g_pad_right));
+    vk_box_set_widget(g_mid, 0, VK_WIDGET(g_pad_left), VK_INHERIT_NONE);
+    vk_box_set_widget(g_mid, 1, VK_WIDGET(g_inner), VK_INHERIT_NONE);
+    vk_box_set_widget(g_mid, 2, VK_WIDGET(g_pad_right), VK_INHERIT_NONE);
 
     g_pad_top = mk_pad(iw, 1);
     g_pad_bot = mk_pad(iw, 1);
@@ -706,9 +718,9 @@ static void build_form(int iw, int ih, const char *json)
     vk_box_set_homogeneous(g_vbox, false);
     style_menu(VK_WIDGET(g_vbox));
     vk_widget_set_expand(VK_WIDGET(g_vbox));
-    vk_box_set_widget(g_vbox, 0, VK_WIDGET(g_pad_top));
-    vk_box_set_widget(g_vbox, 1, VK_WIDGET(g_mid));
-    vk_box_set_widget(g_vbox, 2, VK_WIDGET(g_pad_bot));
+    vk_box_set_widget(g_vbox, 0, VK_WIDGET(g_pad_top), VK_INHERIT_NONE);
+    vk_box_set_widget(g_vbox, 1, VK_WIDGET(g_mid), VK_INHERIT_NONE);
+    vk_box_set_widget(g_vbox, 2, VK_WIDGET(g_pad_bot), VK_INHERIT_NONE);
 }
 
 void mf_devset_close(void)
@@ -716,7 +728,7 @@ void mf_devset_close(void)
     if (!g_open)
         return;
     if (g_win)
-        vk_window_set_child(g_win, NULL);
+        vk_window_set_child(g_win, NULL, VK_INHERIT_NONE);
     destroy_form();
     if (g_win) {
         vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_win));
@@ -757,6 +769,37 @@ const char *mf_devset_poll_text(void)
     return g_nfields && g_in[0] ? vk_input_get_text(g_in[0]) : "2.0";
 }
 
+int mf_devset_get_graph_interval(void)
+{
+    int i;
+    for (i = 0; i < g_nfields; i++) {
+        if (strcmp(g_keys[i], "graph_interval_min") == 0 && g_in[i]) {
+            const char *v = vk_input_get_text(g_in[i]);
+            int val = atoi(v);
+            if (val < 1)
+                val = 1;
+            return val;
+        }
+    }
+    return 30;
+}
+
+void mf_devset_set_graph_interval(int minutes)
+{
+    char buf[16];
+    int i;
+    if (minutes < 1)
+        minutes = 1;
+    snprintf(buf, sizeof(buf), "%d", minutes);
+    for (i = 0; i < g_nfields; i++) {
+        if (strcmp(g_keys[i], "graph_interval_min") == 0 && g_in[i]) {
+            vk_input_set_text(g_in[i], buf);
+            vk_input_update(g_in[i]);
+            return;
+        }
+    }
+}
+
 static int json_bare(const char *s)
 {
     char *end;
@@ -784,6 +827,9 @@ const char *mf_devset_payload(void)
         int n;
 
         if (!g_keys[i][0] || g_ro[i])
+            continue;
+        /* TUI-only key: never send to daemon/plugin. */
+        if (strcmp(g_keys[i], "graph_interval_min") == 0)
             continue;
         if (!v)
             v = "";
@@ -867,7 +913,7 @@ void mf_devset_show(const char *id, const char *name, const char *json)
     vk_widget_set_attrs(VK_WIDGET(g_win), A_BOLD);
 
     build_form(w - 2, h - 2, json);
-    vk_window_set_child(g_win, VK_WIDGET(g_vbox));
+    vk_window_set_child(g_win, VK_WIDGET(g_vbox), VK_INHERIT_NONE);
     mf_ui_attach(VK_WIDGET(g_win), x, y);
     set_field_focus(0);
     paint_dialog();
@@ -1096,6 +1142,35 @@ mf_devset_mouse(int x, int y, mmask_t bstate)
     if (!(bstate & LEFT) || !g_vbox || !g_bar)
         return 1;
 
+    /*
+     * Buttons first. On a tall form (more field rows than fit -- e.g. a JK
+     * pack) the field rows overflow down into the button bar's row; testing
+     * field rows first would swallow the Save/Exit clicks before they reach
+     * the buttons. The bar sits at vbox -> mid -> inner -> bar, so sum that
+     * whole chain: skipping mid/inner (the 1-char pads) left the hit box off
+     * by (1,1).
+     */
+    {
+        int vx, vy, mx, my, ix, iy;
+
+        vk_widget_get_position(VK_WIDGET(g_vbox), &vx, &vy);
+        vk_widget_get_position(VK_WIDGET(g_mid), &mx, &my);
+        vk_widget_get_position(VK_WIDGET(g_inner), &ix, &iy);
+        vk_widget_get_position(VK_WIDGET(g_bar), &bx, &by);
+        ox = win_x + vx + mx + ix + bx;
+        oy = win_y + vy + my + iy + by;
+    }
+    if (hit_btn(g_btn_save, ox, oy, x, y)) {
+        int rc = vk_button_press(g_btn_save);
+        vk_button_update(g_btn_save);
+        paint_dialog();
+        return rc == 2 ? 2 : 1;
+    }
+    if (hit_btn(g_btn_exit, ox, oy, x, y)) {
+        vk_button_press(g_btn_exit);
+        return 1;
+    }
+
     /* Frame + 1-char pad; form rows stack from there. */
     lx = x - win_x;
     ly = y - win_y;
@@ -1124,22 +1199,6 @@ mf_devset_mouse(int x, int y, mmask_t bstate)
             return 1;
         }
         cy += rh;
-    }
-
-    vk_widget_get_position(VK_WIDGET(g_vbox), &ox, &oy);
-    vk_widget_get_position(VK_WIDGET(g_bar), &bx, &by);
-    ox += win_x + bx;
-    oy += win_y + by;
-
-    if (hit_btn(g_btn_save, ox, oy, x, y)) {
-        int rc = vk_button_press(g_btn_save);
-        vk_button_update(g_btn_save);
-        paint_dialog();
-        return rc == 2 ? 2 : 1;
-    }
-    if (hit_btn(g_btn_exit, ox, oy, x, y)) {
-        vk_button_press(g_btn_exit);
-        return 1;
     }
     return 1;
 }

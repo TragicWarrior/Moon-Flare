@@ -60,6 +60,7 @@ static int g_devset_fetch;
 static int g_devset_wait_ovp;
 static int g_devset_ovp_tries;
 static double g_devset_next_try;
+static char g_hist_json[65536];
 
 static double mono_now(void)
 {
@@ -87,6 +88,19 @@ void mf_ui_attach(vk_widget_t *w, int x, int y)
     vk_widget_move(w, x, y);
 }
 
+/* Flat (no relief) client-area frame: cyan on blue.  Caller sizes, attaches
+   and fills it. */
+vk_frame_t *mf_ui_make_client_frame(int w, int h)
+{
+    vk_frame_t *f = vk_frame_create(w, h);
+    if (!f)
+        return NULL;
+    vk_widget_set_colors(VK_WIDGET(f), COLOR_CYAN, COLOR_BLUE);
+    vk_frame_set_border_style(f, VK_BORDER_SINGLE);
+    vk_frame_set_border_colors(f, COLOR_CYAN, COLOR_BLUE);
+    return f;
+}
+
 void mf_ui_front_clear(void) { g_nfront = 0; }
 
 void mf_ui_front_push(vk_widget_t *w)
@@ -107,6 +121,7 @@ void mf_ui_resize(void)
 {
     vk_screen_resize(g_screen);
     mf_dash_on_resize();
+    mf_pack_on_resize();
     mf_menubar_on_resize();
     mf_ui_refresh();
 }
@@ -213,7 +228,7 @@ static void box_vacate(vk_box_t *box)
         return;
     n = vk_box_get_slot_count(box);
     for (i = 0; i < n; i++)
-        vk_box_set_widget(box, i, NULL);
+        vk_box_set_widget(box, i, NULL, VK_INHERIT_NONE);
 }
 
 static void close_settings(void)
@@ -222,7 +237,7 @@ static void close_settings(void)
     if (!g_settings_open)
         return;
     if (g_set_win)
-        vk_window_set_child(g_set_win, NULL);
+        vk_window_set_child(g_set_win, NULL, VK_INHERIT_NONE);
     box_vacate(g_set_vbox);
     box_vacate(g_set_mid);
     box_vacate(g_set_inner);
@@ -359,8 +374,8 @@ void mf_ui_open_settings(void)
         vk_label_update(g_set_lab[i]);
         g_set_in[i] = vk_input_create(in_w);
         vk_input_set_border_style(g_set_in[i], VK_BORDER_SINGLE);
-        vk_grid_set_widget(g_set_fields[i], 0, 0, VK_WIDGET(g_set_lab[i]));
-        vk_grid_set_widget(g_set_fields[i], 1, 0, VK_WIDGET(g_set_in[i]));
+        vk_grid_set_widget(g_set_fields[i], 0, 0, VK_WIDGET(g_set_lab[i]), VK_INHERIT_NONE);
+        vk_grid_set_widget(g_set_fields[i], 1, 0, VK_WIDGET(g_set_in[i]), VK_INHERIT_NONE);
 
         g_set_hint[i] = vk_label_create(13);
         vk_widget_set_colors(VK_WIDGET(g_set_hint[i]), COL_TEXT, COL_MENU);
@@ -375,9 +390,9 @@ void mf_ui_open_settings(void)
         vk_grid_set_col_width(g_set_row[i], 1, 13);
         vk_grid_set_row_height(g_set_row[i], 0, 3);
         vk_widget_set_colors(VK_WIDGET(g_set_row[i]), COL_TEXT, COL_MENU);
-        vk_grid_set_widget(g_set_row[i], 0, 0, VK_WIDGET(g_set_fields[i]));
-        vk_grid_set_widget(g_set_row[i], 1, 0, VK_WIDGET(g_set_hint[i]));
-        vk_box_set_widget(g_set_form, i, VK_WIDGET(g_set_row[i]));
+        vk_grid_set_widget(g_set_row[i], 0, 0, VK_WIDGET(g_set_fields[i]), VK_INHERIT_NONE);
+        vk_grid_set_widget(g_set_row[i], 1, 0, VK_WIDGET(g_set_hint[i]), VK_INHERIT_NONE);
+        vk_box_set_widget(g_set_form, i, VK_WIDGET(g_set_row[i]), VK_INHERIT_NONE);
     }
     {
         int slack = (ih - 5) - 9;
@@ -391,7 +406,7 @@ void mf_ui_open_settings(void)
                                 st & ~(uint32_t)VK_STATE_EXPAND);
             vk_widget_set_colors(VK_WIDGET(g_set_form_fill), COL_TEXT, COL_MENU);
             vk_widget_resize(VK_WIDGET(g_set_form_fill), iw - 2, slack);
-            vk_box_set_widget(g_set_form, 3, VK_WIDGET(g_set_form_fill));
+            vk_box_set_widget(g_set_form, 3, VK_WIDGET(g_set_form_fill), VK_INHERIT_NONE);
         }
     }
     vk_input_set_text(g_set_in[0], g_host);
@@ -408,16 +423,16 @@ void mf_ui_open_settings(void)
     g_set_fill = vk_filler_create();
     vk_widget_set_colors(VK_WIDGET(g_set_fill), COL_TEXT, COL_MENU);
     vk_widget_set_expand(VK_WIDGET(g_set_fill));
-    vk_box_set_widget(g_set_bar, 0, VK_WIDGET(g_set_ok));
-    vk_box_set_widget(g_set_bar, 1, VK_WIDGET(g_set_fill));
-    vk_box_set_widget(g_set_bar, 2, VK_WIDGET(g_set_cancel));
+    vk_box_set_widget(g_set_bar, 0, VK_WIDGET(g_set_ok), VK_INHERIT_NONE);
+    vk_box_set_widget(g_set_bar, 1, VK_WIDGET(g_set_fill), VK_INHERIT_NONE);
+    vk_box_set_widget(g_set_bar, 2, VK_WIDGET(g_set_cancel), VK_INHERIT_NONE);
 
     g_set_inner = vk_box_create(iw - 2, ih - 2, VK_BOX_VERTICAL, 2);
     vk_box_set_homogeneous(g_set_inner, false);
     vk_widget_set_colors(VK_WIDGET(g_set_inner), COL_TEXT, COL_MENU);
     vk_widget_set_expand(VK_WIDGET(g_set_inner));
-    vk_box_set_widget(g_set_inner, 0, VK_WIDGET(g_set_form));
-    vk_box_set_widget(g_set_inner, 1, VK_WIDGET(g_set_bar));
+    vk_box_set_widget(g_set_inner, 0, VK_WIDGET(g_set_form), VK_INHERIT_NONE);
+    vk_box_set_widget(g_set_inner, 1, VK_WIDGET(g_set_bar), VK_INHERIT_NONE);
 
     g_set_pad_left = mk_set_pad(1, ih - 2);
     g_set_pad_right = mk_set_pad(1, ih - 2);
@@ -425,9 +440,9 @@ void mf_ui_open_settings(void)
     vk_box_set_homogeneous(g_set_mid, false);
     vk_widget_set_colors(VK_WIDGET(g_set_mid), COL_TEXT, COL_MENU);
     vk_widget_set_expand(VK_WIDGET(g_set_mid));
-    vk_box_set_widget(g_set_mid, 0, VK_WIDGET(g_set_pad_left));
-    vk_box_set_widget(g_set_mid, 1, VK_WIDGET(g_set_inner));
-    vk_box_set_widget(g_set_mid, 2, VK_WIDGET(g_set_pad_right));
+    vk_box_set_widget(g_set_mid, 0, VK_WIDGET(g_set_pad_left), VK_INHERIT_NONE);
+    vk_box_set_widget(g_set_mid, 1, VK_WIDGET(g_set_inner), VK_INHERIT_NONE);
+    vk_box_set_widget(g_set_mid, 2, VK_WIDGET(g_set_pad_right), VK_INHERIT_NONE);
 
     g_set_pad_top = mk_set_pad(iw, 1);
     g_set_pad_bot = mk_set_pad(iw, 1);
@@ -435,10 +450,10 @@ void mf_ui_open_settings(void)
     vk_box_set_homogeneous(g_set_vbox, false);
     vk_widget_set_colors(VK_WIDGET(g_set_vbox), COL_TEXT, COL_MENU);
     vk_widget_set_expand(VK_WIDGET(g_set_vbox));
-    vk_box_set_widget(g_set_vbox, 0, VK_WIDGET(g_set_pad_top));
-    vk_box_set_widget(g_set_vbox, 1, VK_WIDGET(g_set_mid));
-    vk_box_set_widget(g_set_vbox, 2, VK_WIDGET(g_set_pad_bot));
-    vk_window_set_child(g_set_win, VK_WIDGET(g_set_vbox));
+    vk_box_set_widget(g_set_vbox, 0, VK_WIDGET(g_set_pad_top), VK_INHERIT_NONE);
+    vk_box_set_widget(g_set_vbox, 1, VK_WIDGET(g_set_mid), VK_INHERIT_NONE);
+    vk_box_set_widget(g_set_vbox, 2, VK_WIDGET(g_set_pad_bot), VK_INHERIT_NONE);
+    vk_window_set_child(g_set_win, VK_WIDGET(g_set_vbox), VK_INHERIT_NONE);
     mf_ui_attach(VK_WIDGET(g_set_win), x, y);
     paint_settings();
 
@@ -578,7 +593,7 @@ void mf_ui_show_help(int about)
         vk_listbox_add_item(lb, "Esc  close dialog", NULL, NULL);
         vk_listbox_add_item(lb, "Tab  next field", NULL, NULL);
     }
-    vk_window_set_child(g_help_win, VK_WIDGET(lb));
+    vk_window_set_child(g_help_win, VK_WIDGET(lb), VK_INHERIT_NONE);
     mf_ui_attach(VK_WIDGET(g_help_win),
                  (mf_ui_cols() - w) / 2, 2);
     vk_listbox_update(lb);
@@ -656,6 +671,165 @@ void mf_ui_open_device_view(int idx)
     mf_ui_refresh();
 }
 
+void mf_ui_request_history(const char *id)
+{
+    char path[192];
+    snprintf(path, sizeof(path), "/api/v1/devices/%s/history", id);
+    (void)mf_http_cli_get(&g_cli, path);
+}
+
+void mf_ui_handle_history(void)
+{
+    cJSON *root, *ts_arr, *val_arr;
+    int i, n, n_bars, bi;
+    double *ts, *vals;
+    double bucketed[512], max_val = 0;
+    int bucket_count;
+    double interval_s;
+    double t_start, t_end;
+
+    if (g_hist_json[0] == '\0')
+        return;
+    root = cJSON_Parse(g_hist_json);
+    if (!root)
+    {
+        g_hist_json[0] = '\0';
+        return;
+    }
+    ts_arr = cJSON_GetObjectItemCaseSensitive(root, "ts");
+    val_arr = cJSON_GetObjectItemCaseSensitive(root, "values");
+    if (!ts_arr || !cJSON_IsArray(ts_arr) ||
+        !val_arr || !cJSON_IsArray(val_arr))
+    {
+        cJSON_Delete(root);
+        g_hist_json[0] = '\0';
+        return;
+    }
+    n = cJSON_GetArraySize(ts_arr);
+    if (n != cJSON_GetArraySize(val_arr) || n <= 0)
+    {
+        cJSON_Delete(root);
+        g_hist_json[0] = '\0';
+        return;
+    }
+
+    /* Data is oldest-first. Keep the latest 4096 (match daemon cap). */
+    int cap = 4096;
+    int skip = 0;
+    if (n > cap) {
+        skip = n - cap;
+        n = cap;
+    }
+
+    ts = malloc((size_t)n * sizeof(double));
+    vals = malloc((size_t)n * sizeof(double));
+    if (!ts || !vals) {
+        free(ts);
+        free(vals);
+        cJSON_Delete(root);
+        g_hist_json[0] = '\0';
+        return;
+    }
+    for (i = 0; i < n; i++) {
+        int idx = i + skip;
+        cJSON *te = cJSON_GetArrayItem(ts_arr, idx);
+        cJSON *ve = cJSON_GetArrayItem(val_arr, idx);
+        ts[i] = (te && cJSON_IsNumber(te)) ? te->valuedouble : 0.0;
+        vals[i] = (ve && cJSON_IsNumber(ve)) ? ve->valuedouble : 0.0;
+    }
+
+    /* Rightmost bar = current timeslot; work left with a full row of
+       slots (zeros if no samples) so bars meet the Y spine. */
+    interval_s = (double)mf_pack_get_graph_interval() * 60.0;
+    t_end = ts[n - 1];
+    {
+        int cells = mf_pack_graph_bar_width();
+        double last_start;
+
+        if (cells < 1)
+            cells = 1;
+        n_bars = (mf_ui_cols() - 12) / cells;
+        if (n_bars < 8)
+            n_bars = 8;
+        if (n_bars > 512)
+            n_bars = 512;
+        last_start = (double)((long)(t_end / interval_s)) * interval_s;
+        t_start = last_start - (double)(n_bars - 1) * interval_s;
+        t_end = last_start + interval_s;
+    }
+
+    /* Initialize bucketed array to 0. */
+    for (bi = 0; bi < n_bars; bi++)
+        bucketed[bi] = 0.0;
+
+    /* Assign each sample to a bucket. */
+    for (i = 0; i < n; i++) {
+        int bucket = (int)((ts[i] - t_start) / interval_s);
+        if (bucket < 0 || bucket >= n_bars)
+            continue;
+        bucketed[bucket] += vals[i];
+    }
+
+    /* Compute mean per bucket. */
+    bucket_count = n_bars;
+    for (bi = 0; bi < n_bars; bi++) {
+        /* Count samples in this bucket to compute the mean. */
+        int cnt = 0;
+        double sum = 0;
+        for (i = 0; i < n; i++) {
+            int b = (int)((ts[i] - t_start) / interval_s);
+            if (b < 0 || b >= n_bars)
+                continue;
+            if (b == bi) {
+                sum += vals[i];
+                cnt++;
+            }
+        }
+        if (cnt > 0)
+            bucketed[bi] = sum / (double)cnt;
+        else
+            bucketed[bi] = 0.0;
+        if (bucketed[bi] > max_val)
+            max_val = bucketed[bi];
+    }
+
+    double y_max = max_val * 1.2;
+    if (y_max < 1.0)
+        y_max = 1.0;
+
+    /* Build X-axis time labels, one per bar, oldest-first. */
+    const char *labels[512];
+    int label_count = 0;
+    int interval_min = mf_pack_get_graph_interval();
+    for (bi = 0; bi < n_bars && label_count < 512; bi++) {
+        time_t bt = (time_t)(t_start + (double)bi * interval_s);
+        struct tm tm_buf;
+        struct tm *tmp = localtime_r(&bt, &tm_buf);
+        char buf[16];
+        if (tmp) {
+            if (interval_min >= 24 * 60)
+                strftime(buf, sizeof(buf), "%b %d %H:%M", tmp);
+            else
+                strftime(buf, sizeof(buf), "%H:%M", tmp);
+        } else {
+            snprintf(buf, sizeof(buf), "??:??");
+        }
+        labels[label_count] = strdup(buf);
+        label_count++;
+    }
+
+    mf_pack_set_history(bucketed, bucket_count, y_max,
+        label_count > 0 ? (const char * const *)labels : NULL);
+
+    for (bi = 0; bi < label_count; bi++)
+        free((void *)labels[bi]);
+
+    free(ts);
+    free(vals);
+    cJSON_Delete(root);
+    g_hist_json[0] = '\0';
+}
+
 void mf_ui_open_device_settings(int idx)
 {
     const char *id = mf_dash_catalog_id(idx);
@@ -665,6 +839,7 @@ void mf_ui_open_device_settings(int idx)
     if (!id || !id[0])
         return;
     mf_devset_show(id, name, NULL);
+    mf_devset_set_graph_interval(mf_pack_get_graph_interval());
     snprintf(path, sizeof(path), "/api/v1/devices/%s/settings", id);
     g_devset_fetch = 1;
     g_devset_wait_ovp = 1;
@@ -808,6 +983,8 @@ int mf_tui_run(const char *connect, const char *config_path)
                 tag = "reconnecting";
             if (mf_http_cli_take_body(&g_cli, body, sizeof(body))) {
                 snprintf(last_json, sizeof(last_json), "%s", body);
+                if (strstr(body, "\"values\"") && strstr(body, "\"column\""))
+                    snprintf(g_hist_json, sizeof(g_hist_json), "%s", body);
                 dirty = 1;
             }
             if (strcmp(tag, last_tag) != 0) {
@@ -856,6 +1033,12 @@ int mf_tui_run(const char *connect, const char *config_path)
                 } else if (g_view_idx >= 0 && strstr(last_json, "\"data\"")) {
                     snprintf(g_view_json, sizeof(g_view_json), "%s", last_json);
                     mf_pack_update(g_view_json);
+                    mf_ui_handle_history();
+                    if (mf_pack_is_charger() && !g_cli.inflight)
+                        mf_ui_request_history(mf_pack_get_device_id());
+                } else if (strstr(last_json, "\"values\"") &&
+                    strstr(last_json, "\"column\"")) {
+                    mf_ui_handle_history();
                 } else if (is_status) {
                     mf_dash_update(g_hostport, tag, last_json);
                 } else {
@@ -884,9 +1067,11 @@ int mf_tui_run(const char *connect, const char *config_path)
                 (void)mf_http_cli_post(&g_cli, path, payload);
             } else if (mr == 2 && mf_devset_open()) {
                 char path[192];
+                int gi = mf_devset_get_graph_interval();
                 snprintf(path, sizeof(path),
                          "/api/v1/devices/%s/settings", mf_devset_id());
                 (void)mf_http_cli_put(&g_cli, path, mf_devset_payload());
+                mf_pack_set_graph_interval(gi);
                 mf_devset_close();
                 g_last_get = 0;
             }
@@ -925,9 +1110,11 @@ int mf_tui_run(const char *connect, const char *config_path)
                 int sr = mf_devset_key((wint_t)key);
                 if (sr == 2) {
                     char path[192];
+                    int gi = mf_devset_get_graph_interval();
                     snprintf(path, sizeof(path),
                              "/api/v1/devices/%s/settings", mf_devset_id());
                     (void)mf_http_cli_put(&g_cli, path, mf_devset_payload());
+                    mf_pack_set_graph_interval(gi);
                     mf_devset_close();
                     g_last_get = 0;
                 }
@@ -939,6 +1126,23 @@ int mf_tui_run(const char *connect, const char *config_path)
                 continue;
             if (mf_pack_visible() && (key == 27 || key == KEY_EXIT)) {
                 mf_ui_show_dashboard();
+                continue;
+            }
+            if (mf_pack_visible() && (key == 'e' || key == 'E')) {
+                if (g_view_idx >= 0)
+                    mf_ui_open_device_settings(g_view_idx);
+                continue;
+            }
+            if (mf_pack_visible() && mf_pack_is_charger() &&
+                (key == '+' || key == '=')) {
+                if (mf_pack_graph_zoom(1))
+                    mf_ui_handle_history();
+                continue;
+            }
+            if (mf_pack_visible() && mf_pack_is_charger() &&
+                (key == '-' || key == '_')) {
+                if (mf_pack_graph_zoom(0))
+                    mf_ui_handle_history();
                 continue;
             }
             if (mf_pack_visible() && !mf_pack_is_charger() && mf_pack_has_switch()) {

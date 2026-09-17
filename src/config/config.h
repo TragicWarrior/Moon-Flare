@@ -68,6 +68,7 @@ typedef struct {
     char driver[MF_DEV_DRIVER_SIZE];
     bool enabled;
     double poll_interval_s;
+    double capture_interval_s;   /* history sample interval; 0=off, default 10 */
     char bus[MF_DEV_BUS_SIZE];
     mf_config_usb_t usb;
     mf_config_ble_t ble;

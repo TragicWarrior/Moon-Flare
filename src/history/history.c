@@ -2,6 +2,7 @@
 
 #include <sqlite3.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 typedef struct {
@@ -108,14 +109,13 @@ int mf_history_open(const char *path)
         "CREATE TABLE IF NOT EXISTS samples ("
         "  id INTEGER PRIMARY KEY,"
         "  ts REAL NOT NULL,"
-        "  device_id TEXT NOT NULL REFERENCES devices(id),"
+        "  device_id TEXT NOT NULL,"
         "  online INTEGER NOT NULL,"
         "  pack_v REAL,"
         "  current_a REAL,"
         "  power_w REAL,"
         "  soc REAL,"
-        "  extra_json TEXT NOT NULL,"
-        "  FOREIGN KEY (device_id) REFERENCES devices(id)"
+        "  extra_json TEXT NOT NULL"
         ");"
         "CREATE INDEX IF NOT EXISTS idx_samples_dev_ts ON samples(device_id, ts);";
 
@@ -196,7 +196,9 @@ int mf_history_enqueue(const mf_sample_t *s)
 
     if (!g_db || !s)
         return -1;
-    interval = s->poll_interval_s > 0.0 ? s->poll_interval_s : 2.0;
+    if (s->capture_interval_s <= 0.0)
+        return 0; /* tracking off for this device */
+    interval = s->capture_interval_s;
     didx = find_or_add_dev(s->uuid);
     if (didx >= 0 && dev_last[didx].last_ts >= 0.0) {
         if ((s->ts - dev_last[didx].last_ts) < interval)
@@ -241,4 +243,139 @@ int mf_history_flush_slice(int max_rows)
     }
     sqlite3_exec(g_db, "COMMIT", NULL, NULL, NULL);
     return inserted;
+}
+
+int mf_history_query(const char *uuid, const char *column, double *out, int max)
+{
+    static const char *cols[] = { "pack_v", "current_a", "power_w", "soc" };
+    char sql[160];
+    sqlite3_stmt *st = NULL;
+    int rc, n = 0, ok = 0;
+    size_t i;
+
+    if (!g_db || !uuid || !column || !out || max <= 0)
+        return -1;
+
+    /* whitelist the column: it is interpolated into the SQL below */
+    for (i = 0; i < sizeof(cols) / sizeof(cols[0]); i++) {
+        if (strcmp(column, cols[i]) == 0) {
+            ok = 1;
+            break;
+        }
+    }
+    if (!ok)
+        return -1;
+
+    snprintf(sql, sizeof(sql),
+              "SELECT %s FROM samples WHERE device_id=? AND %s IS NOT NULL"
+              " ORDER BY ts DESC LIMIT ?", column, column);
+
+    rc = sqlite3_prepare_v2(g_db, sql, -1, &st, NULL);
+    if (rc != SQLITE_OK)
+        return -1;
+    sqlite3_bind_text(st, 1, uuid, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(st, 2, max);
+
+    while (n < max && sqlite3_step(st) == SQLITE_ROW)
+        out[n++] = sqlite3_column_double(st, 0);
+
+    sqlite3_finalize(st);
+    return n;
+}
+
+int mf_history_query_ts(const char *uuid, const char *column,
+                        double *ts, double *values, int max)
+{
+    return mf_history_query_ts_step(uuid, column, 0, ts, values, max);
+}
+
+int mf_history_query_ts_step(const char *uuid, const char *column,
+                             int step_s, double *ts, double *values, int max)
+{
+    static const char *cols[] = { "pack_v", "current_a", "power_w", "soc" };
+    char sql[280];
+    sqlite3_stmt *st = NULL;
+    int rc, n = 0, ok = 0;
+    size_t i;
+    double *ts_buf = NULL, *val_buf = NULL;
+
+    if (max <= 0)
+        max = 800;
+    if (max > 4096)
+        max = 4096;
+
+    if (!g_db || !uuid || !column || !ts || !values)
+        return -1;
+
+    /* whitelist the column: it is interpolated into the SQL below */
+    for (i = 0; i < sizeof(cols) / sizeof(cols[0]); i++) {
+        if (strcmp(column, cols[i]) == 0) {
+            ok = 1;
+            break;
+        }
+    }
+    if (!ok)
+        return -1;
+
+    /* Newest-first LIMIT, then reverse to oldest-first for the TUI.
+       step_s > 0 averages into that many seconds so 800 rows span hours. */
+    if (step_s > 0)
+        snprintf(sql, sizeof(sql),
+                 "SELECT (CAST(ts AS INTEGER) / ?) * ?, AVG(%s)"
+                 " FROM samples WHERE device_id=? AND %s IS NOT NULL"
+                 " GROUP BY 1 ORDER BY 1 DESC LIMIT ?", column, column);
+    else
+        snprintf(sql, sizeof(sql),
+                 "SELECT ts, %s FROM samples WHERE device_id=? AND %s IS NOT NULL"
+                 " ORDER BY ts DESC LIMIT ?", column, column);
+
+    ts_buf = (double *)malloc((size_t)max * sizeof(double));
+    if (!ts_buf)
+        return -1;
+    val_buf = (double *)malloc((size_t)max * sizeof(double));
+    if (!val_buf)
+    {
+        free(ts_buf);
+        return -1;
+    }
+
+    rc = sqlite3_prepare_v2(g_db, sql, -1, &st, NULL);
+    if (rc != SQLITE_OK)
+    {
+        free(ts_buf);
+        free(val_buf);
+        return -1;
+    }
+    if (step_s > 0)
+    {
+        sqlite3_bind_int(st, 1, step_s);
+        sqlite3_bind_int(st, 2, step_s);
+        sqlite3_bind_text(st, 3, uuid, -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(st, 4, max);
+    }
+    else
+    {
+        sqlite3_bind_text(st, 1, uuid, -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(st, 2, max);
+    }
+
+    while (n < max && sqlite3_step(st) == SQLITE_ROW)
+    {
+        ts_buf[n] = sqlite3_column_double(st, 0);
+        val_buf[n] = sqlite3_column_double(st, 1);
+        n++;
+    }
+    sqlite3_finalize(st);
+
+    /* Reverse: newest→oldest in temp buffer becomes oldest→newest in out. */
+    for (i = 0; i < (size_t)n; i++)
+    {
+        int src = n - 1 - (int)i;
+        ts[i] = ts_buf[src];
+        values[i] = val_buf[src];
+    }
+
+    free(ts_buf);
+    free(val_buf);
+    return n;
 }

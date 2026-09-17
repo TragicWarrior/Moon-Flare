@@ -82,6 +82,8 @@ int main(void)
     mf_tui_paint_charger(grid);
     CHECK(strstr(grid[3], "Classic"), "charger frame");
     CHECK(strstr(grid[7], "Absorb") || strstr(grid[7], "stage"), "stage");
+    CHECK(strstr(grid[12], "Power"), "charger power histogram label");
+    CHECK(strstr(grid[13], "#"), "charger histogram bar");
     CHECK(strstr(grid[24], "Esc dashboard"), "charger hints");
     for (r = 0; r < MF_TUI_ROWS; r++)
         CHECK(strlen(grid[r]) == 80, "charger row width 80");
