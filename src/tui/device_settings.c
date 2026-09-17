@@ -70,6 +70,7 @@ static void field_caption(const char *key, char *lab, size_t lab_cap,
         { "name", "Name", "" },
         { "uuid", "UUID", "" },
         { "poll_interval_s", "Poll Interval", "(Seconds)" },
+        { "capture_interval_s", "Capture Interval", "(Sec 0=off)" },
         { "ble.address", "BLE Address", "(MAC)" },
         { "ble.adapter", "BLE Adapter", "(hciN)" },
         { "usb.path", "USB Path", "(device)" },
@@ -541,7 +542,8 @@ static void add_json_group(cJSON *root, int want_ro, int row_h, int iw, int n)
             continue;
         if (strcmp(it->string, "name") == 0 ||
             strcmp(it->string, "uuid") == 0 ||
-            strcmp(it->string, "poll_interval_s") == 0)
+            strcmp(it->string, "poll_interval_s") == 0 ||
+            strcmp(it->string, "capture_interval_s") == 0)
             continue;
         if (json_key_dup(root, it))
             continue;
@@ -622,6 +624,12 @@ static void build_form(int iw, int ih, const char *json)
         json_scalar(cJSON_GetObjectItemCaseSensitive(root, "poll_interval_s"),
                     buf, sizeof(buf));
     add_field("poll_interval_s", buf[0] ? buf : "2.0", row_h, iw - 2);
+
+    buf[0] = '\0';
+    if (root)
+        json_scalar(cJSON_GetObjectItemCaseSensitive(root, "capture_interval_s"),
+                    buf, sizeof(buf));
+    add_field("capture_interval_s", buf[0] ? buf : "10", row_h, iw - 2);
 
     add_json_group(root, 0, row_h, iw - 2, n);
 
@@ -1096,6 +1104,35 @@ mf_devset_mouse(int x, int y, mmask_t bstate)
     if (!(bstate & LEFT) || !g_vbox || !g_bar)
         return 1;
 
+    /*
+     * Buttons first. On a tall form (more field rows than fit -- e.g. a JK
+     * pack) the field rows overflow down into the button bar's row; testing
+     * field rows first would swallow the Save/Exit clicks before they reach
+     * the buttons. The bar sits at vbox -> mid -> inner -> bar, so sum that
+     * whole chain: skipping mid/inner (the 1-char pads) left the hit box off
+     * by (1,1).
+     */
+    {
+        int vx, vy, mx, my, ix, iy;
+
+        vk_widget_get_position(VK_WIDGET(g_vbox), &vx, &vy);
+        vk_widget_get_position(VK_WIDGET(g_mid), &mx, &my);
+        vk_widget_get_position(VK_WIDGET(g_inner), &ix, &iy);
+        vk_widget_get_position(VK_WIDGET(g_bar), &bx, &by);
+        ox = win_x + vx + mx + ix + bx;
+        oy = win_y + vy + my + iy + by;
+    }
+    if (hit_btn(g_btn_save, ox, oy, x, y)) {
+        int rc = vk_button_press(g_btn_save);
+        vk_button_update(g_btn_save);
+        paint_dialog();
+        return rc == 2 ? 2 : 1;
+    }
+    if (hit_btn(g_btn_exit, ox, oy, x, y)) {
+        vk_button_press(g_btn_exit);
+        return 1;
+    }
+
     /* Frame + 1-char pad; form rows stack from there. */
     lx = x - win_x;
     ly = y - win_y;
@@ -1124,22 +1161,6 @@ mf_devset_mouse(int x, int y, mmask_t bstate)
             return 1;
         }
         cy += rh;
-    }
-
-    vk_widget_get_position(VK_WIDGET(g_vbox), &ox, &oy);
-    vk_widget_get_position(VK_WIDGET(g_bar), &bx, &by);
-    ox += win_x + bx;
-    oy += win_y + by;
-
-    if (hit_btn(g_btn_save, ox, oy, x, y)) {
-        int rc = vk_button_press(g_btn_save);
-        vk_button_update(g_btn_save);
-        paint_dialog();
-        return rc == 2 ? 2 : 1;
-    }
-    if (hit_btn(g_btn_exit, ox, oy, x, y)) {
-        vk_button_press(g_btn_exit);
-        return 1;
     }
     return 1;
 }

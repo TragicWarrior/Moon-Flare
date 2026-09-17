@@ -287,6 +287,10 @@ static int apply_device(mf_config_device_t *dev, const cJSON *obj)
     if ((v = cJSON_GetObjectItem(obj, "poll_interval_s")) &&
         v->type == cJSON_Number)
         dev->poll_interval_s = v->valuedouble;
+    dev->capture_interval_s = 10.0;
+    if ((v = cJSON_GetObjectItem(obj, "capture_interval_s")) &&
+        v->type == cJSON_Number)
+        dev->capture_interval_s = v->valuedouble;
     if ((v = cJSON_GetObjectItem(obj, "bus")) && v->type == cJSON_String)
         strncpy(dev->bus, v->valuestring, sizeof(dev->bus) - 1);
 
@@ -393,6 +397,7 @@ static cJSON *device_to_json(const mf_config_device_t *d)
     cJSON_AddStringOrNull(dev, "driver", d->driver);
     cJSON_AddBool(dev, "enabled", d->enabled);
     cJSON_AddNumber(dev, "poll_interval_s", d->poll_interval_s);
+    cJSON_AddNumber(dev, "capture_interval_s", d->capture_interval_s);
     cJSON_AddStringOrNull(dev, "bus", d->bus);
     {
         cJSON *usb = cJSON_CreateObject();
@@ -671,6 +676,7 @@ int mf_config_save_overlay(const mf_daemon_config_t *cfg)
             cJSON_AddStringToObject(o, "name", d->name);
         if (d->poll_interval_s > 0.0)
             cJSON_AddNumberToObject(o, "poll_interval_s", d->poll_interval_s);
+        cJSON_AddNumberToObject(o, "capture_interval_s", d->capture_interval_s);
         cJSON_AddItemToArray(arr, o);
     }
     json = cJSON_PrintUnformatted(root);

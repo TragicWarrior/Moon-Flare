@@ -66,7 +66,7 @@ static void test_upsert_flush(void)
         s.has_soc = 1;
         s.soc = 50.0;
         snprintf(s.extra_json, sizeof(s.extra_json), "{\"i\":%d}", i);
-        s.poll_interval_s = 2.0;
+        s.capture_interval_s = 2.0;
         CHECK(mf_history_enqueue(&s) == 0, "enqueue");
     }
     flushed = mf_history_flush_slice(1024);
@@ -97,7 +97,7 @@ static void test_downsample(void)
         s.online = 1;
         s.has_pack_v = 1;
         s.pack_v = 53.0;
-        s.poll_interval_s = 2.0;
+        s.capture_interval_s = 2.0;
         snprintf(s.extra_json, sizeof(s.extra_json), "{}");
         CHECK(mf_history_enqueue(&s) == 0, "enqueue downsample");
     }
@@ -128,7 +128,7 @@ static void test_retire(void)
         s.online = 1;
         s.has_pack_v = 1;
         s.pack_v = 54.0;
-        s.poll_interval_s = 5.0;
+        s.capture_interval_s = 5.0;
         snprintf(s.extra_json, sizeof(s.extra_json), "{}");
         CHECK(mf_history_enqueue(&s) == 0, "enqueue retire");
     }
@@ -168,7 +168,7 @@ static void test_flush_slices(void)
         s.online = 1;
         s.has_pack_v = 1;
         s.pack_v = 48.0;
-        s.poll_interval_s = 6.0;
+        s.capture_interval_s = 6.0;
         snprintf(s.extra_json, sizeof(s.extra_json), "{}");
         CHECK(mf_history_enqueue(&s) == 0, "enqueue slice");
     }

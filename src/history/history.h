@@ -12,7 +12,7 @@ typedef struct {
     double pack_v, current_a, power_w, soc;
     int    has_pack_v, has_current_a, has_power_w, has_soc;
     char   extra_json[4096];
-    double poll_interval_s;
+    double capture_interval_s;
 } mf_sample_t;
 
 int  mf_history_open(const char *path);

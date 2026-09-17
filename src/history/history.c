@@ -108,14 +108,13 @@ int mf_history_open(const char *path)
         "CREATE TABLE IF NOT EXISTS samples ("
         "  id INTEGER PRIMARY KEY,"
         "  ts REAL NOT NULL,"
-        "  device_id TEXT NOT NULL REFERENCES devices(id),"
+        "  device_id TEXT NOT NULL,"
         "  online INTEGER NOT NULL,"
         "  pack_v REAL,"
         "  current_a REAL,"
         "  power_w REAL,"
         "  soc REAL,"
-        "  extra_json TEXT NOT NULL,"
-        "  FOREIGN KEY (device_id) REFERENCES devices(id)"
+        "  extra_json TEXT NOT NULL"
         ");"
         "CREATE INDEX IF NOT EXISTS idx_samples_dev_ts ON samples(device_id, ts);";
 
@@ -196,7 +195,9 @@ int mf_history_enqueue(const mf_sample_t *s)
 
     if (!g_db || !s)
         return -1;
-    interval = s->poll_interval_s > 0.0 ? s->poll_interval_s : 2.0;
+    if (s->capture_interval_s <= 0.0)
+        return 0; /* tracking off for this device */
+    interval = s->capture_interval_s;
     didx = find_or_add_dev(s->uuid);
     if (didx >= 0 && dev_last[didx].last_ts >= 0.0) {
         if ((s->ts - dev_last[didx].last_ts) < interval)
