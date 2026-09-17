@@ -24,7 +24,10 @@ static int g_kind; /* 0 pack, 1 charger */
 static vk_label_t *g_chrome1, *g_chrome2, *g_hints;
 static void pack_hints(void);
 static int graph_bar_cells(int minutes);
-static vk_window_t *g_fr_pack, *g_fr_cells, *g_fr_classic;
+static vk_window_t *g_fr_pack, *g_fr_cells, *g_fr_charger;
+static vk_box_t *g_chg_box;
+static vk_window_t *g_fr_prod;
+static vk_box_t *g_prod_body;
 static vk_meter_t *g_mt_pack, *g_mt_soc, *g_mt_batt, *g_mt_watts;
 static vk_progress_t *g_pr_cap;
 static vk_label_t *g_lb_npack, *g_lb_nsoc, *g_lb_ncap;
@@ -46,8 +49,13 @@ static vk_filler_t *g_cl_rfill0, *g_cl_rfill1;
 static vk_graph_t *g_cl_graph;
 static vk_box_t *g_cl_graph_row;                 /* 1-cell L/R pad around graph */
 static vk_filler_t *g_cl_pad_l, *g_cl_pad_r, *g_cl_pad_t, *g_cl_pad_b;
+static vk_box_t *g_soc_body;                     /* vbox inside SOC History window */
+static vk_graph_t *g_pk_graph;                   /* SOC chart (battery pack view) */
+static vk_box_t *g_pk_graph_row;                 /* 1-cell L/R pad around SOC graph */
+static vk_filler_t *g_pk_pad_l, *g_pk_pad_r, *g_pk_pad_t, *g_pk_pad_b;
 static vk_frame_t *g_cf_batt, *g_cf_chg;   /* flat cyan/blue client frames */
-static vk_box_t *g_batt_box;               /* vbox holding Pack + Cells */
+static vk_window_t *g_fr_soc;                    /* SOC History window */
+static vk_box_t *g_batt_box;               /* vbox holding Pack + Cells + SOC */
 static char g_hist_id[64];
 
 static void style_frame(vk_window_t *w)
@@ -154,7 +162,6 @@ void mf_pack_init(void)
     g_chrome2 = mk_lab(0, 2, cols);
     g_fr_pack = vk_window_create(cols, 6);
     style_frame(g_fr_pack);
-    vk_widget_set_expand(VK_WIDGET(g_fr_pack));
     vk_window_set_title(g_fr_pack, " Pack ");
     g_lb_npack = mk_lab_txt_c(NAME_W, "Pack");
     g_mt_pack = mk_meter_c(METER_W, 40.0, 58.4);
@@ -216,7 +223,6 @@ void mf_pack_init(void)
 
     g_fr_cells = vk_window_create(cols, 7);
     style_frame(g_fr_cells);
-    vk_widget_set_expand(VK_WIDGET(g_fr_cells));
     vk_window_set_title(g_fr_cells, " Cells ");
     for (i = 0; i < NCELL_SHOW; i++) {
         g_mt_cell[i] = mk_meter_c(CELL_BAR_W, 2.80, 3.65);
@@ -250,10 +256,19 @@ void mf_pack_init(void)
         vk_box_set_widget(g_cell_box[i], 2, VK_WIDGET(g_mt_cell[i]), VK_INHERIT_COLOR);
     }
 
-    g_fr_classic = vk_window_create(cols, 13);
-    style_frame(g_fr_classic);
-    vk_widget_set_expand(VK_WIDGET(g_fr_classic));
-    vk_window_set_title(g_fr_classic, " Classic ");
+    /* SOC History window: fixed height window with one EXPAND child (the graph). */
+    g_fr_soc = vk_window_create(cols, 8);
+    style_frame(g_fr_soc);
+    vk_widget_set_expand(VK_WIDGET(g_fr_soc));
+    vk_window_set_title(g_fr_soc, " SOC History ");
+    g_soc_body = vk_box_create(cols - 2, 6, VK_BOX_VERTICAL, 3);
+    vk_box_set_homogeneous(g_soc_body, false);
+    vk_widget_set_expand(VK_WIDGET(g_soc_body));
+    vk_window_set_child(g_fr_soc, VK_WIDGET(g_soc_body), VK_INHERIT_COLOR);
+
+    g_fr_charger = vk_window_create(cols, 7);
+    style_frame(g_fr_charger);
+    vk_window_set_title(g_fr_charger, " Charger ");
     g_lb_nbatt = mk_lab_txt_c(NAME_W, "Batt");
     g_mt_batt = mk_meter_c(28, 40.0, 64.0);
     g_lb_vbatt = mk_lab_c(VAL_W);
@@ -319,21 +334,88 @@ void mf_pack_init(void)
     vk_box_set_widget(g_cl_graph_row, 1, VK_WIDGET(g_cl_graph), VK_INHERIT_COLOR);
     vk_box_set_widget(g_cl_graph_row, 2, VK_WIDGET(g_cl_pad_r), VK_INHERIT_COLOR);
 
-    g_cl_body = vk_box_create(cols - 2, 11, VK_BOX_VERTICAL, 8);
+    /* SOC chart graph: identical to charger but with "%" unit and 0-100 y-range. */
+    g_pk_pad_l = vk_filler_create();
+    g_pk_pad_r = vk_filler_create();
+    g_pk_pad_t = vk_filler_create();
+    g_pk_pad_b = vk_filler_create();
+    vk_widget_set_colors(VK_WIDGET(g_pk_pad_l), COL_TEXT, COL_BG);
+    vk_widget_set_colors(VK_WIDGET(g_pk_pad_r), COL_TEXT, COL_BG);
+    vk_widget_set_colors(VK_WIDGET(g_pk_pad_t), COL_TEXT, COL_BG);
+    vk_widget_set_colors(VK_WIDGET(g_pk_pad_b), COL_TEXT, COL_BG);
+    vk_widget_resize(VK_WIDGET(g_pk_pad_l), 1, 1);
+    vk_widget_resize(VK_WIDGET(g_pk_pad_r), 1, 1);
+    vk_widget_resize(VK_WIDGET(g_pk_pad_t), 1, 1);
+    vk_widget_resize(VK_WIDGET(g_pk_pad_b), 1, 1);
+    vk_widget_set_state(VK_WIDGET(g_pk_pad_l),
+        (uint32_t)(vk_widget_get_state(VK_WIDGET(g_pk_pad_l)) & ~VK_STATE_EXPAND));
+    vk_widget_set_state(VK_WIDGET(g_pk_pad_r),
+        (uint32_t)(vk_widget_get_state(VK_WIDGET(g_pk_pad_r)) & ~VK_STATE_EXPAND));
+    vk_widget_set_state(VK_WIDGET(g_pk_pad_t),
+        (uint32_t)(vk_widget_get_state(VK_WIDGET(g_pk_pad_t)) & ~VK_STATE_EXPAND));
+    vk_widget_set_state(VK_WIDGET(g_pk_pad_b),
+        (uint32_t)(vk_widget_get_state(VK_WIDGET(g_pk_pad_b)) & ~VK_STATE_EXPAND));
+
+    g_pk_graph = vk_graph_create(cols - 4, 8);
+    vk_widget_set_colors(VK_WIDGET(g_pk_graph), COL_TEXT, COL_BG);
+    vk_widget_set_expand(VK_WIDGET(g_pk_graph));
+    vk_graph_set_bar_style(g_pk_graph, VK_GRAPH_BAR_ASCII);
+    vk_graph_set_bar_width(g_pk_graph, graph_bar_cells(30));
+    vk_graph_set_y_range(g_pk_graph, 0.0, 100.0);
+    vk_graph_set_colors(g_pk_graph, COLOR_CYAN, COL_BG);
+    vk_graph_set_attrs(g_pk_graph, A_BOLD);
+
+    g_pk_graph_row = vk_box_create(cols - 2, 8, VK_BOX_HORIZONTAL, 3);
+    vk_box_set_homogeneous(g_pk_graph_row, false);
+    vk_widget_set_colors(VK_WIDGET(g_pk_graph_row), COL_TEXT, COL_BG);
+    vk_widget_set_expand(VK_WIDGET(g_pk_graph_row));
+    vk_box_set_widget(g_pk_graph_row, 0, VK_WIDGET(g_pk_pad_l), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_pk_graph_row, 1, VK_WIDGET(g_pk_graph), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_pk_graph_row, 2, VK_WIDGET(g_pk_pad_r), VK_INHERIT_COLOR);
+
+    /* Attach the padded chart into the SOC body: pad_t / graph_row / pad_b
+       (mirrors the charger's g_cl_body).  This was missing, so the whole chart
+       was orphaned and never composited into the SOC window. */
+    vk_box_set_widget(g_soc_body, 0, VK_WIDGET(g_pk_pad_t), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_soc_body, 1, VK_WIDGET(g_pk_graph_row), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_soc_body, 2, VK_WIDGET(g_pk_pad_b), VK_INHERIT_COLOR);
+    /* INHERIT_COLOR can clobber graph colors; restore them and set the SOC unit. */
+    vk_graph_set_colors(g_pk_graph, COLOR_CYAN, COL_BG);
+    vk_widget_set_colors(VK_WIDGET(g_pk_graph), COL_TEXT, COL_BG);
+    vk_graph_set_unit_label(g_pk_graph, "%");
+    vk_graph_set_unit_scale(g_pk_graph, 1.0);
+
+    g_cl_body = vk_box_create(cols - 2, 5, VK_BOX_VERTICAL, 5);
     vk_box_set_homogeneous(g_cl_body, false);
     vk_widget_set_expand(VK_WIDGET(g_cl_body));
 
-    vk_window_set_child(g_fr_classic, VK_WIDGET(g_cl_body), VK_INHERIT_COLOR);
+    vk_window_set_child(g_fr_charger, VK_WIDGET(g_cl_body), VK_INHERIT_COLOR);
     vk_box_set_widget(g_cl_body, 0, VK_WIDGET(g_cl_batt_row), VK_INHERIT_COLOR);
     vk_box_set_widget(g_cl_body, 1, VK_WIDGET(g_cl_watts_row), VK_INHERIT_COLOR);
     vk_box_set_widget(g_cl_body, 2, VK_WIDGET(g_lb_stage), VK_INHERIT_COLOR);
     vk_box_set_widget(g_cl_body, 3, VK_WIDGET(g_lb_energy), VK_INHERIT_COLOR);
     vk_box_set_widget(g_cl_body, 4, VK_WIDGET(g_lb_ctemp), VK_INHERIT_COLOR);
-    vk_box_set_widget(g_cl_body, 5, VK_WIDGET(g_cl_pad_t), VK_INHERIT_COLOR);
-    vk_box_set_widget(g_cl_body, 6, VK_WIDGET(g_cl_graph_row), VK_INHERIT_COLOR);
-    vk_box_set_widget(g_cl_body, 7, VK_WIDGET(g_cl_pad_b), VK_INHERIT_COLOR);
     /* INHERIT_COLOR can clobber graph colors; restore explicit bar/box colors
-       so werase draws on blue and bars use cyan on blue (not green on black). */
+        so werase draws on blue and bars use cyan on blue (not green on black). */
+    vk_graph_set_colors(g_cl_graph, COLOR_CYAN, COL_BG);
+    vk_widget_set_colors(VK_WIDGET(g_cl_graph), COL_TEXT, COL_BG);
+    vk_graph_set_unit_label(g_cl_graph, "W");
+    vk_graph_set_unit_scale(g_cl_graph, 1.0);
+
+    /* Production History frame: EXPAND window with chart.
+       Mirror g_fr_soc / g_soc_body from the battery side. */
+    g_fr_prod = vk_window_create(cols, 8);
+    style_frame(g_fr_prod);
+    vk_widget_set_expand(VK_WIDGET(g_fr_prod));
+    vk_window_set_title(g_fr_prod, " Production History ");
+    g_prod_body = vk_box_create(cols - 2, 6, VK_BOX_VERTICAL, 3);
+    vk_box_set_homogeneous(g_prod_body, false);
+    vk_widget_set_expand(VK_WIDGET(g_prod_body));
+    vk_window_set_child(g_fr_prod, VK_WIDGET(g_prod_body), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_prod_body, 0, VK_WIDGET(g_cl_pad_t), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_prod_body, 1, VK_WIDGET(g_cl_graph_row), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_prod_body, 2, VK_WIDGET(g_cl_pad_b), VK_INHERIT_COLOR);
+    /* INHERIT_COLOR can clobber graph colors; restore them after attach. */
     vk_graph_set_colors(g_cl_graph, COLOR_CYAN, COL_BG);
     vk_widget_set_colors(VK_WIDGET(g_cl_graph), COL_TEXT, COL_BG);
     vk_graph_set_unit_label(g_cl_graph, "W");
@@ -353,31 +435,32 @@ void mf_pack_init(void)
 
     /* Wrap the client areas in flat cyan/blue frames and reparent the windows.
        Top-down attach so the frame's colours cascade; the windows keep their own
-       styling (INHERIT_NONE).  The windows and the battery box are EXPAND so the
-       frame->box->window resize cascade sizes them. */
+       styling (INHERIT_NONE).  The charger box and battery box are EXPAND so the
+       frame->box resize cascade sizes them; the charger's inner windows are sized
+       explicitly in mf_pack_show (fixed + EXPAND pattern). */
     {
         int clientH = mf_ui_rows() - 4;   /* rows 3..rows-2: below chrome, above hints */
 
         if (clientH < 3)
             clientH = 3;
         g_cf_batt = mf_ui_make_client_frame(cols, clientH);
-        g_batt_box = vk_box_create(cols - 2, clientH - 2, VK_BOX_VERTICAL, 2);
+        g_batt_box = vk_box_create(cols - 2, clientH - 2, VK_BOX_VERTICAL, 3);
         vk_box_set_homogeneous(g_batt_box, false);
         vk_widget_set_expand(VK_WIDGET(g_batt_box));
         mf_ui_attach(VK_WIDGET(g_cf_batt), 0, 3);
         vk_frame_set_child(g_cf_batt, VK_WIDGET(g_batt_box), VK_INHERIT_COLOR);
         vk_box_set_widget(g_batt_box, 0, VK_WIDGET(g_fr_pack), VK_INHERIT_NONE);
         vk_box_set_widget(g_batt_box, 1, VK_WIDGET(g_fr_cells), VK_INHERIT_NONE);
+        vk_box_set_widget(g_batt_box, 2, VK_WIDGET(g_fr_soc), VK_INHERIT_NONE);
 
         g_cf_chg = mf_ui_make_client_frame(cols, clientH);
+        g_chg_box = vk_box_create(cols - 2, clientH - 2, VK_BOX_VERTICAL, 2);
+        vk_box_set_homogeneous(g_chg_box, false);
+        vk_widget_set_expand(VK_WIDGET(g_chg_box));
         mf_ui_attach(VK_WIDGET(g_cf_chg), 0, 3);
-        vk_frame_set_child(g_cf_chg, VK_WIDGET(g_fr_classic), VK_INHERIT_NONE);
-        /* vk_frame_set_child moves the child to (1,1) BEFORE resizing it, and
-           vk_widget_move fails (leaving the position at 0,0) when the move would
-           push the still-full-width window off-screen -- so Classic ends up
-           overlapping the frame border.  Re-move it now that set_child has
-           shrunk it to the interior width. */
-        vk_widget_move(VK_WIDGET(g_fr_classic), 1, 1);
+        vk_frame_set_child(g_cf_chg, VK_WIDGET(g_chg_box), VK_INHERIT_COLOR);
+        vk_box_set_widget(g_chg_box, 0, VK_WIDGET(g_fr_charger), VK_INHERIT_NONE);
+        vk_box_set_widget(g_chg_box, 1, VK_WIDGET(g_fr_prod), VK_INHERIT_NONE);
     }
 
     g_hints = mk_lab(0, 24, cols);
@@ -419,11 +502,11 @@ void mf_pack_show(int charger)
     int i;
     mf_pack_hide();
     g_kind = charger ? 1 : 0;
-    /* Size the client frames to the current terminal BEFORE the window bodies
-       are rendered below, so the resize cascade (on_resize) grows the Pack/
-       Cells/Classic windows first and they render at full size.  The frame is
-       already at its target size on device open, so resize through a different
-       height to force the cascade. */
+     /* Size the client frames to the current terminal BEFORE the window bodies
+        are rendered below, so the resize cascade (on_resize) grows the Pack/
+        Cells/Charger windows first and they render at full size.  The frame is
+        already at its target size on device open, so resize through a different
+        height to force the cascade. */
     {
         int cols = mf_ui_cols();
         int rows = mf_ui_rows();
@@ -479,18 +562,61 @@ void mf_pack_show(int charger)
                the wrapper row and graph to fill the space below the 5 label rows
                minus the 1-row top/bottom pads (graph is 1 col narrower each side
                for the L/R pads). */
-            {
-                int bodyH, gh;   /* reuse the wiggle's clientH (already clamped >= 3) */
+             {
+                 int prod_h, bodyH_prod, gh_prod;
 
-                bodyH = clientH - 4;              /* -2 frame border, -2 window border */
-                if (bodyH < 1)
-                    bodyH = 1;
-                vk_widget_resize(VK_WIDGET(g_cl_body), bw, bodyH);
-                gh = bodyH - 7;                   /* 5 label rows + top pad + bottom pad */
-                if (gh < 1)
-                    gh = 1;
-                vk_widget_resize(VK_WIDGET(g_cl_graph_row), bw, gh);
-                vk_widget_resize(VK_WIDGET(g_cl_graph), bw - 2, gh);
+                 /* Charger frame is fixed at 7 rows; production gets the
+                    leftover from the box interior.  The frame->box->window
+                    resize cascade never re-lays-out nested boxes, so size
+                    everything explicitly. */
+                 prod_h = (clientH - 2) - 7;   /* box interior minus charger frame */
+                 if (prod_h < 8)
+                     prod_h = 8;
+                 vk_widget_resize(VK_WIDGET(g_fr_charger), cols, 7);
+                 vk_widget_resize(VK_WIDGET(g_fr_prod), cols, (short)prod_h);
+
+                 bodyH_prod = prod_h - 2;      /* production window interior */
+                 if (bodyH_prod < 1)
+                     bodyH_prod = 1;
+                 vk_widget_resize(VK_WIDGET(g_prod_body), bw, bodyH_prod);
+
+                 gh_prod = bodyH_prod - 2;     /* 1-row top pad + 1-row bottom pad */
+                 if (gh_prod < 1)
+                     gh_prod = 1;
+                 vk_widget_resize(VK_WIDGET(g_cl_graph_row), bw, gh_prod);
+                 vk_widget_resize(VK_WIDGET(g_cl_graph), bw - 2, gh_prod);
+
+                 /* Size the SOC chart area in the battery branch.  The batt box
+                    holds Pack(6) + Cells(7) + SOC(EXPAND) so SOC gets the
+                    remaining space.  SOC interior = g_fr_soc height - 2 border.
+                    g_soc_body fills that interior; g_pk_graph_row fills the
+                    body below the 1-row top/bottom pads (like the charger). */
+                if (g_kind == 0 && g_soc_body && g_pk_graph) {
+                    int soc_h = clientH - 15;    /* box leftover: (clientH-2) - pack(6) - cells(7) */
+                    int bodyH_soc, gh_soc;
+
+                    if (soc_h < 3)
+                        soc_h = 3;
+                    vk_widget_resize(VK_WIDGET(g_fr_soc), cols, soc_h);
+                    bodyH_soc = soc_h - 2;       /* SOC window interior (1 border each side) */
+                    if (bodyH_soc < 1)
+                        bodyH_soc = 1;
+                    vk_widget_resize(VK_WIDGET(g_soc_body), bw, bodyH_soc);
+                    gh_soc = bodyH_soc - 2;      /* 1-row top pad + 1-row bottom pad */
+                    if (gh_soc < 1)
+                        gh_soc = 1;
+                    vk_widget_resize(VK_WIDGET(g_pk_graph_row), bw, gh_soc);
+                    vk_widget_resize(VK_WIDGET(g_pk_graph), bw - 2, gh_soc);
+                    /* Force pad repaint (same gotcha as charger pads). */
+                    vk_widget_resize(VK_WIDGET(g_pk_pad_l), 1, gh_soc);
+                    vk_widget_resize(VK_WIDGET(g_pk_pad_r), 1, gh_soc);
+                    vk_widget_resize(VK_WIDGET(g_pk_pad_t), bw, 1);
+                    vk_widget_resize(VK_WIDGET(g_pk_pad_b), bw, 1);
+                    vk_widget_recreate(VK_WIDGET(g_pk_pad_l));
+                    vk_widget_recreate(VK_WIDGET(g_pk_pad_r));
+                    vk_widget_recreate(VK_WIDGET(g_pk_pad_t));
+                    vk_widget_recreate(VK_WIDGET(g_pk_pad_b));
+                }
                 /* A vk_filler only paints its (otherwise black) canvas on an
                    ON_RESIZE/ON_RECREATE event, and a box lays out -- i.e.
                    resizes -- only its EXPAND children.  These pads are fixed
@@ -498,8 +624,8 @@ void mf_pack_show(int charger)
                    black cells over the box's blue.  Size each to span its full
                    edge (so it also fully covers that edge) and recreate it to
                    force the blue fill. */
-                vk_widget_resize(VK_WIDGET(g_cl_pad_l), 1, gh);
-                vk_widget_resize(VK_WIDGET(g_cl_pad_r), 1, gh);
+                vk_widget_resize(VK_WIDGET(g_cl_pad_l), 1, gh_prod);
+                vk_widget_resize(VK_WIDGET(g_cl_pad_r), 1, gh_prod);
                 vk_widget_resize(VK_WIDGET(g_cl_pad_t), bw, 1);
                 vk_widget_resize(VK_WIDGET(g_cl_pad_b), bw, 1);
                 vk_widget_recreate(VK_WIDGET(g_cl_pad_l));
@@ -529,17 +655,29 @@ void mf_pack_show(int charger)
         vk_box_update(g_cells_body);
         vk_window_update(g_fr_cells);
     }
-    if (g_fr_classic) {
+    if (g_fr_charger) {
         vk_box_update(g_cl_batt_row);
         vk_box_update(g_cl_watts_row);
-        vk_box_update(g_cl_graph_row);
         vk_box_update(g_cl_body);
-        vk_window_update(g_fr_classic);
+        vk_window_update(g_fr_charger);
+    }
+    if (g_fr_prod) {
+        vk_box_update(g_cl_graph_row);
+        vk_box_update(g_prod_body);
+        vk_window_update(g_fr_prod);
     }
     if (g_kind) {
+        vk_box_update(g_chg_box);
         if (g_cf_chg)
             vk_frame_update(g_cf_chg);
     } else {
+        if (g_pk_graph) {
+            vk_box_update(g_pk_graph_row);
+            vk_box_update(g_soc_body);
+            vk_window_update(g_fr_soc);
+            if (g_cf_batt)
+                vk_frame_update(g_cf_batt);
+        }
         if (g_batt_box)
             vk_box_update(g_batt_box);
         if (g_cf_batt)
@@ -702,7 +840,7 @@ static const int g_zoom_min[] = { 1, 5, 10, 15, 30, 60 };
 
 static void pack_hints(void)
 {
-    char buf[80];
+    char buf[128];
 
     if (!g_hints)
         return;
@@ -710,16 +848,24 @@ static void pack_hints(void)
     {
         if (g_graph_interval_min >= 60)
             snprintf(buf, sizeof(buf),
-                     "+/- zoom (1h)  e settings  Esc dashboard");
+                      "+/- zoom (1h)  e settings  Esc dashboard");
         else
             snprintf(buf, sizeof(buf),
-                     "+/- zoom (%dm)  e settings  Esc dashboard",
-                     g_graph_interval_min);
+                      "+/- zoom (%dm)  e settings  Esc dashboard",
+                      g_graph_interval_min);
         vk_label_set_text(g_hints, buf);
     }
     else
-        vk_label_set_text(g_hints,
-            "c charge  d discharge  b balancer  e settings  Esc dashboard");
+    {
+        if (g_graph_interval_min >= 60)
+            snprintf(buf, sizeof(buf),
+                      "+/- zoom (1h)  c charge  d discharge  b balancer  e settings  Esc dashboard");
+        else
+            snprintf(buf, sizeof(buf),
+                      "+/- zoom (%dm)  c charge  d discharge  b balancer  e settings  Esc dashboard",
+                      g_graph_interval_min);
+        vk_label_set_text(g_hints, buf);
+    }
     vk_label_update(g_hints);
 }
 
@@ -743,6 +889,8 @@ void mf_pack_set_graph_interval(int minutes)
     g_graph_interval_min = minutes;
     if (g_cl_graph)
         vk_graph_set_bar_width(g_cl_graph, graph_bar_cells(minutes));
+    if (g_pk_graph)
+        vk_graph_set_bar_width(g_pk_graph, graph_bar_cells(minutes));
     pack_hints();
 }
 
@@ -788,18 +936,38 @@ int mf_pack_graph_zoom(int finer)
 void mf_pack_set_history(const double *values, int count, double y_max,
     const char * const *labels)
 {
-    if (!g_cl_graph || count <= 0)
+    if (count <= 0)
         return;
-    vk_graph_set_data(g_cl_graph, values, count);
-    if (labels)
-        vk_graph_set_x_labels(g_cl_graph, labels, count);
-    vk_graph_set_y_range(g_cl_graph, 0.0, y_max);
-    vk_graph_update(g_cl_graph);
-    vk_box_update(g_cl_graph_row);
-    vk_box_update(g_cl_body);
-    vk_window_update(g_fr_classic);
-    if (g_cf_chg)
-        vk_frame_update(g_cf_chg);
+    if (g_kind == 0 && g_pk_graph) {
+        /* Battery view: SOC chart, always 0-100% y-range. */
+        vk_graph_set_data(g_pk_graph, values, count);
+        if (labels)
+            vk_graph_set_x_labels(g_pk_graph, labels, count);
+        vk_graph_set_y_range(g_pk_graph, 0.0, 100.0);
+        vk_graph_update(g_pk_graph);
+        vk_box_update(g_pk_graph_row);
+        vk_box_update(g_soc_body);
+        vk_window_update(g_fr_soc);
+        if (g_cf_batt)
+            vk_frame_update(g_cf_batt);
+     } else if (g_cl_graph) {
+         /* Charger view: power chart, data-driven y-range. */
+         vk_graph_set_data(g_cl_graph, values, count);
+         if (labels)
+             vk_graph_set_x_labels(g_cl_graph, labels, count);
+         vk_graph_set_y_range(g_cl_graph, 0.0, y_max);
+         vk_graph_update(g_cl_graph);
+         vk_box_update(g_cl_batt_row);
+         vk_box_update(g_cl_watts_row);
+         vk_box_update(g_cl_body);
+         vk_window_update(g_fr_charger);
+         vk_box_update(g_cl_graph_row);
+         vk_box_update(g_prod_body);
+         vk_window_update(g_fr_prod);
+         vk_box_update(g_chg_box);
+         if (g_cf_chg)
+             vk_frame_update(g_cf_chg);
+     }
 }
 
 int mf_pack_get_graph_interval(void)
@@ -1011,14 +1179,17 @@ void mf_pack_update(const char *json)
         vk_label_update(g_lb_ctemp);
         vk_box_update(g_cl_batt_row);
         vk_box_update(g_cl_watts_row);
-        vk_box_update(g_cl_graph_row);
         vk_box_update(g_cl_body);
-        vk_window_update(g_fr_classic);
+        vk_window_update(g_fr_charger);
+        vk_box_update(g_cl_graph_row);
+        vk_box_update(g_prod_body);
+        vk_window_update(g_fr_prod);
     }
     /* Composite the freshly rendered windows up through the client frame to the
        screen.  The vk_window_update calls above only redraw onto the window
        canvases; without this the new content never reaches the frame. */
     if (g_kind) {
+        vk_box_update(g_chg_box);
         if (g_cf_chg)
             vk_frame_update(g_cf_chg);
     } else {
@@ -1041,6 +1212,7 @@ void mf_pack_shutdown(void)
        freed first would corrupt the list. */
     vk_box_set_widget(g_batt_box, 0, NULL, VK_INHERIT_NONE);
     vk_box_set_widget(g_batt_box, 1, NULL, VK_INHERIT_NONE);
+    vk_box_set_widget(g_batt_box, 2, NULL, VK_INHERIT_NONE);
     vk_frame_set_child(g_cf_batt, NULL, VK_INHERIT_NONE);
     vk_frame_set_child(g_cf_chg, NULL, VK_INHERIT_NONE);
     vk_window_set_child(g_fr_pack, NULL, VK_INHERIT_NONE);
@@ -1097,7 +1269,44 @@ void mf_pack_shutdown(void)
         vk_box_destroy(g_cell_row[i]);
     vk_box_destroy(g_cells_body);
     vk_widget_destroy(VK_WIDGET(g_fr_cells));
-    vk_window_set_child(g_fr_classic, NULL, VK_INHERIT_NONE);
+    /* SOC history teardown: vacate slots, destroy leaves (pads/graph),
+       then boxes, then the window — leaves before boxes. */
+    if (g_soc_body) {
+        vk_box_set_widget(g_soc_body, 0, NULL, VK_INHERIT_NONE);
+        vk_box_set_widget(g_soc_body, 1, NULL, VK_INHERIT_NONE);
+        vk_box_set_widget(g_soc_body, 2, NULL, VK_INHERIT_NONE);
+    }
+    vk_box_set_widget(g_pk_graph_row, 0, NULL, VK_INHERIT_NONE);
+    vk_box_set_widget(g_pk_graph_row, 1, NULL, VK_INHERIT_NONE);
+    vk_box_set_widget(g_pk_graph_row, 2, NULL, VK_INHERIT_NONE);
+    vk_window_set_child(g_fr_soc, NULL, VK_INHERIT_NONE);
+    vk_widget_destroy(VK_WIDGET(g_pk_pad_l));
+    vk_widget_destroy(VK_WIDGET(g_pk_pad_r));
+    vk_widget_destroy(VK_WIDGET(g_pk_pad_t));
+    vk_widget_destroy(VK_WIDGET(g_pk_pad_b));
+    vk_widget_destroy(VK_WIDGET(g_pk_graph));
+    vk_box_destroy(g_pk_graph_row);
+    vk_box_destroy(g_soc_body);
+    vk_widget_destroy(VK_WIDGET(g_fr_soc));
+    /* Charger teardown: vacate g_chg_box slots, prod_body slots, graph_row
+       slots, then destroy leaves (labels/meters/pads/graph) → boxes → windows
+       → g_chg_box.  Leaves before boxes (a vk_box dtor list_dels slotted
+       children; freeing a still-slotted leaf is a UAF). */
+    vk_window_set_child(g_fr_charger, NULL, VK_INHERIT_NONE);
+    vk_window_set_child(g_fr_prod, NULL, VK_INHERIT_NONE);
+    vk_box_set_widget(g_chg_box, 0, NULL, VK_INHERIT_NONE);
+    vk_box_set_widget(g_chg_box, 1, NULL, VK_INHERIT_NONE);
+    vk_box_set_widget(g_prod_body, 0, NULL, VK_INHERIT_NONE);
+    vk_box_set_widget(g_prod_body, 1, NULL, VK_INHERIT_NONE);
+    vk_box_set_widget(g_prod_body, 2, NULL, VK_INHERIT_NONE);
+    vk_box_set_widget(g_cl_graph_row, 0, NULL, VK_INHERIT_NONE);
+    vk_box_set_widget(g_cl_graph_row, 1, NULL, VK_INHERIT_NONE);
+    vk_box_set_widget(g_cl_graph_row, 2, NULL, VK_INHERIT_NONE);
+    vk_box_set_widget(g_cl_body, 0, NULL, VK_INHERIT_NONE);
+    vk_box_set_widget(g_cl_body, 1, NULL, VK_INHERIT_NONE);
+    vk_box_set_widget(g_cl_body, 2, NULL, VK_INHERIT_NONE);
+    vk_box_set_widget(g_cl_body, 3, NULL, VK_INHERIT_NONE);
+    vk_box_set_widget(g_cl_body, 4, NULL, VK_INHERIT_NONE);
     vk_box_set_widget(g_cl_batt_row, 0, NULL, VK_INHERIT_NONE);
     vk_box_set_widget(g_cl_batt_row, 1, NULL, VK_INHERIT_NONE);
     vk_box_set_widget(g_cl_batt_row, 2, NULL, VK_INHERIT_NONE);
@@ -1106,17 +1315,6 @@ void mf_pack_shutdown(void)
     vk_box_set_widget(g_cl_watts_row, 1, NULL, VK_INHERIT_NONE);
     vk_box_set_widget(g_cl_watts_row, 2, NULL, VK_INHERIT_NONE);
     vk_box_set_widget(g_cl_watts_row, 3, NULL, VK_INHERIT_NONE);
-    vk_box_set_widget(g_cl_body, 0, NULL, VK_INHERIT_NONE);
-    vk_box_set_widget(g_cl_body, 1, NULL, VK_INHERIT_NONE);
-    vk_box_set_widget(g_cl_body, 2, NULL, VK_INHERIT_NONE);
-    vk_box_set_widget(g_cl_body, 3, NULL, VK_INHERIT_NONE);
-    vk_box_set_widget(g_cl_body, 4, NULL, VK_INHERIT_NONE);
-    vk_box_set_widget(g_cl_body, 5, NULL, VK_INHERIT_NONE);
-    vk_box_set_widget(g_cl_body, 6, NULL, VK_INHERIT_NONE);
-    vk_box_set_widget(g_cl_body, 7, NULL, VK_INHERIT_NONE);
-    vk_box_set_widget(g_cl_graph_row, 0, NULL, VK_INHERIT_NONE);
-    vk_box_set_widget(g_cl_graph_row, 1, NULL, VK_INHERIT_NONE);
-    vk_box_set_widget(g_cl_graph_row, 2, NULL, VK_INHERIT_NONE);
     vk_widget_destroy(VK_WIDGET(g_lb_nbatt));
     vk_widget_destroy(VK_WIDGET(g_mt_batt));
     vk_widget_destroy(VK_WIDGET(g_lb_vbatt));
@@ -1137,7 +1335,10 @@ void mf_pack_shutdown(void)
     vk_box_destroy(g_cl_watts_row);
     vk_box_destroy(g_cl_graph_row);
     vk_box_destroy(g_cl_body);
-    vk_widget_destroy(VK_WIDGET(g_fr_classic));
+    vk_box_destroy(g_prod_body);
+    vk_widget_destroy(VK_WIDGET(g_fr_charger));
+    vk_widget_destroy(VK_WIDGET(g_fr_prod));
+    vk_box_destroy(g_chg_box);
     vk_box_destroy(g_batt_box);
     destroy_w(VK_WIDGET(g_cf_batt));
     destroy_w(VK_WIDGET(g_cf_chg));
