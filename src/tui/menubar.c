@@ -87,6 +87,7 @@ static void close_dropdown(void)
         vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_drop));
         vk_window_destroy(g_drop);
         g_drop = NULL;
+        mf_ui_front_clear();
     }
     g_drop_idx = -1;
 }
@@ -195,7 +196,7 @@ static void open_dropdown(int idx)
     vk_window_set_border_attrs(win, A_BOLD);
     vk_widget_set_colors(VK_WIDGET(win), COL_DROP_FG, COL_MENU_BG);
     vk_widget_set_attrs(VK_WIDGET(win), A_BOLD);
-    vk_window_set_child(win, VK_WIDGET(lb));
+    vk_window_set_child(win, VK_WIDGET(lb), VK_INHERIT_NONE);
 
     vk_widget_get_position(VK_WIDGET(g_bar), &bar_x, &bar_y);
     (void)bar_y;
@@ -251,8 +252,12 @@ void mf_menubar_on_resize(void)
     close_dropdown();
     if (width < 80)
         width = 80;
-    if (g_bar)
+    g_focused = 0;
+    if (g_bar) {
         vk_widget_resize(VK_WIDGET(g_bar), width, 1);
+        vk_menubar_set_focused(g_bar, false);
+        vk_menubar_update(g_bar);
+    }
 }
 
 void mf_menubar_shutdown(void)

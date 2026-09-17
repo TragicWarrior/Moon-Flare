@@ -20,12 +20,15 @@ typedef struct {
 
 static cat_dev_t g_cat[MAX_CAT];
 static int g_ncat;
+static int g_dash_visible = 1;
 
 static vk_frame_t   *g_fr[3];
 static vk_listbox_t *g_lb[3];
 static vk_label_t   *g_status;
 static vk_label_t   *g_hints;
 static vk_label_t   *g_small;
+static vk_frame_t   *g_client;      /* flat cyan/blue client-area frame */
+static vk_box_t     *g_cards_box;   /* horizontal box holding the 3 cards */
 static char          g_caps[3][32];
 static char          g_last_hp[128];
 static char          g_last_tag[24];
@@ -44,7 +47,7 @@ static int frame_caption(vk_object_t *obj, int event, void *anything)
     return 0;
 }
 
-static vk_frame_t *mk_card(int x, int y, char *cap)
+static vk_frame_t *mk_card(int idx, char *cap)
 {
     vk_frame_t *f = vk_frame_create(MF_CARD_W, MF_CARD_H);
     vk_listbox_t *lb;
@@ -54,30 +57,39 @@ static vk_frame_t *mk_card(int x, int y, char *cap)
     vk_widget_set_relief_colors(VK_WIDGET(f), COLOR_WHITE, COLOR_BLACK);
     vk_frame_set_border_style(f, VK_BORDER_SINGLE | VK_RELIEF_SUNKEN);
     vk_frame_set_border_colors(f, COL_TEXT, COL_BG);
+    vk_widget_set_expand(VK_WIDGET(f));
     lb = vk_listbox_create(MF_CARD_W - 2, MF_CARD_H - 2);
     vk_widget_set_colors(VK_WIDGET(lb), COL_TEXT, COL_BG);
     vk_listbox_set_wrap(lb, true);
-    vk_frame_set_child(f, VK_WIDGET(lb));
-    mf_ui_attach(VK_WIDGET(f), x, y);
+    vk_frame_set_child(f, VK_WIDGET(lb), VK_INHERIT_NONE);
     vk_object_register_event(VK_OBJECT(f), VK_EVENT_ON_FINALIZE,
                              frame_caption, cap);
     vk_frame_update(f);
-    if (x == 0)
-        g_lb[0] = lb;
-    else if (x == 27)
-        g_lb[1] = lb;
-    else
-        g_lb[2] = lb;
+    g_lb[idx] = lb;
     return f;
 }
 
 static void ensure_cards(void)
 {
+    int i;
     if (g_fr[0])
         return;
-    g_fr[0] = mk_card(0, MF_CARD_Y, g_caps[0]);
-    g_fr[1] = mk_card(27, MF_CARD_Y, g_caps[1]);
-    g_fr[2] = mk_card(54, MF_CARD_Y, g_caps[2]);
+    g_client = mf_ui_make_client_frame(MF_CARD_W * 3, MF_CARD_H);
+    g_cards_box = vk_box_create(MF_CARD_W * 3 - 2, MF_CARD_H - 2,
+                                VK_BOX_HORIZONTAL, 3);
+    vk_box_set_homogeneous(g_cards_box, false);
+    vk_widget_set_expand(VK_WIDGET(g_cards_box));
+    g_fr[0] = mk_card(0, g_caps[0]);
+    g_fr[1] = mk_card(1, g_caps[1]);
+    g_fr[2] = mk_card(2, g_caps[2]);
+    /* Top-down attach: frame -> box -> cards.  The box is EXPAND so the frame
+       resizes it to fill; it inherits the frame's cyan/blue so any bare gap is
+       blue; the cards are EXPAND too (the box splits its width across them) and
+       keep their own white-on-blue (INHERIT_NONE). */
+    mf_ui_attach(VK_WIDGET(g_client), 0, MF_CARD_Y);
+    vk_frame_set_child(g_client, VK_WIDGET(g_cards_box), VK_INHERIT_COLOR);
+    for (i = 0; i < 3; i++)
+        vk_box_set_widget(g_cards_box, i, VK_WIDGET(g_fr[i]), VK_INHERIT_NONE);
 }
 
 static void show_too_small(int cols)
@@ -117,7 +129,7 @@ void mf_dash_on_resize(void)
 {
     int cols = mf_ui_cols();
     int rows = mf_ui_rows();
-    int i, small = (cols < MF_TUI_COLS || rows < MF_TUI_ROWS);
+    int small = (cols < MF_TUI_COLS || rows < MF_TUI_ROWS);
     int cw = cols > 0 ? cols : 80;
 
     if (g_status)
@@ -126,20 +138,30 @@ void mf_dash_on_resize(void)
         vk_widget_resize(VK_WIDGET(g_hints), cw, 1);
         vk_widget_move(VK_WIDGET(g_hints), 0, rows > 0 ? rows - 1 : 24);
     }
+    if (!g_dash_visible) {
+        /* Not the active view (a device/pack view is up) -- keep the client
+           frame hidden so it doesn't leak in behind it on resize. */
+        if (g_client)
+            vk_widget_hide(VK_WIDGET(g_client));
+        return;
+    }
     if (small) {
         show_too_small(cols);
-        for (i = 0; i < 3; i++) {
-            if (g_fr[i])
-                vk_widget_hide(VK_WIDGET(g_fr[i]));
-        }
+        if (g_client)
+            vk_widget_hide(VK_WIDGET(g_client));
         return;
     }
     if (g_small)
         vk_widget_hide(VK_WIDGET(g_small));
     ensure_cards();
-    for (i = 0; i < 3; i++) {
-        if (g_fr[i])
-            vk_widget_show(VK_WIDGET(g_fr[i]));
+    {
+        int fh = rows - MF_CARD_Y - 1;   /* client area: below status, above hints */
+
+        if (fh < 3)
+            fh = 3;
+        vk_widget_resize(VK_WIDGET(g_client), cw, fh);
+        vk_widget_move(VK_WIDGET(g_client), 0, MF_CARD_Y);
+        vk_widget_show(VK_WIDGET(g_client));
     }
     mf_dash_update(g_last_hp[0] ? g_last_hp : "127.0.0.1:5250",
                    g_last_tag[0] ? g_last_tag : "WAIT",
@@ -230,14 +252,12 @@ const char *mf_dash_catalog_kind(int i)
 
 void mf_dash_set_visible(int vis)
 {
-    int i;
-    for (i = 0; i < 3; i++) {
-        if (g_fr[i]) {
-            if (vis)
-                vk_widget_show(VK_WIDGET(g_fr[i]));
-            else
-                vk_widget_hide(VK_WIDGET(g_fr[i]));
-        }
+    g_dash_visible = vis;
+    if (g_client) {
+        if (vis)
+            vk_widget_show(VK_WIDGET(g_client));
+        else
+            vk_widget_hide(VK_WIDGET(g_client));
     }
     if (g_status) {
         if (vis)
@@ -298,6 +318,10 @@ void mf_dash_update(const char *hostport, const char *tag, const char *json)
         vk_frame_update(g_fr[1]);
     if (g_fr[2])
         vk_frame_update(g_fr[2]);
+    if (g_cards_box)
+        vk_box_update(g_cards_box);
+    if (g_client)
+        vk_frame_update(g_client);
     if (root)
         cJSON_Delete(root);
 }
@@ -305,13 +329,27 @@ void mf_dash_update(const char *hostport, const char *tag, const char *json)
 void mf_dash_shutdown(void)
 {
     int i;
+    if (g_cards_box) {
+        for (i = 0; i < 3; i++)
+            vk_box_set_widget(g_cards_box, i, NULL, VK_INHERIT_NONE);
+    }
+    if (g_client)
+        vk_frame_set_child(g_client, NULL, VK_INHERIT_NONE);
     for (i = 0; i < 3; i++) {
         if (g_fr[i]) {
-            vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_fr[i]));
             vk_frame_destroy(g_fr[i]);
             g_fr[i] = NULL;
             g_lb[i] = NULL;
         }
+    }
+    if (g_cards_box) {
+        vk_box_destroy(g_cards_box);
+        g_cards_box = NULL;
+    }
+    if (g_client) {
+        vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_client));
+        vk_frame_destroy(g_client);
+        g_client = NULL;
     }
     if (g_status) {
         vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_status));
@@ -337,6 +375,7 @@ int mf_dash_mouse(int x, int y, mmask_t bstate)
 {
     int i, k, seen, row, ly;
     int fx, fy, fw, fh;
+    int cw, rows, slot;
     const char *want;
     vk_listbox_t *lb;
 
@@ -344,12 +383,24 @@ int mf_dash_mouse(int x, int y, mmask_t bstate)
         return 0;
     if (mf_pack_visible())
         return 0;
+    if (!g_client)
+        return 0;
+
+    cw = mf_ui_cols();
+    rows = mf_ui_rows();
+    if (cw <= 0)
+        cw = 80;
+    slot = (cw - 2) / 3;
+    if (slot < 1)
+        slot = 1;
+    fy = MF_CARD_Y + 1;              /* inside the client frame's top border */
+    fh = rows - MF_CARD_Y - 1 - 2;   /* client frame interior height */
 
     for (i = 0; i < 2; i++) {
         if (!g_fr[i] || !g_lb[i])
             continue;
-        vk_widget_get_position(VK_WIDGET(g_fr[i]), &fx, &fy);
-        vk_widget_get_metrics(VK_WIDGET(g_fr[i]), &fw, &fh);
+        fx = 1 + i * slot;           /* inside the client frame's left border */
+        fw = slot;
         if (x < fx || x >= fx + fw || y < fy || y >= fy + fh)
             continue;
         lb = g_lb[i];

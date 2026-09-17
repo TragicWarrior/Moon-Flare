@@ -87,6 +87,19 @@ void mf_ui_attach(vk_widget_t *w, int x, int y)
     vk_widget_move(w, x, y);
 }
 
+/* Flat (no relief) client-area frame: cyan on blue.  Caller sizes, attaches
+   and fills it. */
+vk_frame_t *mf_ui_make_client_frame(int w, int h)
+{
+    vk_frame_t *f = vk_frame_create(w, h);
+    if (!f)
+        return NULL;
+    vk_widget_set_colors(VK_WIDGET(f), COLOR_CYAN, COLOR_BLUE);
+    vk_frame_set_border_style(f, VK_BORDER_SINGLE);
+    vk_frame_set_border_colors(f, COLOR_CYAN, COLOR_BLUE);
+    return f;
+}
+
 void mf_ui_front_clear(void) { g_nfront = 0; }
 
 void mf_ui_front_push(vk_widget_t *w)
@@ -107,6 +120,7 @@ void mf_ui_resize(void)
 {
     vk_screen_resize(g_screen);
     mf_dash_on_resize();
+    mf_pack_on_resize();
     mf_menubar_on_resize();
     mf_ui_refresh();
 }
@@ -213,7 +227,7 @@ static void box_vacate(vk_box_t *box)
         return;
     n = vk_box_get_slot_count(box);
     for (i = 0; i < n; i++)
-        vk_box_set_widget(box, i, NULL);
+        vk_box_set_widget(box, i, NULL, VK_INHERIT_NONE);
 }
 
 static void close_settings(void)
@@ -222,7 +236,7 @@ static void close_settings(void)
     if (!g_settings_open)
         return;
     if (g_set_win)
-        vk_window_set_child(g_set_win, NULL);
+        vk_window_set_child(g_set_win, NULL, VK_INHERIT_NONE);
     box_vacate(g_set_vbox);
     box_vacate(g_set_mid);
     box_vacate(g_set_inner);
@@ -359,8 +373,8 @@ void mf_ui_open_settings(void)
         vk_label_update(g_set_lab[i]);
         g_set_in[i] = vk_input_create(in_w);
         vk_input_set_border_style(g_set_in[i], VK_BORDER_SINGLE);
-        vk_grid_set_widget(g_set_fields[i], 0, 0, VK_WIDGET(g_set_lab[i]));
-        vk_grid_set_widget(g_set_fields[i], 1, 0, VK_WIDGET(g_set_in[i]));
+        vk_grid_set_widget(g_set_fields[i], 0, 0, VK_WIDGET(g_set_lab[i]), VK_INHERIT_NONE);
+        vk_grid_set_widget(g_set_fields[i], 1, 0, VK_WIDGET(g_set_in[i]), VK_INHERIT_NONE);
 
         g_set_hint[i] = vk_label_create(13);
         vk_widget_set_colors(VK_WIDGET(g_set_hint[i]), COL_TEXT, COL_MENU);
@@ -375,9 +389,9 @@ void mf_ui_open_settings(void)
         vk_grid_set_col_width(g_set_row[i], 1, 13);
         vk_grid_set_row_height(g_set_row[i], 0, 3);
         vk_widget_set_colors(VK_WIDGET(g_set_row[i]), COL_TEXT, COL_MENU);
-        vk_grid_set_widget(g_set_row[i], 0, 0, VK_WIDGET(g_set_fields[i]));
-        vk_grid_set_widget(g_set_row[i], 1, 0, VK_WIDGET(g_set_hint[i]));
-        vk_box_set_widget(g_set_form, i, VK_WIDGET(g_set_row[i]));
+        vk_grid_set_widget(g_set_row[i], 0, 0, VK_WIDGET(g_set_fields[i]), VK_INHERIT_NONE);
+        vk_grid_set_widget(g_set_row[i], 1, 0, VK_WIDGET(g_set_hint[i]), VK_INHERIT_NONE);
+        vk_box_set_widget(g_set_form, i, VK_WIDGET(g_set_row[i]), VK_INHERIT_NONE);
     }
     {
         int slack = (ih - 5) - 9;
@@ -391,7 +405,7 @@ void mf_ui_open_settings(void)
                                 st & ~(uint32_t)VK_STATE_EXPAND);
             vk_widget_set_colors(VK_WIDGET(g_set_form_fill), COL_TEXT, COL_MENU);
             vk_widget_resize(VK_WIDGET(g_set_form_fill), iw - 2, slack);
-            vk_box_set_widget(g_set_form, 3, VK_WIDGET(g_set_form_fill));
+            vk_box_set_widget(g_set_form, 3, VK_WIDGET(g_set_form_fill), VK_INHERIT_NONE);
         }
     }
     vk_input_set_text(g_set_in[0], g_host);
@@ -408,16 +422,16 @@ void mf_ui_open_settings(void)
     g_set_fill = vk_filler_create();
     vk_widget_set_colors(VK_WIDGET(g_set_fill), COL_TEXT, COL_MENU);
     vk_widget_set_expand(VK_WIDGET(g_set_fill));
-    vk_box_set_widget(g_set_bar, 0, VK_WIDGET(g_set_ok));
-    vk_box_set_widget(g_set_bar, 1, VK_WIDGET(g_set_fill));
-    vk_box_set_widget(g_set_bar, 2, VK_WIDGET(g_set_cancel));
+    vk_box_set_widget(g_set_bar, 0, VK_WIDGET(g_set_ok), VK_INHERIT_NONE);
+    vk_box_set_widget(g_set_bar, 1, VK_WIDGET(g_set_fill), VK_INHERIT_NONE);
+    vk_box_set_widget(g_set_bar, 2, VK_WIDGET(g_set_cancel), VK_INHERIT_NONE);
 
     g_set_inner = vk_box_create(iw - 2, ih - 2, VK_BOX_VERTICAL, 2);
     vk_box_set_homogeneous(g_set_inner, false);
     vk_widget_set_colors(VK_WIDGET(g_set_inner), COL_TEXT, COL_MENU);
     vk_widget_set_expand(VK_WIDGET(g_set_inner));
-    vk_box_set_widget(g_set_inner, 0, VK_WIDGET(g_set_form));
-    vk_box_set_widget(g_set_inner, 1, VK_WIDGET(g_set_bar));
+    vk_box_set_widget(g_set_inner, 0, VK_WIDGET(g_set_form), VK_INHERIT_NONE);
+    vk_box_set_widget(g_set_inner, 1, VK_WIDGET(g_set_bar), VK_INHERIT_NONE);
 
     g_set_pad_left = mk_set_pad(1, ih - 2);
     g_set_pad_right = mk_set_pad(1, ih - 2);
@@ -425,9 +439,9 @@ void mf_ui_open_settings(void)
     vk_box_set_homogeneous(g_set_mid, false);
     vk_widget_set_colors(VK_WIDGET(g_set_mid), COL_TEXT, COL_MENU);
     vk_widget_set_expand(VK_WIDGET(g_set_mid));
-    vk_box_set_widget(g_set_mid, 0, VK_WIDGET(g_set_pad_left));
-    vk_box_set_widget(g_set_mid, 1, VK_WIDGET(g_set_inner));
-    vk_box_set_widget(g_set_mid, 2, VK_WIDGET(g_set_pad_right));
+    vk_box_set_widget(g_set_mid, 0, VK_WIDGET(g_set_pad_left), VK_INHERIT_NONE);
+    vk_box_set_widget(g_set_mid, 1, VK_WIDGET(g_set_inner), VK_INHERIT_NONE);
+    vk_box_set_widget(g_set_mid, 2, VK_WIDGET(g_set_pad_right), VK_INHERIT_NONE);
 
     g_set_pad_top = mk_set_pad(iw, 1);
     g_set_pad_bot = mk_set_pad(iw, 1);
@@ -435,10 +449,10 @@ void mf_ui_open_settings(void)
     vk_box_set_homogeneous(g_set_vbox, false);
     vk_widget_set_colors(VK_WIDGET(g_set_vbox), COL_TEXT, COL_MENU);
     vk_widget_set_expand(VK_WIDGET(g_set_vbox));
-    vk_box_set_widget(g_set_vbox, 0, VK_WIDGET(g_set_pad_top));
-    vk_box_set_widget(g_set_vbox, 1, VK_WIDGET(g_set_mid));
-    vk_box_set_widget(g_set_vbox, 2, VK_WIDGET(g_set_pad_bot));
-    vk_window_set_child(g_set_win, VK_WIDGET(g_set_vbox));
+    vk_box_set_widget(g_set_vbox, 0, VK_WIDGET(g_set_pad_top), VK_INHERIT_NONE);
+    vk_box_set_widget(g_set_vbox, 1, VK_WIDGET(g_set_mid), VK_INHERIT_NONE);
+    vk_box_set_widget(g_set_vbox, 2, VK_WIDGET(g_set_pad_bot), VK_INHERIT_NONE);
+    vk_window_set_child(g_set_win, VK_WIDGET(g_set_vbox), VK_INHERIT_NONE);
     mf_ui_attach(VK_WIDGET(g_set_win), x, y);
     paint_settings();
 
@@ -578,7 +592,7 @@ void mf_ui_show_help(int about)
         vk_listbox_add_item(lb, "Esc  close dialog", NULL, NULL);
         vk_listbox_add_item(lb, "Tab  next field", NULL, NULL);
     }
-    vk_window_set_child(g_help_win, VK_WIDGET(lb));
+    vk_window_set_child(g_help_win, VK_WIDGET(lb), VK_INHERIT_NONE);
     mf_ui_attach(VK_WIDGET(g_help_win),
                  (mf_ui_cols() - w) / 2, 2);
     vk_listbox_update(lb);

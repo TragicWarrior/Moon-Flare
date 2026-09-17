@@ -10,6 +10,7 @@ void mf_ui_resize(void);
 void mf_ui_attach(vk_widget_t *w, int x, int y);
 void mf_ui_front_clear(void);
 void mf_ui_front_push(vk_widget_t *w);
+vk_frame_t *mf_ui_make_client_frame(int w, int h);
 void mf_ui_quit(void);
 int  mf_ui_cols(void);
 int  mf_ui_rows(void);
@@ -48,6 +49,7 @@ int  mf_pack_visible(void);
 int  mf_pack_is_charger(void);
 int  mf_pack_has_switch(void);
 int  mf_pack_switch_on(const char *key);
+void mf_pack_on_resize(void);
 
 void mf_devset_show(const char *id, const char *name, const char *json);
 void mf_devset_apply_json(const char *json);

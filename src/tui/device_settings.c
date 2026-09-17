@@ -268,7 +268,7 @@ static void box_vacate(vk_box_t *box)
         return;
     n = vk_box_get_slot_count(box);
     for (i = 0; i < n; i++)
-        vk_box_set_widget(box, i, NULL);
+        vk_box_set_widget(box, i, NULL, VK_INHERIT_NONE);
 }
 
 static void destroy_form(void)
@@ -458,8 +458,8 @@ static void add_field(const char *key, const char *val, int row_h, int iw)
     }
     vk_input_set_text(in, val ? val : "");
     style_input(in, 0, ro);
-    vk_grid_set_widget(fields, 0, 0, VK_WIDGET(lab));
-    vk_grid_set_widget(fields, 1, 0, VK_WIDGET(in));
+    vk_grid_set_widget(fields, 0, 0, VK_WIDGET(lab), VK_INHERIT_NONE);
+    vk_grid_set_widget(fields, 1, 0, VK_WIDGET(in), VK_INHERIT_NONE);
 
     hint = vk_label_create(HINT_W);
     style_menu(VK_WIDGET(hint));
@@ -482,8 +482,8 @@ static void add_field(const char *key, const char *val, int row_h, int iw)
     vk_grid_set_col_width(row, 1, HINT_W);
     vk_grid_set_row_height(row, 0, row_h);
     style_menu(VK_WIDGET(row));
-    vk_grid_set_widget(row, 0, 0, VK_WIDGET(fields));
-    vk_grid_set_widget(row, 1, 0, VK_WIDGET(hint));
+    vk_grid_set_widget(row, 0, 0, VK_WIDGET(fields), VK_INHERIT_NONE);
+    vk_grid_set_widget(row, 1, 0, VK_WIDGET(hint), VK_INHERIT_NONE);
 
     g_row[i] = row;
     g_fields[i] = fields;
@@ -643,7 +643,7 @@ static void build_form(int iw, int ih, const char *json)
     if (root)
         cJSON_Delete(root);
     for (i = 0; i < g_nfields; i++)
-        vk_box_set_widget(g_form, i, VK_WIDGET(g_row[i]));
+        vk_box_set_widget(g_form, i, VK_WIDGET(g_row[i]), VK_INHERIT_NONE);
     {
         int used = 0, j, rw, rh, slack;
 
@@ -667,7 +667,7 @@ static void build_form(int iw, int ih, const char *json)
                                 st & ~(uint32_t)VK_STATE_EXPAND);
             style_menu(VK_WIDGET(g_form_fill));
             vk_widget_resize(VK_WIDGET(g_form_fill), iw - 2, slack);
-            vk_box_set_widget(g_form, g_nfields, VK_WIDGET(g_form_fill));
+            vk_box_set_widget(g_form, g_nfields, VK_WIDGET(g_form_fill), VK_INHERIT_NONE);
         }
     }
 
@@ -679,16 +679,16 @@ static void build_form(int iw, int ih, const char *json)
     g_fill = vk_filler_create();
     style_menu(VK_WIDGET(g_fill));
     vk_widget_set_expand(VK_WIDGET(g_fill));
-    vk_box_set_widget(g_bar, 0, VK_WIDGET(g_btn_save));
-    vk_box_set_widget(g_bar, 1, VK_WIDGET(g_fill));
-    vk_box_set_widget(g_bar, 2, VK_WIDGET(g_btn_exit));
+    vk_box_set_widget(g_bar, 0, VK_WIDGET(g_btn_save), VK_INHERIT_NONE);
+    vk_box_set_widget(g_bar, 1, VK_WIDGET(g_fill), VK_INHERIT_NONE);
+    vk_box_set_widget(g_bar, 2, VK_WIDGET(g_btn_exit), VK_INHERIT_NONE);
 
     g_inner = vk_box_create(iw - 2, ih - 2, VK_BOX_VERTICAL, 2);
     vk_box_set_homogeneous(g_inner, false);
     style_menu(VK_WIDGET(g_inner));
     vk_widget_set_expand(VK_WIDGET(g_inner));
-    vk_box_set_widget(g_inner, 0, VK_WIDGET(g_form));
-    vk_box_set_widget(g_inner, 1, VK_WIDGET(g_bar));
+    vk_box_set_widget(g_inner, 0, VK_WIDGET(g_form), VK_INHERIT_NONE);
+    vk_box_set_widget(g_inner, 1, VK_WIDGET(g_bar), VK_INHERIT_NONE);
 
     g_pad_left = mk_pad(1, ih - 2);
     g_pad_right = mk_pad(1, ih - 2);
@@ -696,9 +696,9 @@ static void build_form(int iw, int ih, const char *json)
     vk_box_set_homogeneous(g_mid, false);
     style_menu(VK_WIDGET(g_mid));
     vk_widget_set_expand(VK_WIDGET(g_mid));
-    vk_box_set_widget(g_mid, 0, VK_WIDGET(g_pad_left));
-    vk_box_set_widget(g_mid, 1, VK_WIDGET(g_inner));
-    vk_box_set_widget(g_mid, 2, VK_WIDGET(g_pad_right));
+    vk_box_set_widget(g_mid, 0, VK_WIDGET(g_pad_left), VK_INHERIT_NONE);
+    vk_box_set_widget(g_mid, 1, VK_WIDGET(g_inner), VK_INHERIT_NONE);
+    vk_box_set_widget(g_mid, 2, VK_WIDGET(g_pad_right), VK_INHERIT_NONE);
 
     g_pad_top = mk_pad(iw, 1);
     g_pad_bot = mk_pad(iw, 1);
@@ -706,9 +706,9 @@ static void build_form(int iw, int ih, const char *json)
     vk_box_set_homogeneous(g_vbox, false);
     style_menu(VK_WIDGET(g_vbox));
     vk_widget_set_expand(VK_WIDGET(g_vbox));
-    vk_box_set_widget(g_vbox, 0, VK_WIDGET(g_pad_top));
-    vk_box_set_widget(g_vbox, 1, VK_WIDGET(g_mid));
-    vk_box_set_widget(g_vbox, 2, VK_WIDGET(g_pad_bot));
+    vk_box_set_widget(g_vbox, 0, VK_WIDGET(g_pad_top), VK_INHERIT_NONE);
+    vk_box_set_widget(g_vbox, 1, VK_WIDGET(g_mid), VK_INHERIT_NONE);
+    vk_box_set_widget(g_vbox, 2, VK_WIDGET(g_pad_bot), VK_INHERIT_NONE);
 }
 
 void mf_devset_close(void)
@@ -716,7 +716,7 @@ void mf_devset_close(void)
     if (!g_open)
         return;
     if (g_win)
-        vk_window_set_child(g_win, NULL);
+        vk_window_set_child(g_win, NULL, VK_INHERIT_NONE);
     destroy_form();
     if (g_win) {
         vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_win));
@@ -867,7 +867,7 @@ void mf_devset_show(const char *id, const char *name, const char *json)
     vk_widget_set_attrs(VK_WIDGET(g_win), A_BOLD);
 
     build_form(w - 2, h - 2, json);
-    vk_window_set_child(g_win, VK_WIDGET(g_vbox));
+    vk_window_set_child(g_win, VK_WIDGET(g_vbox), VK_INHERIT_NONE);
     mf_ui_attach(VK_WIDGET(g_win), x, y);
     set_field_focus(0);
     paint_dialog();
