@@ -71,6 +71,7 @@ static void field_caption(const char *key, char *lab, size_t lab_cap,
         { "uuid", "UUID", "" },
         { "poll_interval_s", "Poll Interval", "(Seconds)" },
         { "capture_interval_s", "Capture Interval", "(Sec 0=off)" },
+        { "graph_interval_min", "Graph Interval", "(minutes)" },
         { "ble.address", "BLE Address", "(MAC)" },
         { "ble.adapter", "BLE Adapter", "(hciN)" },
         { "usb.path", "USB Path", "(device)" },
@@ -374,12 +375,13 @@ static int key_already(const char *key)
     return 0;
 }
 
-static int skip_form_key(const char *key)
+static int skip_form_key(const char *k)
 {
-    /* Pack-view / identity extras; keep 80x25 for OVP/OVPR/RCV. */
-    return key && (strcmp(key, "balance_trigger_v") == 0 ||
-                   strcmp(key, "start_balance_v") == 0 ||
-                   strcmp(key, "ble.adapter") == 0);
+    /* TUI-only / pack-view extras; keep 80x25 for OVP/OVPR/RCV. */
+    return k && (strcmp(k, "balance_trigger_v") == 0 ||
+                 strcmp(k, "start_balance_v") == 0 ||
+                 strcmp(k, "ble.adapter") == 0 ||
+                 strcmp(k, "graph_interval_min") == 0);
 }
 
 static int field_readonly(const char *key)
@@ -631,6 +633,8 @@ static void build_form(int iw, int ih, const char *json)
                     buf, sizeof(buf));
     add_field("capture_interval_s", buf[0] ? buf : "10", row_h, iw - 2);
 
+    add_field("graph_interval_min", "30", 3, iw - 2);
+
     add_json_group(root, 0, row_h, iw - 2, n);
 
     buf[0] = '\0';
@@ -765,6 +769,37 @@ const char *mf_devset_poll_text(void)
     return g_nfields && g_in[0] ? vk_input_get_text(g_in[0]) : "2.0";
 }
 
+int mf_devset_get_graph_interval(void)
+{
+    int i;
+    for (i = 0; i < g_nfields; i++) {
+        if (strcmp(g_keys[i], "graph_interval_min") == 0 && g_in[i]) {
+            const char *v = vk_input_get_text(g_in[i]);
+            int val = atoi(v);
+            if (val < 1)
+                val = 1;
+            return val;
+        }
+    }
+    return 30;
+}
+
+void mf_devset_set_graph_interval(int minutes)
+{
+    char buf[16];
+    int i;
+    if (minutes < 1)
+        minutes = 1;
+    snprintf(buf, sizeof(buf), "%d", minutes);
+    for (i = 0; i < g_nfields; i++) {
+        if (strcmp(g_keys[i], "graph_interval_min") == 0 && g_in[i]) {
+            vk_input_set_text(g_in[i], buf);
+            vk_input_update(g_in[i]);
+            return;
+        }
+    }
+}
+
 static int json_bare(const char *s)
 {
     char *end;
@@ -792,6 +827,9 @@ const char *mf_devset_payload(void)
         int n;
 
         if (!g_keys[i][0] || g_ro[i])
+            continue;
+        /* TUI-only key: never send to daemon/plugin. */
+        if (strcmp(g_keys[i], "graph_interval_min") == 0)
             continue;
         if (!v)
             v = "";

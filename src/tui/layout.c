@@ -239,6 +239,12 @@ void mf_tui_paint_charger(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1])
     put_str(grid, 7, 2, "stage Absorb");
     put_str(grid, 8, 2, "kWh today 3.2   Ah today --");
     put_str(grid, 10, 2, "FET --  Batt --  PCB --");
+    put_str(grid, 12, 2, "Power");
+    {
+        int c;
+        for (c = 0; c < 73 && 2 + 1 + c < MF_TUI_COLS; c++)
+            grid[13][2 + 1 + c] = '#';
+    }
     put_str(grid, 24, 0, "Esc dashboard");
 }
 

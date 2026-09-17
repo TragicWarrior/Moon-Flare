@@ -5,6 +5,7 @@
 #include "rest.h"
 #include "device.h"
 #include "discover.h"
+#include "history.h"
 
 #include <cJSON.h>
 #include <stdio.h>
@@ -457,6 +458,35 @@ static int handle_device_delete(const char *id, mf_rest_response_t *resp)
     return 0;
 }
 
+static int handle_device_history(const char *id, mf_rest_response_t *resp)
+{
+    double values[800], ts[800];
+    cJSON *root, *arr;
+    int n, i;
+
+    /* 60 s bins × 800 rows ≈ 13 h, still fits HTTP 64k. */
+    n = mf_history_query_ts_step(id, "power_w", 60, ts, values,
+                                 (int)(sizeof(values) / sizeof(values[0])));
+    if (n < 0) {
+        set_error(resp, 404, "no history");
+        return 0;
+    }
+    root = cJSON_CreateObject();
+    if (!root) {
+        set_error(resp, 500, "error");
+        return 0;
+    }
+    cJSON_AddStringToObject(root, "column", "power_w");
+    arr = cJSON_AddArrayToObject(root, "ts");
+    for (i = 0; i < n; i++)
+        cJSON_AddItemToArray(arr, cJSON_CreateNumber(ts[i]));
+    arr = cJSON_AddArrayToObject(root, "values");
+    for (i = 0; i < n; i++)
+        cJSON_AddItemToArray(arr, cJSON_CreateNumber(values[i]));
+    set_json(resp, 200, root, NULL);
+    return 0;
+}
+
 static int handle_settings_get(const char *id, mf_rest_response_t *resp)
 {
     char json[4096];
@@ -848,6 +878,12 @@ int mf_rest_dispatch(const mf_rest_request_t *req, mf_rest_response_t *resp)
                     return handle_settings_get(idbuf, resp);
                 if (method_is(req, "PUT"))
                     return handle_settings_put(idbuf, req, resp);
+                set_error(resp, 405, "method not allowed");
+                return 0;
+            }
+            if (strcmp(rest, "history") == 0) {
+                if (method_is(req, "GET"))
+                    return handle_device_history(idbuf, resp);
                 set_error(resp, 405, "method not allowed");
                 return 0;
             }

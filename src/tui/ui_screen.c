@@ -60,6 +60,7 @@ static int g_devset_fetch;
 static int g_devset_wait_ovp;
 static int g_devset_ovp_tries;
 static double g_devset_next_try;
+static char g_hist_json[65536];
 
 static double mono_now(void)
 {
@@ -670,6 +671,165 @@ void mf_ui_open_device_view(int idx)
     mf_ui_refresh();
 }
 
+void mf_ui_request_history(const char *id)
+{
+    char path[192];
+    snprintf(path, sizeof(path), "/api/v1/devices/%s/history", id);
+    (void)mf_http_cli_get(&g_cli, path);
+}
+
+void mf_ui_handle_history(void)
+{
+    cJSON *root, *ts_arr, *val_arr;
+    int i, n, n_bars, bi;
+    double *ts, *vals;
+    double bucketed[512], max_val = 0;
+    int bucket_count;
+    double interval_s;
+    double t_start, t_end;
+
+    if (g_hist_json[0] == '\0')
+        return;
+    root = cJSON_Parse(g_hist_json);
+    if (!root)
+    {
+        g_hist_json[0] = '\0';
+        return;
+    }
+    ts_arr = cJSON_GetObjectItemCaseSensitive(root, "ts");
+    val_arr = cJSON_GetObjectItemCaseSensitive(root, "values");
+    if (!ts_arr || !cJSON_IsArray(ts_arr) ||
+        !val_arr || !cJSON_IsArray(val_arr))
+    {
+        cJSON_Delete(root);
+        g_hist_json[0] = '\0';
+        return;
+    }
+    n = cJSON_GetArraySize(ts_arr);
+    if (n != cJSON_GetArraySize(val_arr) || n <= 0)
+    {
+        cJSON_Delete(root);
+        g_hist_json[0] = '\0';
+        return;
+    }
+
+    /* Data is oldest-first. Keep the latest 4096 (match daemon cap). */
+    int cap = 4096;
+    int skip = 0;
+    if (n > cap) {
+        skip = n - cap;
+        n = cap;
+    }
+
+    ts = malloc((size_t)n * sizeof(double));
+    vals = malloc((size_t)n * sizeof(double));
+    if (!ts || !vals) {
+        free(ts);
+        free(vals);
+        cJSON_Delete(root);
+        g_hist_json[0] = '\0';
+        return;
+    }
+    for (i = 0; i < n; i++) {
+        int idx = i + skip;
+        cJSON *te = cJSON_GetArrayItem(ts_arr, idx);
+        cJSON *ve = cJSON_GetArrayItem(val_arr, idx);
+        ts[i] = (te && cJSON_IsNumber(te)) ? te->valuedouble : 0.0;
+        vals[i] = (ve && cJSON_IsNumber(ve)) ? ve->valuedouble : 0.0;
+    }
+
+    /* Rightmost bar = current timeslot; work left with a full row of
+       slots (zeros if no samples) so bars meet the Y spine. */
+    interval_s = (double)mf_pack_get_graph_interval() * 60.0;
+    t_end = ts[n - 1];
+    {
+        int cells = mf_pack_graph_bar_width();
+        double last_start;
+
+        if (cells < 1)
+            cells = 1;
+        n_bars = (mf_ui_cols() - 12) / cells;
+        if (n_bars < 8)
+            n_bars = 8;
+        if (n_bars > 512)
+            n_bars = 512;
+        last_start = (double)((long)(t_end / interval_s)) * interval_s;
+        t_start = last_start - (double)(n_bars - 1) * interval_s;
+        t_end = last_start + interval_s;
+    }
+
+    /* Initialize bucketed array to 0. */
+    for (bi = 0; bi < n_bars; bi++)
+        bucketed[bi] = 0.0;
+
+    /* Assign each sample to a bucket. */
+    for (i = 0; i < n; i++) {
+        int bucket = (int)((ts[i] - t_start) / interval_s);
+        if (bucket < 0 || bucket >= n_bars)
+            continue;
+        bucketed[bucket] += vals[i];
+    }
+
+    /* Compute mean per bucket. */
+    bucket_count = n_bars;
+    for (bi = 0; bi < n_bars; bi++) {
+        /* Count samples in this bucket to compute the mean. */
+        int cnt = 0;
+        double sum = 0;
+        for (i = 0; i < n; i++) {
+            int b = (int)((ts[i] - t_start) / interval_s);
+            if (b < 0 || b >= n_bars)
+                continue;
+            if (b == bi) {
+                sum += vals[i];
+                cnt++;
+            }
+        }
+        if (cnt > 0)
+            bucketed[bi] = sum / (double)cnt;
+        else
+            bucketed[bi] = 0.0;
+        if (bucketed[bi] > max_val)
+            max_val = bucketed[bi];
+    }
+
+    double y_max = max_val * 1.2;
+    if (y_max < 1.0)
+        y_max = 1.0;
+
+    /* Build X-axis time labels, one per bar, oldest-first. */
+    const char *labels[512];
+    int label_count = 0;
+    int interval_min = mf_pack_get_graph_interval();
+    for (bi = 0; bi < n_bars && label_count < 512; bi++) {
+        time_t bt = (time_t)(t_start + (double)bi * interval_s);
+        struct tm tm_buf;
+        struct tm *tmp = localtime_r(&bt, &tm_buf);
+        char buf[16];
+        if (tmp) {
+            if (interval_min >= 24 * 60)
+                strftime(buf, sizeof(buf), "%b %d %H:%M", tmp);
+            else
+                strftime(buf, sizeof(buf), "%H:%M", tmp);
+        } else {
+            snprintf(buf, sizeof(buf), "??:??");
+        }
+        labels[label_count] = strdup(buf);
+        label_count++;
+    }
+
+    mf_pack_set_history(bucketed, bucket_count, y_max,
+        label_count > 0 ? (const char * const *)labels : NULL);
+
+    for (bi = 0; bi < label_count; bi++)
+        free((void *)labels[bi]);
+
+    free(ts);
+    free(vals);
+    cJSON_Delete(root);
+    g_hist_json[0] = '\0';
+}
+
 void mf_ui_open_device_settings(int idx)
 {
     const char *id = mf_dash_catalog_id(idx);
@@ -679,6 +839,7 @@ void mf_ui_open_device_settings(int idx)
     if (!id || !id[0])
         return;
     mf_devset_show(id, name, NULL);
+    mf_devset_set_graph_interval(mf_pack_get_graph_interval());
     snprintf(path, sizeof(path), "/api/v1/devices/%s/settings", id);
     g_devset_fetch = 1;
     g_devset_wait_ovp = 1;
@@ -822,6 +983,8 @@ int mf_tui_run(const char *connect, const char *config_path)
                 tag = "reconnecting";
             if (mf_http_cli_take_body(&g_cli, body, sizeof(body))) {
                 snprintf(last_json, sizeof(last_json), "%s", body);
+                if (strstr(body, "\"values\"") && strstr(body, "\"column\""))
+                    snprintf(g_hist_json, sizeof(g_hist_json), "%s", body);
                 dirty = 1;
             }
             if (strcmp(tag, last_tag) != 0) {
@@ -870,6 +1033,12 @@ int mf_tui_run(const char *connect, const char *config_path)
                 } else if (g_view_idx >= 0 && strstr(last_json, "\"data\"")) {
                     snprintf(g_view_json, sizeof(g_view_json), "%s", last_json);
                     mf_pack_update(g_view_json);
+                    mf_ui_handle_history();
+                    if (mf_pack_is_charger() && !g_cli.inflight)
+                        mf_ui_request_history(mf_pack_get_device_id());
+                } else if (strstr(last_json, "\"values\"") &&
+                    strstr(last_json, "\"column\"")) {
+                    mf_ui_handle_history();
                 } else if (is_status) {
                     mf_dash_update(g_hostport, tag, last_json);
                 } else {
@@ -898,9 +1067,11 @@ int mf_tui_run(const char *connect, const char *config_path)
                 (void)mf_http_cli_post(&g_cli, path, payload);
             } else if (mr == 2 && mf_devset_open()) {
                 char path[192];
+                int gi = mf_devset_get_graph_interval();
                 snprintf(path, sizeof(path),
                          "/api/v1/devices/%s/settings", mf_devset_id());
                 (void)mf_http_cli_put(&g_cli, path, mf_devset_payload());
+                mf_pack_set_graph_interval(gi);
                 mf_devset_close();
                 g_last_get = 0;
             }
@@ -939,9 +1110,11 @@ int mf_tui_run(const char *connect, const char *config_path)
                 int sr = mf_devset_key((wint_t)key);
                 if (sr == 2) {
                     char path[192];
+                    int gi = mf_devset_get_graph_interval();
                     snprintf(path, sizeof(path),
                              "/api/v1/devices/%s/settings", mf_devset_id());
                     (void)mf_http_cli_put(&g_cli, path, mf_devset_payload());
+                    mf_pack_set_graph_interval(gi);
                     mf_devset_close();
                     g_last_get = 0;
                 }
@@ -958,6 +1131,18 @@ int mf_tui_run(const char *connect, const char *config_path)
             if (mf_pack_visible() && (key == 'e' || key == 'E')) {
                 if (g_view_idx >= 0)
                     mf_ui_open_device_settings(g_view_idx);
+                continue;
+            }
+            if (mf_pack_visible() && mf_pack_is_charger() &&
+                (key == '+' || key == '=')) {
+                if (mf_pack_graph_zoom(1))
+                    mf_ui_handle_history();
+                continue;
+            }
+            if (mf_pack_visible() && mf_pack_is_charger() &&
+                (key == '-' || key == '_')) {
+                if (mf_pack_graph_zoom(0))
+                    mf_ui_handle_history();
                 continue;
             }
             if (mf_pack_visible() && !mf_pack_is_charger() && mf_pack_has_switch()) {

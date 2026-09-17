@@ -228,20 +228,30 @@ target_compile_options(mf_stub PRIVATE ${MF_WARN})
 set(MF_SQLITE_INC ${CMAKE_SOURCE_DIR}/third_party/sqlite/include)
 set(MF_SQLITE_LIB ${CMAKE_SOURCE_DIR}/third_party/sqlite/lib/libsqlite3.so.0.8.6)
 
+# Compile the history subsystem into the daemon and link SQLite so the
+# poll loop can capture samples.
+target_sources(moonflared PRIVATE ${CMAKE_SOURCE_DIR}/src/history/history.c)
+target_include_directories(moonflared PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/history ${MF_SQLITE_INC})
+target_link_libraries(moonflared PRIVATE ${MF_SQLITE_LIB})
+set_target_properties(moonflared PROPERTIES BUILD_RPATH
+    ${CMAKE_SOURCE_DIR}/third_party/sqlite/lib)
+
 add_executable(test_history tests/test_history.c src/history/history.c)
 target_include_directories(test_history PRIVATE
-    ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/history ${MF_SQLITE_INC})
-target_link_libraries(test_history PRIVATE ${MF_SQLITE_LIB})
+    ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/history ${MF_SQLITE_INC} third_party/cJSON)
+target_link_libraries(test_history PRIVATE ${MF_SQLITE_LIB} mf_cjson)
 set_target_properties(test_history PROPERTIES BUILD_RPATH
     ${CMAKE_SOURCE_DIR}/third_party/sqlite/lib)
 add_test(NAME history COMMAND test_history)
 
-add_executable(test_routes tests/test_routes.c src/rest/routes.c src/rest/discover.c src/device/device.c src/plugin/loader.c src/config/config.c)
+add_executable(test_routes tests/test_routes.c src/rest/routes.c src/rest/discover.c src/device/device.c src/plugin/loader.c src/config/config.c src/history/history.c)
 target_include_directories(test_routes PRIVATE
     ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/rest
     ${CMAKE_SOURCE_DIR}/src/device ${CMAKE_SOURCE_DIR}/src/plugin
-    ${CMAKE_SOURCE_DIR}/src/config ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(test_routes PRIVATE mf_cjson ${CMAKE_DL_LIBS})
+    ${CMAKE_SOURCE_DIR}/src/config ${CMAKE_SOURCE_DIR}/src/history
+    ${CMAKE_SOURCE_DIR}/include ${MF_SQLITE_INC})
+target_link_libraries(test_routes PRIVATE mf_cjson ${CMAKE_DL_LIBS} ${MF_SQLITE_LIB})
 add_test(NAME routes COMMAND test_routes)
 
 add_executable(test_http_devices tests/test_http_devices.c)

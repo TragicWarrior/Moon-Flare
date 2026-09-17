@@ -4,6 +4,7 @@
  */
 
 #include "device.h"
+#include "history.h"
 
 #include <cJSON.h>
 #include <stdio.h>
@@ -139,6 +140,71 @@ static void refresh_reading(mf_device_t *d)
     d->last_error[0] = '\0';
     if (d->ops->caps)
         d->caps = d->ops->caps(d->ctx);
+
+    if (mf_history_db()) {
+        mf_sample_t s;
+        cJSON *r;
+        struct timespec now;
+
+        memset(&s, 0, sizeof(s));
+        snprintf(s.uuid, sizeof(s.uuid), "%s", d->uuid);
+        clock_gettime(CLOCK_REALTIME, &now);
+        s.ts = (double)now.tv_sec + (double)now.tv_nsec / 1e9;
+        s.online = d->online ? 1 : 0;
+        s.capture_interval_s = d->capture_interval_s;
+        {
+            size_t rjlen = strlen(d->reading_json);
+
+            if (rjlen < sizeof(s.extra_json))
+                memcpy(s.extra_json, d->reading_json, rjlen + 1);
+            else
+                memcpy(s.extra_json, "{}", 3);
+        }
+        r = cJSON_Parse(d->reading_json);
+        if (r) {
+            cJSON *it;
+
+            if (strcmp(d->kind, "charger") == 0) {
+                it = cJSON_GetObjectItemCaseSensitive(r, "battery_voltage_v");
+                if (cJSON_IsNumber(it)) {
+                    s.pack_v = it->valuedouble;
+                    s.has_pack_v = 1;
+                }
+                it = cJSON_GetObjectItemCaseSensitive(r, "battery_current_a");
+                if (cJSON_IsNumber(it)) {
+                    s.current_a = it->valuedouble;
+                    s.has_current_a = 1;
+                }
+                it = cJSON_GetObjectItemCaseSensitive(r, "charging_watts");
+                if (cJSON_IsNumber(it)) {
+                    s.power_w = it->valuedouble;
+                    s.has_power_w = 1;
+                }
+            } else {
+                it = cJSON_GetObjectItemCaseSensitive(r, "pack_voltage_v");
+                if (cJSON_IsNumber(it)) {
+                    s.pack_v = it->valuedouble;
+                    s.has_pack_v = 1;
+                }
+                it = cJSON_GetObjectItemCaseSensitive(r, "current_a");
+                if (cJSON_IsNumber(it)) {
+                    s.current_a = it->valuedouble;
+                    s.has_current_a = 1;
+                }
+                it = cJSON_GetObjectItemCaseSensitive(r, "soc_pct");
+                if (cJSON_IsNumber(it)) {
+                    s.soc = it->valuedouble;
+                    s.has_soc = 1;
+                }
+                if (s.has_pack_v && s.has_current_a) {
+                    s.power_w = s.pack_v * s.current_a;
+                    s.has_power_w = 1;
+                }
+            }
+            cJSON_Delete(r);
+        }
+        mf_history_enqueue(&s);
+    }
 }
 
 static pt_t device_pt(env_t e_)
@@ -387,6 +453,13 @@ int mf_devices_add(const char *name, const char *kind, const char *driver,
     d->in_use = true;
     d->stop = false;
     d->env.idx = slot;
+    if (mf_history_db()) {
+        struct timespec now;
+
+        clock_gettime(CLOCK_REALTIME, &now);
+        mf_history_upsert_device(d->uuid, d->name, d->kind, d->driver,
+                                 (double)now.tv_sec + (double)now.tv_nsec / 1e9);
+    }
     /* Do not protothread_run() here: POST is called from http_conn_pt. */
     if (g_pts && g_chan_tick)
         pt_create(g_pts, &d->thr, device_pt, &d->env);
