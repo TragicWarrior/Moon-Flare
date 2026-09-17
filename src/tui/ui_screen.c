@@ -955,6 +955,11 @@ int mf_tui_run(const char *connect, const char *config_path)
                 mf_ui_show_dashboard();
                 continue;
             }
+            if (mf_pack_visible() && (key == 'e' || key == 'E')) {
+                if (g_view_idx >= 0)
+                    mf_ui_open_device_settings(g_view_idx);
+                continue;
+            }
             if (mf_pack_visible() && !mf_pack_is_charger() && mf_pack_has_switch()) {
                 if (key == 'c' || key == 'C') {
                     if (mf_pack_switch_on("charge"))

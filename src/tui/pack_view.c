@@ -437,8 +437,9 @@ void mf_pack_show(int charger)
     else
         show_pack_widgets();
     g_visible = 1;
-    vk_label_set_text(g_hints, g_kind ? "Esc dashboard" :
-                      "c charge  d discharge  b balancer  Esc dashboard");
+    vk_label_set_text(g_hints, g_kind ?
+                      "e settings  Esc dashboard" :
+                      "c charge  d discharge  b balancer  e settings  Esc dashboard");
     vk_label_update(g_hints);
     if (g_fr_pack) {
         vk_box_update(g_pack_row0);
