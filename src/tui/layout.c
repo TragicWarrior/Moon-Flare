@@ -112,7 +112,7 @@ static void draw_box(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
         if (x + w - 1 < MF_TUI_COLS)
             grid[y + r][x + w - 1] = '|';
     }
-    snprintf(cap, sizeof(cap), " %s ", title ? title : "");
+    snprintf(cap, sizeof(cap), " %.*s ", (int)sizeof(cap) - 3, title ? title : "");
     put_str(grid, y, x + 2, cap);
 }
 

@@ -28,7 +28,7 @@ classic_result_t classic_decode(const classic_registers_t *input,
     /* Ibatt: wire 4116, i16 /10 A (signed) */
     R(CLASSIC_REG_IBATT);
     out->ibatt_raw = I16_SIGNED(CLASSIC_REG_IBATT);
-    out->ibatt_a = out->ibatt_raw * 0.1f;
+    out->ibatt_a = (float)out->ibatt_raw * 0.1f;
 
     /* kWh today: wire 4117, u16 /10 kWh */
     R(CLASSIC_REG_KWH_TODAY);
@@ -40,7 +40,7 @@ classic_result_t classic_decode(const classic_registers_t *input,
 
     /* Charge stage: wire 4119, MSB = stage code */
     R(CLASSIC_REG_CHARGE_STAGE);
-    out->charge_stage_msb = (U16(CLASSIC_REG_CHARGE_STAGE) >> 8) & 0xFF;
+    out->charge_stage_msb = (uint8_t)((U16(CLASSIC_REG_CHARGE_STAGE) >> 8) & 0xFF);
     out->charge_stage_name[0] = '\0';
     const char *stage_str = classic_charge_stage_name(out->charge_stage_msb);
     strncpy(out->charge_stage_name, stage_str, sizeof(out->charge_stage_name) - 1);
@@ -71,12 +71,12 @@ classic_result_t classic_decode(const classic_registers_t *input,
     R(CLASSIC_REG_UNIT_MAC_LO);
     R(CLASSIC_REG_UNIT_MAC_MID);
     R(CLASSIC_REG_UNIT_MAC_HI);
-    out->unit_mac[0] = (U16(CLASSIC_REG_UNIT_MAC_HI)     >> 8) & 0xFF;
-    out->unit_mac[1] =  U16(CLASSIC_REG_UNIT_MAC_HI)      & 0xFF;
-    out->unit_mac[2] = (U16(CLASSIC_REG_UNIT_MAC_MID)    >> 8) & 0xFF;
-    out->unit_mac[3] =  U16(CLASSIC_REG_UNIT_MAC_MID)      & 0xFF;
-    out->unit_mac[4] = (U16(CLASSIC_REG_UNIT_MAC_LO)     >> 8) & 0xFF;
-    out->unit_mac[5] =  U16(CLASSIC_REG_UNIT_MAC_LO)       & 0xFF;
+    out->unit_mac[0] = (uint8_t)((U16(CLASSIC_REG_UNIT_MAC_HI)     >> 8) & 0xFF);
+    out->unit_mac[1] = (uint8_t)( U16(CLASSIC_REG_UNIT_MAC_HI)      & 0xFF);
+    out->unit_mac[2] = (uint8_t)((U16(CLASSIC_REG_UNIT_MAC_MID)    >> 8) & 0xFF);
+    out->unit_mac[3] = (uint8_t)( U16(CLASSIC_REG_UNIT_MAC_MID)      & 0xFF);
+    out->unit_mac[4] = (uint8_t)((U16(CLASSIC_REG_UNIT_MAC_LO)     >> 8) & 0xFF);
+    out->unit_mac[5] = (uint8_t)( U16(CLASSIC_REG_UNIT_MAC_LO)       & 0xFF);
 
     /* UNIT_Device_ID: wire[4111]<<16 | wire[4110] */
     R(CLASSIC_REG_DEVICE_ID_LO);

@@ -108,9 +108,9 @@ static const char *tty_basename(const char *dev_path)
 static void make_dev_path(char *out, size_t cap, const char *tty)
 {
     if (tty && tty[0] == '/')
-        snprintf(out, cap, "%s", tty);
+        snprintf(out, cap, "%.*s", (int)cap - 1, tty);
     else
-        snprintf(out, cap, "/dev/%s", tty ? tty : "ttyUSB0");
+        snprintf(out, cap, "/dev/%.*s", (int)cap - 6, tty ? tty : "ttyUSB0");
 }
 
 /* udev by-id: usb-<stuff>_<SERIAL>-ifNN-portM — SERIAL is the last '_'

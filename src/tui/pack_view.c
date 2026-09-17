@@ -66,27 +66,6 @@ static vk_label_t *mk_lab(int x, int y, int w)
     return l;
 }
 
-static vk_label_t *mk_lab_txt(int x, int y, int w, const char *txt)
-{
-    vk_label_t *l = mk_lab(x, y, w);
-    if (txt) {
-        vk_label_set_text(l, txt);
-        vk_label_update(l);
-    }
-    return l;
-}
-
-static vk_meter_t *mk_meter(int x, int y, int len, double lo, double hi)
-{
-    vk_meter_t *m = vk_meter_create(VK_PROGRESS_HORIZONTAL, len, 1);
-    vk_widget_set_colors(VK_WIDGET(m), COL_TEXT, COL_BG);
-    vk_progress_set_range(VK_PROGRESS(m), lo, hi);
-    vk_progress_set_trough(VK_PROGRESS(m), VK_TROUGH_SOLID, COL_TROUGH, COL_BG);
-    vk_progress_set_style(VK_PROGRESS(m), VK_PROGRESS_UNDERBAR);
-    mf_ui_attach(VK_WIDGET(m), x, y);
-    return m;
-}
-
 static vk_label_t *mk_lab_c(int w)
 {
     vk_label_t *l = vk_label_create(w);
@@ -148,7 +127,8 @@ static void band_pct(vk_meter_t *m)
 static void hide_w(vk_widget_t *w)
 {
     if (w)
-        vk_widget_hide(w);
+        vk_widget_set_state(w,
+            (uint32_t)(vk_widget_get_state(w) & ~VK_STATE_VISIBLE));
 }
 
 static void show_w(vk_widget_t *w)
@@ -323,13 +303,13 @@ void mf_pack_init(void)
        staying 1 cell.  Clear it so the pads are fixed and the graph gets all
        the leftover. */
     vk_widget_set_state(VK_WIDGET(g_cl_pad_l),
-        vk_widget_get_state(VK_WIDGET(g_cl_pad_l)) & ~VK_STATE_EXPAND);
+        (uint32_t)(vk_widget_get_state(VK_WIDGET(g_cl_pad_l)) & ~VK_STATE_EXPAND));
     vk_widget_set_state(VK_WIDGET(g_cl_pad_r),
-        vk_widget_get_state(VK_WIDGET(g_cl_pad_r)) & ~VK_STATE_EXPAND);
+        (uint32_t)(vk_widget_get_state(VK_WIDGET(g_cl_pad_r)) & ~VK_STATE_EXPAND));
     vk_widget_set_state(VK_WIDGET(g_cl_pad_t),
-        vk_widget_get_state(VK_WIDGET(g_cl_pad_t)) & ~VK_STATE_EXPAND);
+        (uint32_t)(vk_widget_get_state(VK_WIDGET(g_cl_pad_t)) & ~VK_STATE_EXPAND));
     vk_widget_set_state(VK_WIDGET(g_cl_pad_b),
-        vk_widget_get_state(VK_WIDGET(g_cl_pad_b)) & ~VK_STATE_EXPAND);
+        (uint32_t)(vk_widget_get_state(VK_WIDGET(g_cl_pad_b)) & ~VK_STATE_EXPAND));
 
     g_cl_graph_row = vk_box_create(cols - 2, 8, VK_BOX_HORIZONTAL, 3);
     vk_box_set_homogeneous(g_cl_graph_row, false);
@@ -500,11 +480,8 @@ void mf_pack_show(int charger)
                minus the 1-row top/bottom pads (graph is 1 col narrower each side
                for the L/R pads). */
             {
-                int clientH = mf_ui_rows() - 4;   /* frame height (matches wiggle) */
-                int bodyH, gh;
+                int bodyH, gh;   /* reuse the wiggle's clientH (already clamped >= 3) */
 
-                if (clientH < 3)
-                    clientH = 3;
                 bodyH = clientH - 4;              /* -2 frame border, -2 window border */
                 if (bodyH < 1)
                     bodyH = 1;

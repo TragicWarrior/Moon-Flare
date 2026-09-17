@@ -152,7 +152,7 @@ int jk_assembler_feed(jk_frame_assembler_t *asm_,
         size_t avail = sizeof(asm_->buf) - asm_->buf_len;
         memcpy(asm_->buf + asm_->buf_len, chunk, avail);
         asm_->buf_len += avail;
-        asm_->dropped += chunk_len - avail;
+        asm_->dropped += (uint32_t)(chunk_len - avail);
         return n;
     }
     memcpy(asm_->buf + asm_->buf_len, chunk, chunk_len);
@@ -171,7 +171,7 @@ int jk_assembler_feed(jk_frame_assembler_t *asm_,
         if (hpos + 4 > asm_->buf_len) {
             /* Not enough bytes for any header */
             if (asm_->buf_len > 4) {
-                asm_->dropped += asm_->buf_len - 4;
+                asm_->dropped += (uint32_t)(asm_->buf_len - 4);
                 memmove(asm_->buf, asm_->buf + asm_->buf_len - 4, 4);
                 asm_->buf_len = 4;
             }
@@ -179,7 +179,7 @@ int jk_assembler_feed(jk_frame_assembler_t *asm_,
         }
 
         if (hpos > 0) {
-            asm_->dropped += hpos;
+            asm_->dropped += (uint32_t)(hpos);
             memmove(asm_->buf, asm_->buf + hpos, asm_->buf_len - hpos);
             asm_->buf_len -= hpos;
             continue;
@@ -210,7 +210,7 @@ int jk_assembler_feed(jk_frame_assembler_t *asm_,
         bool found = false;
         while (next + 3 < asm_->buf_len) {
             if (memcmp(asm_->buf + next, JK_HEADER_RSP, 4) == 0) {
-                asm_->dropped += next;
+                asm_->dropped += (uint32_t)(next);
                 memmove(asm_->buf, asm_->buf + next,
                         asm_->buf_len - next);
                 asm_->buf_len -= next;
@@ -221,7 +221,7 @@ int jk_assembler_feed(jk_frame_assembler_t *asm_,
         }
         if (!found) {
             if (asm_->buf_len > 4) {
-                asm_->dropped += asm_->buf_len - 4;
+                asm_->dropped += (uint32_t)(asm_->buf_len - 4);
                 memmove(asm_->buf, asm_->buf + asm_->buf_len - 4, 4);
             }
             asm_->buf_len = (asm_->buf_len > 4) ? 4 : 0;
@@ -300,18 +300,18 @@ jk_result_t jk_decode_cell_info(const uint8_t *data, size_t len,
 
     out->mosfet_temp_c = jk_temp_c(data, (size_t)(144 + off));
     out->wire_resistance_warnings = jk_u32(data, (size_t)(146 + off));
-    out->pack_voltage_v = jk_u32(data, (size_t)(150 + off)) * 0.001f;
-    out->current_a = jk_i32(data, (size_t)(158 + off)) * 0.001f;
+    out->pack_voltage_v = (float)jk_u32(data, (size_t)(150 + off)) * 0.001f;
+    out->current_a = (float)jk_i32(data, (size_t)(158 + off)) * 0.001f;
     out->temp1_c = jk_temp_c(data, (size_t)(162 + off));
     out->temp2_c = jk_temp_c(data, (size_t)(164 + off));
     out->errors_bitmask = jk_u32(data, (size_t)(166 + off));
     out->balance_current_a = jk_i16(data, (size_t)(170 + off)) * 0.001f;
     out->balancing_action = (jk_balancing_action_t)data[172 + off];
     out->soc_pct = (float)data[173 + off];
-    out->remaining_ah = jk_u32(data, (size_t)(174 + off)) * 0.001f;
-    out->nominal_ah = jk_u32(data, (size_t)(178 + off)) * 0.001f;
+    out->remaining_ah = (float)jk_u32(data, (size_t)(174 + off)) * 0.001f;
+    out->nominal_ah = (float)jk_u32(data, (size_t)(178 + off)) * 0.001f;
     out->cycle_count = jk_u32(data, (size_t)(182 + off));
-    out->cycle_capacity_ah = jk_u32(data, (size_t)(186 + off)) * 0.001f;
+    out->cycle_capacity_ah = (float)jk_u32(data, (size_t)(186 + off)) * 0.001f;
     out->soh_pct = (float)data[190 + off];
     out->precharge_on = data[191 + off] ? true : false;
     out->runtime_s = jk_u32(data, (size_t)(194 + off));
@@ -440,26 +440,26 @@ jk_result_t jk_decode_settings(const uint8_t *data, size_t len,
     if (jk_crc8(data, JK_FRAME_SIZE - 1) != data[JK_CELL_CRC_OFFSET])
         return JK_ECRC;
 
-    out->cell_uvp_v     = jk_u32(data, 10) * 0.001f;
-    out->cell_uvpr_v    = jk_u32(data, 14) * 0.001f;
-    out->cell_ovp_v     = jk_u32(data, 18) * 0.001f;
-    out->cell_ovpr_v    = jk_u32(data, 22) * 0.001f;
-    out->cell_rcv_v     = jk_u32(data, 38) * 0.001f;
-    out->balance_trigger_v = jk_u32(data, 26) * 0.001f;
-    out->start_balance_v   = jk_u32(data, 138) * 0.001f;
-    out->power_off_v      = jk_u32(data, 46) * 0.001f;
-    out->max_charge_a     = jk_u32(data, 50) * 0.001f;
-    out->max_discharge_a  = jk_u32(data, 62) * 0.001f;
-    out->max_balance_a    = jk_u32(data, 78) * 0.001f;
-    out->charge_otp_c     = jk_u32(data, 82) * 0.1f;
-    out->discharge_otp_c  = jk_u32(data, 90) * 0.1f;
-    out->charge_utp_c     = jk_i32(data, 98) * 0.1f;
-    out->power_tube_otp_c = jk_i32(data, 106) * 0.1f;
+    out->cell_uvp_v     = (float)jk_u32(data, 10) * 0.001f;
+    out->cell_uvpr_v    = (float)jk_u32(data, 14) * 0.001f;
+    out->cell_ovp_v     = (float)jk_u32(data, 18) * 0.001f;
+    out->cell_ovpr_v    = (float)jk_u32(data, 22) * 0.001f;
+    out->cell_rcv_v     = (float)jk_u32(data, 38) * 0.001f;
+    out->balance_trigger_v = (float)jk_u32(data, 26) * 0.001f;
+    out->start_balance_v   = (float)jk_u32(data, 138) * 0.001f;
+    out->power_off_v      = (float)jk_u32(data, 46) * 0.001f;
+    out->max_charge_a     = (float)jk_u32(data, 50) * 0.001f;
+    out->max_discharge_a  = (float)jk_u32(data, 62) * 0.001f;
+    out->max_balance_a    = (float)jk_u32(data, 78) * 0.001f;
+    out->charge_otp_c     = (float)jk_u32(data, 82) * 0.1f;
+    out->discharge_otp_c  = (float)jk_u32(data, 90) * 0.1f;
+    out->charge_utp_c     = (float)jk_i32(data, 98) * 0.1f;
+    out->power_tube_otp_c = (float)jk_i32(data, 106) * 0.1f;
     out->cell_count       = data[114];
     out->charge_switch    = data[118] ? true : false;
     out->discharge_switch = data[122] ? true : false;
     out->balancer_switch  = data[126] ? true : false;
-    out->nominal_ah       = jk_u32(data, 130) * 0.001f;
+    out->nominal_ah       = (float)jk_u32(data, 130) * 0.001f;
 
     return JK_OK;
 }

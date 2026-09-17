@@ -1,5 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
+#ifndef _DEFAULT_SOURCE
 #define _DEFAULT_SOURCE
+#endif
 
 #include "config/config.h"
 #include <cJSON.h>
@@ -65,7 +67,8 @@ static char *resolve_in_dir(const char *dir, const char *filename)
 {
     char path[PATH_MAX];
     struct stat st;
-    snprintf(path, sizeof(path), "%s/%s", dir, filename);
+    if (snprintf(path, sizeof(path), "%s/%s", dir, filename) >= (int)sizeof(path))
+        return NULL;   /* combined path too long to be a valid file */
     if (stat(path, &st) == 0 && S_ISREG(st.st_mode)) {
         char *copy = strdup(path);
         if (!copy)

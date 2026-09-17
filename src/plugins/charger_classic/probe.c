@@ -256,7 +256,8 @@ static int parse_hostport(const char *s, size_t n, char *ip, size_t ipsz, int *p
     if (!colon || colon == buf)
         return -1;
     *colon = '\0';
-    snprintf(ip, ipsz, "%s", buf);
+    if (snprintf(ip, ipsz, "%s", buf) >= (int)ipsz)
+        return -1;   /* host longer than caller's buffer */
     *port = atoi(colon + 1);
     return 0;
 }

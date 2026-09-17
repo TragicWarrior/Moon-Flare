@@ -34,6 +34,14 @@ static char          g_last_hp[128];
 static char          g_last_tag[24];
 static char          g_last_json[65536];
 
+/* vk_widget_hide() expands to (state & ~VK_STATE_VISIBLE) -- an unsigned-long
+   result narrowed back to the uint32_t state param, which trips -Wconversion.
+   Wrap it with the intended cast. */
+static void hide_w(vk_widget_t *w)
+{
+    vk_widget_set_state(w, (uint32_t)(vk_widget_get_state(w) & ~VK_STATE_VISIBLE));
+}
+
 static int frame_caption(vk_object_t *obj, int event, void *anything)
 {
     WINDOW *canvas = vk_widget_get_canvas(VK_WIDGET(obj));
@@ -142,17 +150,17 @@ void mf_dash_on_resize(void)
         /* Not the active view (a device/pack view is up) -- keep the client
            frame hidden so it doesn't leak in behind it on resize. */
         if (g_client)
-            vk_widget_hide(VK_WIDGET(g_client));
+            hide_w(VK_WIDGET(g_client));
         return;
     }
     if (small) {
         show_too_small(cols);
         if (g_client)
-            vk_widget_hide(VK_WIDGET(g_client));
+            hide_w(VK_WIDGET(g_client));
         return;
     }
     if (g_small)
-        vk_widget_hide(VK_WIDGET(g_small));
+        hide_w(VK_WIDGET(g_small));
     ensure_cards();
     {
         int fh = rows - MF_CARD_Y - 1;   /* client area: below status, above hints */
@@ -257,19 +265,19 @@ void mf_dash_set_visible(int vis)
         if (vis)
             vk_widget_show(VK_WIDGET(g_client));
         else
-            vk_widget_hide(VK_WIDGET(g_client));
+            hide_w(VK_WIDGET(g_client));
     }
     if (g_status) {
         if (vis)
             vk_widget_show(VK_WIDGET(g_status));
         else
-            vk_widget_hide(VK_WIDGET(g_status));
+            hide_w(VK_WIDGET(g_status));
     }
     if (g_hints) {
         if (vis)
             vk_widget_show(VK_WIDGET(g_hints));
         else
-            vk_widget_hide(VK_WIDGET(g_hints));
+            hide_w(VK_WIDGET(g_hints));
     }
 }
 
