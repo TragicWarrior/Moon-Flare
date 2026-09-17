@@ -1034,7 +1034,7 @@ int mf_tui_run(const char *connect, const char *config_path)
                     snprintf(g_view_json, sizeof(g_view_json), "%s", last_json);
                     mf_pack_update(g_view_json);
                     mf_ui_handle_history();
-                    if (mf_pack_is_charger() && !g_cli.inflight)
+                    if (!g_cli.inflight)
                         mf_ui_request_history(mf_pack_get_device_id());
                 } else if (strstr(last_json, "\"values\"") &&
                     strstr(last_json, "\"column\"")) {
@@ -1140,6 +1140,18 @@ int mf_tui_run(const char *connect, const char *config_path)
                 continue;
             }
             if (mf_pack_visible() && mf_pack_is_charger() &&
+                (key == '-' || key == '_')) {
+                if (mf_pack_graph_zoom(0))
+                    mf_ui_handle_history();
+                continue;
+            }
+            if (mf_pack_visible() && !mf_pack_is_charger() &&
+                (key == '+' || key == '=')) {
+                if (mf_pack_graph_zoom(1))
+                    mf_ui_handle_history();
+                continue;
+            }
+            if (mf_pack_visible() && !mf_pack_is_charger() &&
                 (key == '-' || key == '_')) {
                 if (mf_pack_graph_zoom(0))
                     mf_ui_handle_history();

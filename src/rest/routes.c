@@ -463,9 +463,19 @@ static int handle_device_history(const char *id, mf_rest_response_t *resp)
     double values[800], ts[800];
     cJSON *root, *arr;
     int n, i;
+    const char *column = "power_w";
+
+    /* Pick column by device kind; fall back to power_w. */
+    {
+        mf_devinfo_t info;
+        if (mf_devices_find_live(id, &info) == 0) {
+            if (strcmp(info.kind, "battery") == 0)
+                column = "soc";
+        }
+    }
 
     /* 60 s bins × 800 rows ≈ 13 h, still fits HTTP 64k. */
-    n = mf_history_query_ts_step(id, "power_w", 60, ts, values,
+    n = mf_history_query_ts_step(id, column, 60, ts, values,
                                  (int)(sizeof(values) / sizeof(values[0])));
     if (n < 0) {
         set_error(resp, 404, "no history");
@@ -476,7 +486,7 @@ static int handle_device_history(const char *id, mf_rest_response_t *resp)
         set_error(resp, 500, "error");
         return 0;
     }
-    cJSON_AddStringToObject(root, "column", "power_w");
+    cJSON_AddStringToObject(root, "column", column);
     arr = cJSON_AddArrayToObject(root, "ts");
     for (i = 0; i < n; i++)
         cJSON_AddItemToArray(arr, cJSON_CreateNumber(ts[i]));
