@@ -290,10 +290,10 @@ void mf_pack_init(void)
     g_cl_graph = vk_graph_create(cols - 4, 8);
     vk_widget_set_colors(VK_WIDGET(g_cl_graph), COL_TEXT, COL_BG);
     vk_widget_set_expand(VK_WIDGET(g_cl_graph));
-    vk_graph_set_bar_style(g_cl_graph, VK_GRAPH_BAR_ASCII);
+    vk_graph_set_bar_style(g_cl_graph, VK_GRAPH_BAR_BLOCK);
     vk_graph_set_bar_width(g_cl_graph, graph_bar_cells(30));
     vk_graph_set_y_range(g_cl_graph, 0.0, 100.0);
-    vk_graph_set_colors(g_cl_graph, COLOR_CYAN, COL_BG);
+    vk_graph_set_colors(g_cl_graph, COLOR_MAGENTA, COL_BG);
     vk_graph_set_attrs(g_cl_graph, A_BOLD);
 
     /* 1-cell padding on all sides of the graph.  L/R: 1-wide fillers flank the
@@ -359,10 +359,10 @@ void mf_pack_init(void)
     g_pk_graph = vk_graph_create(cols - 4, 8);
     vk_widget_set_colors(VK_WIDGET(g_pk_graph), COL_TEXT, COL_BG);
     vk_widget_set_expand(VK_WIDGET(g_pk_graph));
-    vk_graph_set_bar_style(g_pk_graph, VK_GRAPH_BAR_ASCII);
+    vk_graph_set_bar_style(g_pk_graph, VK_GRAPH_BAR_BLOCK);
     vk_graph_set_bar_width(g_pk_graph, graph_bar_cells(30));
     vk_graph_set_y_range(g_pk_graph, 0.0, 100.0);
-    vk_graph_set_colors(g_pk_graph, COLOR_CYAN, COL_BG);
+    vk_graph_set_colors(g_pk_graph, COLOR_MAGENTA, COL_BG);
     vk_graph_set_attrs(g_pk_graph, A_BOLD);
 
     g_pk_graph_row = vk_box_create(cols - 2, 8, VK_BOX_HORIZONTAL, 3);
@@ -380,7 +380,7 @@ void mf_pack_init(void)
     vk_box_set_widget(g_soc_body, 1, VK_WIDGET(g_pk_graph_row), VK_INHERIT_COLOR);
     vk_box_set_widget(g_soc_body, 2, VK_WIDGET(g_pk_pad_b), VK_INHERIT_COLOR);
     /* INHERIT_COLOR can clobber graph colors; restore them and set the SOC unit. */
-    vk_graph_set_colors(g_pk_graph, COLOR_CYAN, COL_BG);
+    vk_graph_set_colors(g_pk_graph, COLOR_MAGENTA, COL_BG);
     vk_widget_set_colors(VK_WIDGET(g_pk_graph), COL_TEXT, COL_BG);
     vk_graph_set_unit_label(g_pk_graph, "%");
     vk_graph_set_unit_scale(g_pk_graph, 1.0);
@@ -397,7 +397,7 @@ void mf_pack_init(void)
     vk_box_set_widget(g_cl_body, 4, VK_WIDGET(g_lb_ctemp), VK_INHERIT_COLOR);
     /* INHERIT_COLOR can clobber graph colors; restore explicit bar/box colors
         so werase draws on blue and bars use cyan on blue (not green on black). */
-    vk_graph_set_colors(g_cl_graph, COLOR_CYAN, COL_BG);
+    vk_graph_set_colors(g_cl_graph, COLOR_MAGENTA, COL_BG);
     vk_widget_set_colors(VK_WIDGET(g_cl_graph), COL_TEXT, COL_BG);
     vk_graph_set_unit_label(g_cl_graph, "W");
     vk_graph_set_unit_scale(g_cl_graph, 1.0);
@@ -416,7 +416,7 @@ void mf_pack_init(void)
     vk_box_set_widget(g_prod_body, 1, VK_WIDGET(g_cl_graph_row), VK_INHERIT_COLOR);
     vk_box_set_widget(g_prod_body, 2, VK_WIDGET(g_cl_pad_b), VK_INHERIT_COLOR);
     /* INHERIT_COLOR can clobber graph colors; restore them after attach. */
-    vk_graph_set_colors(g_cl_graph, COLOR_CYAN, COL_BG);
+    vk_graph_set_colors(g_cl_graph, COLOR_MAGENTA, COL_BG);
     vk_widget_set_colors(VK_WIDGET(g_cl_graph), COL_TEXT, COL_BG);
     vk_graph_set_unit_label(g_cl_graph, "W");
     vk_graph_set_unit_scale(g_cl_graph, 1.0);
