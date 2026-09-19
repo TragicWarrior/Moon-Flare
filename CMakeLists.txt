@@ -90,6 +90,7 @@ target_link_libraries(moonflare PRIVATE
 target_compile_definitions(moonflare PRIVATE _GNU_SOURCE)
 target_compile_options(moonflare PRIVATE ${MF_WARN})
 set_target_properties(moonflare PROPERTIES
+    OUTPUT_NAME moonflare-tui
     BUILD_RPATH ${LIBVIPER_SOURCE_DIR}
     ENABLE_EXPORTS ON)
 
