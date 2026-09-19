@@ -15,6 +15,7 @@ void mf_ui_quit(void);
 int  mf_ui_cols(void);
 int  mf_ui_rows(void);
 void mf_ui_open_settings(void);
+void mf_ui_open_connections(void);
 void mf_ui_show_help(int about);
 int  mf_ui_help_open(void);
 int  mf_ui_settings_open(void);
@@ -87,12 +88,16 @@ void mf_ui_open_device_view(int idx);
 void mf_ui_open_device_settings(int idx);
 void mf_ui_show_dashboard(void);
 const char *mf_ui_poll_path(void);
+int mf_ui_connections_open(void);
+int mf_ui_editor_open(void);
 
-int  mf_tui_run(const char *connect, const char *config_path);
+int  mf_tui_run(const char *connect, const char *profile, const char *config_path);
 int  mf_tui_dump_layout_main(const char *which);
 
 /* Mouse handlers for dialogs defined in ui_screen.c. */
 int  mf_help_mouse(int x, int y, mmask_t bstate);
 int  mf_settings_mouse(int x, int y, mmask_t bstate);
+int  mf_connections_mouse(int x, int y, mmask_t bstate);
+int  mf_editor_mouse(int x, int y, mmask_t bstate);
 
 #endif

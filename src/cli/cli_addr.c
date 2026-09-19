@@ -98,16 +98,18 @@ int cli_resolve_addr(const char *connect_flag, const char *config_override,
         return 0;
     }
 
-    /* 3. moonflare.json -> connect. */
+    /* 3. moonflare.json -> default_profile endpoint. */
     {
         mf_tui_config_t tui_cfg;
+        char ep[160];
         rc = mf_tui_config_load(config_override, &tui_cfg);
-        if (rc == 0 && tui_cfg.connect[0]) {
-            rc = cli_split_host_port(tui_cfg.connect, ctx->host, sizeof(ctx->host),
+        if (rc == 0 &&
+            mf_tui_config_endpoint(&tui_cfg, NULL, ep, sizeof(ep)) == 0) {
+            rc = cli_split_host_port(ep, ctx->host, sizeof(ctx->host),
                                      &ctx->port);
             if (rc < 0) {
-                fprintf(stderr, "error: invalid connect in config: %s\n",
-                        tui_cfg.connect);
+                fprintf(stderr,
+                        "error: invalid endpoint from default profile\n");
                 return -1;
             }
             return 0;

@@ -91,8 +91,20 @@ typedef struct {
 
 /* ---------- TUI config (moonflare.json) ---------- */
 
+#define MF_MAX_PROFILES        16
+#define MF_PROFILE_NAME_SIZE   48
+#define MF_PROFILE_HOST_SIZE   128
+
 typedef struct {
-    char connect[128];
+    char name[MF_PROFILE_NAME_SIZE];
+    char host[MF_PROFILE_HOST_SIZE];
+    int  port;
+} mf_conn_profile_t;
+
+typedef struct {
+    mf_conn_profile_t profiles[MF_MAX_PROFILES];
+    int    n_profiles;
+    char   default_profile[MF_PROFILE_NAME_SIZE];
     double refresh_interval_s;
 } mf_tui_config_t;
 
@@ -134,6 +146,13 @@ void mf_config_device_endpoint(const mf_config_device_t *d, char *buf, size_t ca
  * Returns NULL on parse error. */
 cJSON *mf_config_deserialize_json(const char *json);
 cJSON *mf_tui_config_deserialize_json(const char *json);
+
+/* Resolve a profile to "host:port" in out[cap].
+ * name != NULL  -> that profile (by name);
+ * name == NULL  -> default_profile, else first profile.
+ * Returns 0 and fills out on success; -1 if not found / no profiles. */
+int mf_tui_config_endpoint(const mf_tui_config_t *cfg, const char *name,
+                           char *out, size_t cap);
 
 /* Apply parsed JSON to a config struct (preserving defaults for missing keys). */
 void mf_config_apply_json(mf_daemon_config_t *cfg, const cJSON *root);

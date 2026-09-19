@@ -57,7 +57,11 @@ void mf_config_defaults(mf_daemon_config_t *cfg)
 void mf_tui_config_defaults(mf_tui_config_t *cfg)
 {
     memset(cfg, 0, sizeof(*cfg));
-    strncpy(cfg->connect, "127.0.0.1:5250", sizeof(cfg->connect) - 1);
+    strncpy(cfg->profiles[0].name, "local", sizeof(cfg->profiles[0].name) - 1);
+    strncpy(cfg->profiles[0].host, "127.0.0.1", sizeof(cfg->profiles[0].host) - 1);
+    cfg->profiles[0].port = 5250;
+    cfg->n_profiles = 1;
+    strncpy(cfg->default_profile, "local", sizeof(cfg->default_profile) - 1);
     cfg->refresh_interval_s = 1.0;
 }
 
@@ -344,9 +348,45 @@ void mf_tui_config_apply_json(mf_tui_config_t *cfg, const cJSON *root)
 {
     if (!root || root->type != cJSON_Object) return;
     cJSON *v;
+    cJSON *profiles_arr;
+    int n, i;
+    cJSON *prof_obj;
+    cJSON *name_v, *host_v, *port_v;
 
-    if ((v = cJSON_GetObjectItem(root, "connect")) && v->type == cJSON_String)
-        strncpy(cfg->connect, v->valuestring, sizeof(cfg->connect) - 1);
+    if ((profiles_arr = cJSON_GetObjectItem(root, "profiles")) &&
+        profiles_arr->type == cJSON_Array) {
+        n = cJSON_GetArraySize(profiles_arr);
+        cfg->n_profiles = 0;
+        for (i = 0; i < n && cfg->n_profiles < MF_MAX_PROFILES; i++) {
+            prof_obj = cJSON_GetArrayItem(profiles_arr, i);
+            if (!prof_obj || prof_obj->type != cJSON_Object)
+                continue;
+            name_v = cJSON_GetObjectItem(prof_obj, "name");
+            host_v = cJSON_GetObjectItem(prof_obj, "host");
+            port_v = cJSON_GetObjectItem(prof_obj, "port");
+            if (!name_v || name_v->type != cJSON_String ||
+                !name_v->valuestring[0])
+                continue;
+            if (!host_v || host_v->type != cJSON_String ||
+                !host_v->valuestring[0])
+                continue;
+            if (!port_v || port_v->type != cJSON_Number)
+                continue;
+            if (port_v->valueint < 1 || port_v->valueint > 65535)
+                continue;
+            mf_conn_profile_t *p = &cfg->profiles[cfg->n_profiles];
+            strncpy(p->name, name_v->valuestring, sizeof(p->name) - 1);
+            strncpy(p->host, host_v->valuestring, sizeof(p->host) - 1);
+            p->port = port_v->valueint;
+            cfg->n_profiles++;
+        }
+    }
+
+    if ((v = cJSON_GetObjectItem(root, "default_profile")) &&
+        v->type == cJSON_String && v->valuestring[0])
+        strncpy(cfg->default_profile, v->valuestring,
+                sizeof(cfg->default_profile) - 1);
+
     if ((v = cJSON_GetObjectItem(root, "refresh_interval_s")) &&
         v->type == cJSON_Number)
         cfg->refresh_interval_s = v->valuedouble;
@@ -490,13 +530,60 @@ char *mf_tui_config_serialize(const mf_tui_config_t *cfg)
     cJSON *root = cJSON_CreateObject();
     if (!root)
         return NULL;
-
-    cJSON_AddStringOrNull(root, "connect", cfg->connect);
+    cJSON *arr = cJSON_CreateArray();
+    for (int i = 0; i < cfg->n_profiles; i++) {
+        cJSON *obj = cJSON_CreateObject();
+        if (!obj)
+            continue;
+        cJSON_AddStringToObject(obj, "name", cfg->profiles[i].name);
+        cJSON_AddStringToObject(obj, "host", cfg->profiles[i].host);
+        cJSON_AddNumberToObject(obj, "port", cfg->profiles[i].port);
+        cJSON_AddItemToArray(arr, obj);
+    }
+    cJSON_AddItemToObject(root, "profiles", arr);
+    cJSON_AddStringOrNull(root, "default_profile", cfg->default_profile);
     cJSON_AddNumber(root, "refresh_interval_s", cfg->refresh_interval_s);
-
     char *s = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
     return s;
+}
+
+/* ─── endpoint resolver ─────────────────────────────────────── */
+
+int mf_tui_config_endpoint(const mf_tui_config_t *cfg, const char *name,
+                           char *out, size_t cap)
+{
+    const mf_conn_profile_t *p = NULL;
+
+    if (!cfg || !out || cap == 0)
+        return -1;
+    if (cfg->n_profiles <= 0)
+        return -1;
+
+    if (name && name[0]) {
+        for (int i = 0; i < cfg->n_profiles; i++) {
+            if (strcmp(cfg->profiles[i].name, name) == 0) {
+                p = &cfg->profiles[i];
+                break;
+            }
+        }
+        if (!p)
+            return -1;
+    } else {
+        if (cfg->default_profile[0]) {
+            for (int i = 0; i < cfg->n_profiles; i++) {
+                if (strcmp(cfg->profiles[i].name, cfg->default_profile) == 0) {
+                    p = &cfg->profiles[i];
+                    break;
+                }
+            }
+        }
+        if (!p)
+            p = &cfg->profiles[0];
+    }
+
+    snprintf(out, cap, "%.127s:%d", p->host, p->port);
+    return 0;
 }
 
 /* ─── atomic save ───────────────────────────────────────────── */

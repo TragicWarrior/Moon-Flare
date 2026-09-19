@@ -17,7 +17,7 @@
 #define COL_DROP_HI_FG COLOR_WHITE
 #define COL_DROP_HI_BG COLOR_BLACK
 
-enum { MB_FILE = 0, MB_SETTINGS, MB_DEVICES, MB_HELP, MB_COUNT };
+enum { MB_FILE = 0, MB_DEVICES, MB_HELP, MB_COUNT };
 
 struct mb_item {
     const char *label;
@@ -33,6 +33,7 @@ static const struct mb_item *g_open_table;
 
 static void on_quit(void) { mf_ui_quit(); }
 static void on_general(void) { mf_ui_open_settings(); }
+static void on_connections(void) { mf_ui_open_connections(); }
 static void on_save(void) { mf_ui_save_config(); }
 static void on_load(void) { mf_ui_load_config(); }
 static void on_dash(void) { mf_ui_show_dashboard(); }
@@ -48,19 +49,18 @@ static void on_dyn_item(void)
 }
 
 static const struct mb_item file_items[] = {
-    { "Quit", on_quit, 0 },
-    { NULL, NULL, 1 }
-};
-static const struct mb_item settings_items[] = {
-    { "General…", on_general, 0 },
+    { "General\u2026", on_general, 0 },
+    { "Connections\u2026", on_connections, 0 },
     { NULL, NULL, 0 },
     { "Save config", on_save, 0 },
     { "Load config", on_load, 0 },
+    { NULL, NULL, 0 },
+    { "Quit", on_quit, 0 },
     { NULL, NULL, 1 }
 };
 static const struct mb_item devices_items[] = {
-    { "Add Device…", on_noop, 0 },
-    { "Remove Device…", on_noop, 0 },
+    { "Add Device\u2026", on_noop, 0 },
+    { "Remove Device\u2026", on_noop, 0 },
     { NULL, NULL, 1 }
 };
 static const struct mb_item help_items[] = {
@@ -70,10 +70,10 @@ static const struct mb_item help_items[] = {
 };
 
 static const struct mb_item *const tables[MB_COUNT] = {
-    file_items, settings_items, devices_items, help_items
+    file_items, devices_items, help_items
 };
 static const char *const titles[MB_COUNT] = {
-    "File", "Settings", "Devices", "Help"
+    "File", "Devices", "Help"
 };
 
 static void close_dropdown(void)

@@ -165,8 +165,14 @@ static void test_tui_defaults(void)
     mf_tui_config_t cfg;
     int rc = mf_tui_config_load(NULL, &cfg);
     assert_int_eq(0, rc, "tui: missing file returns 0");
-    assert_str_eq("127.0.0.1:5250", cfg.connect,
-                  "tui: default connect");
+    assert_int_eq(1, cfg.n_profiles, "tui: 1 default profile");
+    assert_str_eq("127.0.0.1", cfg.profiles[0].host,
+                  "tui: default profile host");
+    assert_int_eq(5250, cfg.profiles[0].port, "tui: default profile port");
+    assert_str_eq("local", cfg.profiles[0].name,
+                  "tui: default profile name");
+    assert_str_eq("local", cfg.default_profile,
+                  "tui: default_profile name");
     assert_int_eq(1, cfg.refresh_interval_s == 1.0 ? 1 : 0,
                   "tui: default refresh_interval_s 1.0");
 
