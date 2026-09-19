@@ -93,6 +93,21 @@ set_target_properties(moonflare PROPERTIES
     BUILD_RPATH ${LIBVIPER_SOURCE_DIR}
     ENABLE_EXPORTS ON)
 
+add_executable(moonflare-cli
+    src/cli/main.c
+    src/cli/cli_http.c
+    src/cli/cli_addr.c
+    src/cli/cli_render.c
+    src/cli/mcp.c
+    src/config/config.c)
+target_include_directories(moonflare-cli PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/config
+    ${CMAKE_SOURCE_DIR}/third_party/cJSON)
+target_compile_definitions(moonflare-cli PRIVATE _GNU_SOURCE)
+target_compile_options(moonflare-cli PRIVATE ${MF_WARN})
+target_link_libraries(moonflare-cli PRIVATE mf_cjson m)
+
 add_executable(test_jk_proto
     src/jk/jk_proto.c
     tests/test_jk_proto.c
