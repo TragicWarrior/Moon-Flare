@@ -9,26 +9,29 @@
 #include <stdio.h>
 #include <string.h>
 
-#define DEFAULT_CONNECT "172.16.0.65:5250"
-
 static void usage(const char *prog)
 {
     fprintf(stderr,
         "moonflare -- Moon Flare TUI (libviper/VDK)\n"
         "\n"
-        "Usage: %s [--connect HOST:PORT] [--config PATH] [--dump-layout [KIND]] [--help]\n"
+        "Usage: %s [--connect HOST:PORT] [--profile NAME] [--config PATH] "
+        "[--dump-layout [KIND]] [--help]\n"
         "\n"
-        "  --connect       moonflared REST address (default %s)\n"
+        "  --connect       moonflared REST address (highest priority)\n"
+        "  --profile       use named connection profile from moonflare.json\n"
         "  --config        path to moonflare.json\n"
         "  --dump-layout   80x25 ASCII (dashboard|pack|charger|settings|confirm)\n"
         "\n"
+        "Precedence: --connect > --profile > default profile > 127.0.0.1:5250\n"
+        "\n"
         "All views render at 80x25 minimum. F10 opens the menubar.\n",
-        prog, DEFAULT_CONNECT);
+        prog);
 }
 
 int main(int argc, char **argv)
 {
-    const char *connect = DEFAULT_CONNECT;
+    const char *connect = NULL;
+    const char *profile = NULL;
     const char *config  = NULL;
     const char *dump_kind = NULL;
     int help = 0, dump = 0;
@@ -37,6 +40,8 @@ int main(int argc, char **argv)
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--connect") && i + 1 < argc) {
             connect = argv[++i];
+        } else if (!strcmp(argv[i], "--profile") && i + 1 < argc) {
+            profile = argv[++i];
         } else if (!strcmp(argv[i], "--config") && i + 1 < argc) {
             config = argv[++i];
         } else if (!strcmp(argv[i], "--dump-layout")) {
@@ -59,5 +64,5 @@ int main(int argc, char **argv)
     if (dump)
         return mf_tui_dump_layout_main(dump_kind);
     mf_backtrace_install();
-    return mf_tui_run(connect, config);
+    return mf_tui_run(connect, profile, config);
 }

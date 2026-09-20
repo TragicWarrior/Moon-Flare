@@ -1,4 +1,8 @@
 {
-  "connect": "172.16.0.65:5250",
+  "profiles": [
+    { "name": "local",      "host": "127.0.0.1", "port": 5250 },
+    { "name": "batteryman", "host": "10.100.0.6", "port": 5250 }
+  ],
+  "default_profile": "local",
   "refresh_interval_s": 1.0
 }

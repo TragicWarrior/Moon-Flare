@@ -36,6 +36,18 @@ mf_mouse_handle(const MEVENT *mev)
         (void)mf_help_mouse(x, y, bstate);
         return 1;
     }
+
+    /* Profile editor overlays the connections manager: route to it first and
+     * sink clicks outside it (modal). Then the manager itself. */
+    if (mf_ui_editor_open()) {
+        (void)mf_editor_mouse(x, y, bstate);
+        return 1;
+    }
+    if (mf_ui_connections_open()) {
+        (void)mf_connections_mouse(x, y, bstate);
+        return 1;
+    }
+
     if (mf_devset_open()) {
         int r = mf_devset_mouse(x, y, bstate);
         return r == 2 ? 2 : 1;

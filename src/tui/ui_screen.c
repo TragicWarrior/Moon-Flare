@@ -14,6 +14,8 @@
 #include <unistd.h>
 #include <vdk.h>
 #include <vkmio.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #define COL_BG   COLOR_WHITE
 #define COL_TEXT COLOR_BLACK
@@ -39,11 +41,11 @@ static double g_last_get;
 static int g_settings_open;
 static vk_window_t *g_set_win;
 static vk_box_t *g_set_vbox, *g_set_mid, *g_set_inner, *g_set_form, *g_set_bar;
-static vk_grid_t *g_set_row[3];
-static vk_grid_t *g_set_fields[3];
-static vk_label_t *g_set_lab[3];
-static vk_label_t *g_set_hint[3];
-static vk_input_t *g_set_in[3];
+static vk_grid_t *g_set_row[4];
+static vk_grid_t *g_set_fields[1];
+static vk_label_t *g_set_lab[1];
+static vk_label_t *g_set_hint[1];
+static vk_input_t *g_set_in[1];
 static vk_button_t *g_set_ok, *g_set_cancel;
 static vk_filler_t *g_set_fill, *g_set_form_fill;
 static vk_filler_t *g_set_pad_top, *g_set_pad_bot, *g_set_pad_left, *g_set_pad_right;
@@ -51,6 +53,35 @@ static int g_set_focus;
 static void close_settings(void);
 static void paint_settings(void);
 static void apply_settings(void);
+
+/* ---- Connections manager state ---- */
+static int g_connections_open;
+static vk_window_t *g_conn_win;
+static vk_listbox_t *g_conn_list;
+static int g_conn_sel;
+static vk_box_t *g_conn_vbox;
+static vk_label_t *g_conn_hint;
+static vk_label_t *g_conn_spacer;
+static void close_connections(void);
+static void rebuild_connections_list(void);
+
+/* ---- Profile editor state ---- */
+static int g_editor_open;
+static vk_window_t *g_ed_win;
+static vk_box_t *g_ed_vbox, *g_ed_mid, *g_ed_inner, *g_ed_form, *g_ed_bar;
+static vk_grid_t *g_ed_row[3];
+static vk_grid_t *g_ed_fields[3];
+static vk_label_t *g_ed_lab[3];
+static vk_input_t *g_ed_in[3];
+static vk_button_t *g_ed_ok, *g_ed_cancel;
+static vk_filler_t *g_ed_fill, *g_ed_form_fill;
+static vk_filler_t *g_ed_pad_top, *g_ed_pad_bot, *g_ed_pad_left, *g_ed_pad_right;
+static int g_ed_focus;
+static int g_ed_edit_idx;
+static void close_editor(void);
+static void paint_editor(void);
+static void apply_editor(void);
+static void open_editor(int idx);
 static vk_window_t *g_help_win;
 static int g_view_idx = -1;
 static char g_view_path[192];
@@ -174,7 +205,7 @@ static void paint_settings(void)
     int pass, i;
 
     for (pass = 0; pass < 2; pass++) {
-        for (i = 0; i < 3; i++) {
+        for (i = 0; i < 1; i++) {
             if (g_set_lab[i])
                 vk_label_update(g_set_lab[i]);
             if (g_set_hint[i])
@@ -243,7 +274,7 @@ static void close_settings(void)
     box_vacate(g_set_inner);
     box_vacate(g_set_form);
     box_vacate(g_set_bar);
-    for (i = 0; i < 3; i++) {
+    for (i = 0; i < 1; i++) {
         if (g_set_row[i]) {
             vk_grid_destroy(g_set_row[i]);
             g_set_row[i] = NULL;
@@ -329,9 +360,8 @@ static void close_settings(void)
 
 void mf_ui_open_settings(void)
 {
-    int x, y, w, h, i, iw, ih;
+    int x, y, w, h, iw, ih;
     char buf[32];
-    static const char *names[3] = { "Host", "Port", "Refresh" };
 
     if (g_settings_open)
         return;
@@ -345,12 +375,12 @@ void mf_ui_open_settings(void)
     vk_window_set_border_attrs(g_set_win, A_BOLD);
     vk_widget_set_colors(VK_WIDGET(g_set_win), COL_TEXT, COL_MENU);
 
-    g_set_form = vk_box_create(iw - 2, ih - 5, VK_BOX_VERTICAL, 4);
+    g_set_form = vk_box_create(iw - 2, ih - 5, VK_BOX_VERTICAL, 2);
     vk_box_set_homogeneous(g_set_form, false);
     vk_widget_set_colors(VK_WIDGET(g_set_form), COL_TEXT, COL_MENU);
     vk_widget_set_expand(VK_WIDGET(g_set_form));
-    for (i = 0; i < 3; i++) {
-        static const char *hints[3] = { "", " (TCP)", " (Seconds)" };
+    {
+        static const char *hints[1] = { " (Seconds)" };
         int fields_w = iw - 2 - 13;
         int in_w;
 
@@ -360,42 +390,42 @@ void mf_ui_open_settings(void)
         if (in_w < 8)
             in_w = 8;
 
-        g_set_fields[i] = vk_grid_create(fields_w, 3, 2, 1);
-        vk_grid_set_homogeneous(g_set_fields[i], false);
-        vk_grid_set_gap(g_set_fields[i], 0);
-        vk_grid_set_col_width(g_set_fields[i], 0, 12);
-        vk_grid_set_col_width(g_set_fields[i], 1, in_w);
-        vk_grid_set_row_height(g_set_fields[i], 0, 3);
-        vk_widget_set_colors(VK_WIDGET(g_set_fields[i]), COL_TEXT, COL_MENU);
-        vk_widget_set_expand(VK_WIDGET(g_set_fields[i]));
-        g_set_lab[i] = vk_label_create(12);
-        vk_widget_set_colors(VK_WIDGET(g_set_lab[i]), COL_TEXT, COL_MENU);
-        vk_label_set_text(g_set_lab[i], names[i]);
-        vk_label_update(g_set_lab[i]);
-        g_set_in[i] = vk_input_create(in_w);
-        vk_input_set_border_style(g_set_in[i], VK_BORDER_SINGLE);
-        vk_grid_set_widget(g_set_fields[i], 0, 0, VK_WIDGET(g_set_lab[i]), VK_INHERIT_NONE);
-        vk_grid_set_widget(g_set_fields[i], 1, 0, VK_WIDGET(g_set_in[i]), VK_INHERIT_NONE);
+        g_set_fields[0] = vk_grid_create(fields_w, 3, 2, 1);
+        vk_grid_set_homogeneous(g_set_fields[0], false);
+        vk_grid_set_gap(g_set_fields[0], 0);
+        vk_grid_set_col_width(g_set_fields[0], 0, 12);
+        vk_grid_set_col_width(g_set_fields[0], 1, in_w);
+        vk_grid_set_row_height(g_set_fields[0], 0, 3);
+        vk_widget_set_colors(VK_WIDGET(g_set_fields[0]), COL_TEXT, COL_MENU);
+        vk_widget_set_expand(VK_WIDGET(g_set_fields[0]));
+        g_set_lab[0] = vk_label_create(12);
+        vk_widget_set_colors(VK_WIDGET(g_set_lab[0]), COL_TEXT, COL_MENU);
+        vk_label_set_text(g_set_lab[0], "Refresh");
+        vk_label_update(g_set_lab[0]);
+        g_set_in[0] = vk_input_create(in_w);
+        vk_input_set_border_style(g_set_in[0], VK_BORDER_SINGLE);
+        vk_grid_set_widget(g_set_fields[0], 0, 0, VK_WIDGET(g_set_lab[0]), VK_INHERIT_NONE);
+        vk_grid_set_widget(g_set_fields[0], 1, 0, VK_WIDGET(g_set_in[0]), VK_INHERIT_NONE);
 
-        g_set_hint[i] = vk_label_create(13);
-        vk_widget_set_colors(VK_WIDGET(g_set_hint[i]), COL_TEXT, COL_MENU);
-        vk_label_set_text(g_set_hint[i], hints[i][0] ? hints[i] : "");
-        vk_label_update(g_set_hint[i]);
+        g_set_hint[0] = vk_label_create(13);
+        vk_widget_set_colors(VK_WIDGET(g_set_hint[0]), COL_TEXT, COL_MENU);
+        vk_label_set_text(g_set_hint[0], hints[0]);
+        vk_label_update(g_set_hint[0]);
 
-        g_set_row[i] = vk_grid_create(iw - 2, 3, 2, 1);
-        vk_grid_set_homogeneous(g_set_row[i], false);
-        vk_grid_set_gap(g_set_row[i], 0);
-        vk_grid_set_col_width(g_set_row[i], 0, fields_w);
-        vk_grid_set_col_expand(g_set_row[i], 0, true);
-        vk_grid_set_col_width(g_set_row[i], 1, 13);
-        vk_grid_set_row_height(g_set_row[i], 0, 3);
-        vk_widget_set_colors(VK_WIDGET(g_set_row[i]), COL_TEXT, COL_MENU);
-        vk_grid_set_widget(g_set_row[i], 0, 0, VK_WIDGET(g_set_fields[i]), VK_INHERIT_NONE);
-        vk_grid_set_widget(g_set_row[i], 1, 0, VK_WIDGET(g_set_hint[i]), VK_INHERIT_NONE);
-        vk_box_set_widget(g_set_form, i, VK_WIDGET(g_set_row[i]), VK_INHERIT_NONE);
+        g_set_row[0] = vk_grid_create(iw - 2, 3, 2, 1);
+        vk_grid_set_homogeneous(g_set_row[0], false);
+        vk_grid_set_gap(g_set_row[0], 0);
+        vk_grid_set_col_width(g_set_row[0], 0, fields_w);
+        vk_grid_set_col_expand(g_set_row[0], 0, true);
+        vk_grid_set_col_width(g_set_row[0], 1, 13);
+        vk_grid_set_row_height(g_set_row[0], 0, 3);
+        vk_widget_set_colors(VK_WIDGET(g_set_row[0]), COL_TEXT, COL_MENU);
+        vk_grid_set_widget(g_set_row[0], 0, 0, VK_WIDGET(g_set_fields[0]), VK_INHERIT_NONE);
+        vk_grid_set_widget(g_set_row[0], 1, 0, VK_WIDGET(g_set_hint[0]), VK_INHERIT_NONE);
+        vk_box_set_widget(g_set_form, 0, VK_WIDGET(g_set_row[0]), VK_INHERIT_NONE);
     }
     {
-        int slack = (ih - 5) - 9;
+        int slack = (ih - 5) - 3;
 
         if (slack > 0) {
             uint32_t st;
@@ -406,14 +436,11 @@ void mf_ui_open_settings(void)
                                 st & ~(uint32_t)VK_STATE_EXPAND);
             vk_widget_set_colors(VK_WIDGET(g_set_form_fill), COL_TEXT, COL_MENU);
             vk_widget_resize(VK_WIDGET(g_set_form_fill), iw - 2, slack);
-            vk_box_set_widget(g_set_form, 3, VK_WIDGET(g_set_form_fill), VK_INHERIT_NONE);
+            vk_box_set_widget(g_set_form, 1, VK_WIDGET(g_set_form_fill), VK_INHERIT_NONE);
         }
     }
-    vk_input_set_text(g_set_in[0], g_host);
-    snprintf(buf, sizeof(buf), "%d", g_port);
-    vk_input_set_text(g_set_in[1], buf);
     snprintf(buf, sizeof(buf), "%.2f", g_refresh);
-    vk_input_set_text(g_set_in[2], buf);
+    vk_input_set_text(g_set_in[0], buf);
 
     g_set_bar = vk_box_create(iw - 2, 3, VK_BOX_HORIZONTAL, 3);
     vk_box_set_homogeneous(g_set_bar, false);
@@ -466,28 +493,15 @@ void mf_ui_open_settings(void)
 
 static void apply_settings(void)
 {
-    const char *h = vk_input_get_text(g_set_in[0]);
-    const char *ps = vk_input_get_text(g_set_in[1]);
-    const char *rs = vk_input_get_text(g_set_in[2]);
-    int p;
+    const char *rs = vk_input_get_text(g_set_in[0]);
     double r;
-    if (h && h[0])
-        snprintf(g_host, sizeof(g_host), "%s", h);
-    p = ps ? atoi(ps) : g_port;
-    if (p > 0 && p <= 65535)
-        g_port = p;
     r = rs ? atof(rs) : g_refresh;
     if (r < 0.25)
         r = 0.25;
     if (r > 10.0)
         r = 10.0;
     g_refresh = r;
-    snprintf(g_hostport, sizeof(g_hostport), "%.115s:%d", g_host, g_port);
-    snprintf(g_tui_cfg.connect, sizeof(g_tui_cfg.connect), "%s", g_hostport);
     g_tui_cfg.refresh_interval_s = g_refresh;
-    mf_http_cli_close(&g_cli);
-    mf_http_cli_init(&g_cli, g_host, g_port);
-    mf_http_cli_start(&g_cli, mono_now());
     close_settings();
 }
 
@@ -501,24 +515,22 @@ static int settings_key(wint_t c)
         return 1;
     }
     if (c == '\t') {
-        if (g_set_focus < 3)
-            vk_input_show_cursor(g_set_in[g_set_focus], false);
-        if (g_set_focus < 3)
-            vk_input_update(g_set_in[g_set_focus]);
-        g_set_focus = (g_set_focus + 1) % 5;
-        if (g_set_focus < 3) {
-            vk_input_show_cursor(g_set_in[g_set_focus], true);
-            vk_input_update(g_set_in[g_set_focus]);
+        if (g_set_focus == 0)
+            vk_input_show_cursor(g_set_in[0], false);
+        g_set_focus = (g_set_focus + 1) % 3;
+        if (g_set_focus == 0) {
+            vk_input_show_cursor(g_set_in[0], true);
+            vk_input_update(g_set_in[0]);
         }
         if (g_set_ok) {
             vk_widget_set_colors(VK_WIDGET(g_set_ok),
-                                 g_set_focus == 3 ? COLOR_YELLOW : COL_TEXT,
+                                 g_set_focus == 1 ? COLOR_YELLOW : COL_TEXT,
                                  COL_MENU);
             vk_button_update(g_set_ok);
         }
         if (g_set_cancel) {
             vk_widget_set_colors(VK_WIDGET(g_set_cancel),
-                                 g_set_focus == 4 ? COLOR_YELLOW : COL_TEXT,
+                                 g_set_focus == 2 ? COLOR_YELLOW : COL_TEXT,
                                  COL_MENU);
             vk_button_update(g_set_cancel);
         }
@@ -526,13 +538,13 @@ static int settings_key(wint_t c)
         return 1;
     }
     if (c == '\n' || c == KEY_ENTER) {
-        if (g_set_focus == 4)
+        if (g_set_focus == 2)
             close_settings();
         else
             apply_settings();
         return 1;
     }
-    if (g_set_focus >= 3)
+    if (g_set_focus >= 1)
         return 1;
     in = g_set_in[g_set_focus];
     if (c == KEY_BACKSPACE || c == 127) {
@@ -601,24 +613,808 @@ void mf_ui_show_help(int about)
     mf_ui_refresh();
 }
 
+/* ---- Connections Manager ---- */
+
+static void close_connections(void)
+{
+    if (!g_connections_open)
+        return;
+    if (g_conn_win)
+        vk_window_set_child(g_conn_win, NULL, VK_INHERIT_NONE);
+    box_vacate(g_conn_vbox);
+    if (g_conn_list) {
+        vk_listbox_destroy(g_conn_list);
+        g_conn_list = NULL;
+    }
+    if (g_conn_hint) {
+        vk_label_destroy(g_conn_hint);
+        g_conn_hint = NULL;
+    }
+    if (g_conn_spacer) {
+        vk_label_destroy(g_conn_spacer);
+        g_conn_spacer = NULL;
+    }
+    if (g_conn_vbox) {
+        vk_box_destroy(g_conn_vbox);
+        g_conn_vbox = NULL;
+    }
+    if (g_conn_win) {
+        vk_screen_detach_widget(g_screen, 0, VK_WIDGET(g_conn_win));
+        vk_window_destroy(g_conn_win);
+        g_conn_win = NULL;
+    }
+    g_connections_open = 0;
+    mf_ui_front_clear();
+    mf_ui_refresh();
+}
+
+/* Format one connection-list row: default marker + name + host:port. */
+static void conn_row_text(int i, char *out, size_t cap)
+{
+    const char *mark =
+        (g_tui_cfg.default_profile[0] &&
+         strcmp(g_tui_cfg.profiles[i].name, g_tui_cfg.default_profile) == 0)
+        ? "\xe2\x80\xa2" : " ";
+    snprintf(out, cap, "%s %-14.14s %.100s:%d", mark,
+             g_tui_cfg.profiles[i].name,
+             g_tui_cfg.profiles[i].host, g_tui_cfg.profiles[i].port);
+}
+
+/* Repopulate the listbox from g_tui_cfg after a mutation (set-default,
+ * delete, add, edit) so the visible rows + default marker stay in sync. */
+static void rebuild_connections_list(void)
+{
+    int sel;
+
+    if (!g_connections_open)
+        return;
+    /* Recreate the window so it re-sizes + re-centers for the new profile
+     * count — a plain listbox refresh can't grow the fixed-height dialog. */
+    sel = g_conn_sel;
+    close_connections();
+    mf_ui_open_connections();
+    if (!g_connections_open || !g_conn_list)
+        return;
+    if (sel >= g_tui_cfg.n_profiles)
+        sel = g_tui_cfg.n_profiles - 1;
+    if (sel < 0)
+        sel = 0;
+    g_conn_sel = sel;
+    vk_listbox_set_curr(g_conn_list, sel);
+    vk_listbox_update(g_conn_list);
+    if (g_conn_vbox)
+        vk_box_update(g_conn_vbox);
+    if (g_conn_win)
+        vk_window_update(g_conn_win);
+    mf_ui_refresh();
+}
+
+void mf_ui_open_connections(void)
+{
+    int cols = mf_ui_cols(), rows = mf_ui_rows();
+    int i, n, list_h, inner_w, win_w, win_h, x, y, len;
+    char line[160];
+    static const char *hint =
+        "Enter=connect  a=add  e=edit  d=default  x=del  Esc=close";
+    vk_listbox_t *lb;
+
+    if (g_connections_open || g_editor_open)
+        return;
+
+    n = g_tui_cfg.n_profiles;
+
+    /* Inner width = widest of the rows, the key legend, or a floor. */
+    inner_w = (int)strlen(hint);
+    for (i = 0; i < n; i++) {
+        conn_row_text(i, line, sizeof(line));
+        len = (int)strlen(line);
+        if (len > inner_w)
+            inner_w = len;
+    }
+    if (inner_w < 24)
+        inner_w = 24;
+    if (inner_w > cols - 4)
+        inner_w = cols - 4;
+
+    /* One row per profile (>=1) + a hint line + borders. */
+    list_h = n < 1 ? 1 : n;
+    if (list_h > rows - 8)
+        list_h = rows - 8;
+    if (list_h < 1)
+        list_h = 1;
+
+    win_w = inner_w + 2;
+    win_h = list_h + 1 /* spacer */ + 1 /* hint */ + 2 /* borders */;
+
+    /* Center on the ACTUAL window size. */
+    x = (cols - win_w) / 2;
+    y = (rows - win_h) / 2;
+    if (x < 0)
+        x = 0;
+    if (y < 1)
+        y = 1;
+
+    g_conn_win = vk_window_create(win_w, win_h);
+    vk_window_set_title(g_conn_win, " Connections ");
+    vk_window_set_border_style(g_conn_win, VK_BORDER_SINGLE);
+    vk_window_set_border_colors(g_conn_win, COLOR_WHITE, COL_MENU);
+    vk_window_set_border_attrs(g_conn_win, A_BOLD);
+    vk_widget_set_colors(VK_WIDGET(g_conn_win), COL_TEXT, COL_MENU);
+
+    lb = vk_listbox_create(inner_w, list_h);
+    vk_listbox_set_wrap(lb, true);
+    vk_listbox_set_highlight(lb, COLOR_WHITE, COLOR_BLACK);
+    vk_listbox_set_highlight_attrs(lb, A_BOLD);
+    vk_widget_set_colors(VK_WIDGET(lb), COLOR_WHITE, COLOR_CYAN);
+    vk_widget_set_attrs(VK_WIDGET(lb), A_BOLD);
+    vk_widget_set_expand(VK_WIDGET(lb));
+    for (i = 0; i < n; i++) {
+        conn_row_text(i, line, sizeof(line));
+        vk_listbox_add_item(lb, line, NULL, (void *)(intptr_t)i);
+    }
+
+    g_conn_spacer = vk_label_create(inner_w);
+    vk_widget_set_colors(VK_WIDGET(g_conn_spacer), COL_TEXT, COL_MENU);
+    vk_label_set_text(g_conn_spacer, "");
+    vk_label_update(g_conn_spacer);
+
+    g_conn_hint = vk_label_create(inner_w);
+    vk_widget_set_colors(VK_WIDGET(g_conn_hint), COL_TEXT, COL_MENU);
+    vk_label_set_text(g_conn_hint, hint);
+    vk_label_update(g_conn_hint);
+
+    g_conn_vbox = vk_box_create(inner_w, list_h + 2, VK_BOX_VERTICAL, 3);
+    vk_box_set_homogeneous(g_conn_vbox, false);
+    vk_widget_set_colors(VK_WIDGET(g_conn_vbox), COL_TEXT, COL_MENU);
+    vk_widget_set_expand(VK_WIDGET(g_conn_vbox));
+    vk_box_set_widget(g_conn_vbox, 0, VK_WIDGET(lb), VK_INHERIT_NONE);
+    vk_box_set_widget(g_conn_vbox, 1, VK_WIDGET(g_conn_spacer), VK_INHERIT_NONE);
+    vk_box_set_widget(g_conn_vbox, 2, VK_WIDGET(g_conn_hint), VK_INHERIT_NONE);
+
+    vk_window_set_child(g_conn_win, VK_WIDGET(g_conn_vbox), VK_INHERIT_NONE);
+    mf_ui_attach(VK_WIDGET(g_conn_win), x, y);
+    g_conn_list = lb;
+    g_conn_sel = 0;
+    vk_listbox_set_curr(lb, g_conn_sel);
+    vk_listbox_update(lb);
+    vk_box_update(g_conn_vbox);
+    vk_window_update(g_conn_win);
+    g_connections_open = 1;
+    mf_ui_front_clear();
+    mf_ui_front_push(VK_WIDGET(g_conn_win));
+    mf_ui_refresh();
+}
+
+static int connections_key(wint_t c)
+{
+
+    if (!g_connections_open)
+        return 0;
+
+    if (c == 27 || c == KEY_EXIT || c == KEY_CANCEL) {
+        close_connections();
+        return 1;
+    }
+
+    if (c == KEY_UP || c == KEY_BTAB) {
+        if (g_conn_sel > 0) {
+            g_conn_sel--;
+            vk_listbox_set_curr(g_conn_list, g_conn_sel);
+            vk_listbox_update(g_conn_list);
+            vk_window_update(g_conn_win);
+            mf_ui_refresh();
+        }
+        return 1;
+    }
+
+    if (c == KEY_DOWN || c == '\t') {
+        if (g_conn_sel < g_tui_cfg.n_profiles - 1) {
+            g_conn_sel++;
+            vk_listbox_set_curr(g_conn_list, g_conn_sel);
+            vk_listbox_update(g_conn_list);
+            vk_window_update(g_conn_win);
+            mf_ui_refresh();
+        }
+        return 1;
+    }
+
+    if (c == '\n' || c == KEY_ENTER) {
+        /* Connect now: resolve selected profile, set globals, reconnect */
+        if (g_conn_sel >= 0 && g_conn_sel < g_tui_cfg.n_profiles) {
+            const mf_conn_profile_t *p = &g_tui_cfg.profiles[g_conn_sel];
+            snprintf(g_host, sizeof(g_host), "%.127s", p->host);
+            g_port = p->port;
+            snprintf(g_hostport, sizeof(g_hostport), "%.115s:%d", g_host, g_port);
+            mf_http_cli_close(&g_cli);
+            mf_http_cli_init(&g_cli, g_host, g_port);
+            mf_http_cli_start(&g_cli, mono_now());
+        }
+        close_connections();
+        return 1;
+    }
+
+    if (c == 'd' || c == 'D') {
+        /* Set as default */
+        if (g_conn_sel >= 0 && g_conn_sel < g_tui_cfg.n_profiles) {
+            strncpy(g_tui_cfg.default_profile,
+                    g_tui_cfg.profiles[g_conn_sel].name,
+                    sizeof(g_tui_cfg.default_profile) - 1);
+            mf_ui_save_config();
+            rebuild_connections_list();
+        }
+        return 1;
+    }
+
+    if (c == 'a' || c == 'A') {
+        /* Add new profile */
+        open_editor(-1);
+        return 1;
+    }
+
+    if (c == 'e' || c == 'E') {
+        /* Edit selected profile */
+        if (g_conn_sel >= 0 && g_conn_sel < g_tui_cfg.n_profiles)
+            open_editor(g_conn_sel);
+        return 1;
+    }
+
+    if (c == 'x' || c == 'X' || c == KEY_DC) {
+        /* Delete selected profile */
+        if (g_tui_cfg.n_profiles <= 1) {
+            mf_ui_refresh();
+            return 1;
+        }
+        if (g_conn_sel >= 0 && g_conn_sel < g_tui_cfg.n_profiles) {
+            /* If deleting the default, reassign to first remaining */
+            if (g_tui_cfg.default_profile[0] &&
+                strcmp(g_tui_cfg.profiles[g_conn_sel].name,
+                       g_tui_cfg.default_profile) == 0) {
+                if (g_tui_cfg.n_profiles > 1) {
+                    int new_idx = g_conn_sel;
+                    if (new_idx >= g_tui_cfg.n_profiles - 1)
+                        new_idx = 0;
+                    strncpy(g_tui_cfg.default_profile,
+                            g_tui_cfg.profiles[new_idx].name,
+                            sizeof(g_tui_cfg.default_profile) - 1);
+                } else {
+                    g_tui_cfg.default_profile[0] = '\0';
+                }
+            }
+            /* Shift remaining profiles up */
+            for (int i = g_conn_sel; i < g_tui_cfg.n_profiles - 1; i++)
+                g_tui_cfg.profiles[i] = g_tui_cfg.profiles[i + 1];
+            g_tui_cfg.n_profiles--;
+            if (g_conn_sel >= g_tui_cfg.n_profiles)
+                g_conn_sel = g_tui_cfg.n_profiles - 1;
+            mf_ui_save_config();
+            rebuild_connections_list();
+        }
+        return 1;
+    }
+
+    return 0;
+}
+
+int mf_connections_mouse(int x, int y, mmask_t bstate)
+{
+    int win_x, win_y, win_w, win_h;
+    int lx, ly;
+    vk_listbox_t *lb;
+    int scroll, n, row;
+
+    if (!g_connections_open || !g_conn_win)
+        return 0;
+
+    vk_widget_get_position(VK_WIDGET(g_conn_win), &win_x, &win_y);
+    vk_widget_get_metrics(VK_WIDGET(g_conn_win), &win_w, &win_h);
+    if (x < win_x || y < win_y || x >= win_x + win_w || y >= win_y + win_h)
+        return 0;
+
+    /* Wheel → move selection */
+    if (bstate & (BUTTON4_PRESSED | BUTTON5_PRESSED)) {
+        lb = g_conn_list;
+        if (lb) {
+            if (bstate & BUTTON4_PRESSED)
+                vk_listbox_set_prev(lb);
+            else
+                vk_listbox_set_next(lb);
+            vk_listbox_update(lb);
+            vk_window_update(g_conn_win);
+            mf_ui_refresh();
+        }
+        return 1;
+    }
+
+    /* Left-press mask. */
+    #define LEFT (BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON1_DOUBLE_CLICKED)
+    if (!(bstate & LEFT))
+        return 0;
+    #undef LEFT
+
+    lb = g_conn_list;
+    if (!lb)
+        return 1;
+
+    /* Interior of window frame: inset 1 for border */
+    lx = x - win_x - 1;
+    ly = y - win_y - 1;
+    if (lx >= 0 && ly >= 0) {
+        n = vk_listbox_get_item_count(lb);
+        scroll = vk_listbox_get_scroll_pos(lb);
+        row = scroll + ly;
+        if (row >= 0 && row < n && row < g_tui_cfg.n_profiles) {
+            g_conn_sel = row;
+            vk_listbox_set_curr(lb, row);
+            vk_listbox_update(lb);
+            vk_window_update(g_conn_win);
+            mf_ui_refresh();
+            return 1;
+        }
+    }
+    return 1;
+}
+
+/* ---- Profile Editor ---- */
+
+static int on_ed_ok(vk_widget_t *w, void *a)
+{
+    (void)w;
+    (void)a;
+    apply_editor();
+    return 1;
+}
+
+static int on_ed_cancel(vk_widget_t *w, void *a)
+{
+    (void)w;
+    (void)a;
+    close_editor();
+    return 1;
+}
+
+static void close_editor(void)
+{
+    int i;
+    if (!g_editor_open)
+        return;
+    if (g_ed_win)
+        vk_window_set_child(g_ed_win, NULL, VK_INHERIT_NONE);
+    box_vacate(g_ed_vbox);
+    box_vacate(g_ed_mid);
+    box_vacate(g_ed_inner);
+    box_vacate(g_ed_form);
+    box_vacate(g_ed_bar);
+    for (i = 0; i < 3; i++) {
+        if (g_ed_row[i]) {
+            vk_grid_destroy(g_ed_row[i]);
+            g_ed_row[i] = NULL;
+        }
+        if (g_ed_fields[i]) {
+            vk_grid_destroy(g_ed_fields[i]);
+            g_ed_fields[i] = NULL;
+        }
+        if (g_ed_in[i]) {
+            vk_input_destroy(g_ed_in[i]);
+            g_ed_in[i] = NULL;
+        }
+        if (g_ed_lab[i]) {
+            vk_label_destroy(g_ed_lab[i]);
+            g_ed_lab[i] = NULL;
+        }
+    }
+    if (g_ed_ok) {
+        vk_button_destroy(g_ed_ok);
+        g_ed_ok = NULL;
+    }
+    if (g_ed_cancel) {
+        vk_button_destroy(g_ed_cancel);
+        g_ed_cancel = NULL;
+    }
+    if (g_ed_fill) {
+        vk_filler_destroy(g_ed_fill);
+        g_ed_fill = NULL;
+    }
+    if (g_ed_form_fill) {
+        vk_filler_destroy(g_ed_form_fill);
+        g_ed_form_fill = NULL;
+    }
+    if (g_ed_bar) {
+        vk_box_destroy(g_ed_bar);
+        g_ed_bar = NULL;
+    }
+    if (g_ed_form) {
+        vk_box_destroy(g_ed_form);
+        g_ed_form = NULL;
+    }
+    if (g_ed_inner) {
+        vk_box_destroy(g_ed_inner);
+        g_ed_inner = NULL;
+    }
+    if (g_ed_pad_left) {
+        vk_filler_destroy(g_ed_pad_left);
+        g_ed_pad_left = NULL;
+    }
+    if (g_ed_pad_right) {
+        vk_filler_destroy(g_ed_pad_right);
+        g_ed_pad_right = NULL;
+    }
+    if (g_ed_mid) {
+        vk_box_destroy(g_ed_mid);
+        g_ed_mid = NULL;
+    }
+    if (g_ed_pad_top) {
+        vk_filler_destroy(g_ed_pad_top);
+        g_ed_pad_top = NULL;
+    }
+    if (g_ed_pad_bot) {
+        vk_filler_destroy(g_ed_pad_bot);
+        g_ed_pad_bot = NULL;
+    }
+    if (g_ed_vbox) {
+        vk_box_destroy(g_ed_vbox);
+        g_ed_vbox = NULL;
+    }
+    if (g_ed_win) {
+        vk_screen_detach_widget(g_screen, 0, VK_WIDGET(g_ed_win));
+        vk_window_destroy(g_ed_win);
+        g_ed_win = NULL;
+    }
+    g_editor_open = 0;
+    mf_ui_front_clear();
+    if (g_connections_open && g_conn_win)
+        mf_ui_front_push(VK_WIDGET(g_conn_win));
+    mf_ui_refresh();
+}
+
+static void paint_editor(void)
+{
+    int pass, i;
+    for (pass = 0; pass < 2; pass++) {
+        for (i = 0; i < 3; i++) {
+            if (g_ed_lab[i])
+                vk_label_update(g_ed_lab[i]);
+            style_set_input(g_ed_in[i], i == g_ed_focus);
+            if (g_ed_fields[i])
+                vk_grid_update(g_ed_fields[i]);
+            if (g_ed_row[i])
+                vk_grid_update(g_ed_row[i]);
+        }
+        if (g_ed_form)
+            vk_box_update(g_ed_form);
+        if (g_ed_ok) {
+            vk_widget_set_colors(VK_WIDGET(g_ed_ok),
+                                 g_ed_focus == 3 ? COLOR_YELLOW : COL_TEXT,
+                                 COL_MENU);
+            vk_button_update(g_ed_ok);
+        }
+        if (g_ed_cancel) {
+            vk_widget_set_colors(VK_WIDGET(g_ed_cancel),
+                                 g_ed_focus == 4 ? COLOR_YELLOW : COL_TEXT,
+                                 COL_MENU);
+            vk_button_update(g_ed_cancel);
+        }
+        if (g_ed_bar)
+            vk_box_update(g_ed_bar);
+        if (g_ed_inner)
+            vk_box_update(g_ed_inner);
+        if (g_ed_mid)
+            vk_box_update(g_ed_mid);
+        if (g_ed_vbox)
+            vk_box_update(g_ed_vbox);
+    }
+    if (g_ed_win)
+        vk_window_update(g_ed_win);
+    mf_ui_refresh();
+}
+
+static void open_editor(int idx)
+{
+    int x, y, w, h, iw, ih;
+    char buf[16];
+    static const char *names[3] = { "Name", "Host", "Port" };
+
+    if (g_editor_open || g_connections_open == 0)
+        return;
+
+    /* Open connections if not already open */
+    if (!g_connections_open)
+        mf_ui_open_connections();
+    if (!g_connections_open)
+        return;
+
+    g_ed_edit_idx = idx;
+
+    mf_tui_settings_geom(mf_ui_cols(), mf_ui_rows(), &x, &y, &w, &h);
+    iw = w - 2;
+    ih = h - 2;
+    g_ed_win = vk_window_create(w, h);
+    vk_window_set_title(g_ed_win, idx < 0 ? " Add Profile " : " Edit Profile ");
+    vk_window_set_border_style(g_ed_win, VK_BORDER_SINGLE);
+    vk_window_set_border_colors(g_ed_win, COLOR_WHITE, COL_MENU);
+    vk_window_set_border_attrs(g_ed_win, A_BOLD);
+    vk_widget_set_colors(VK_WIDGET(g_ed_win), COL_TEXT, COL_MENU);
+
+    g_ed_form = vk_box_create(iw - 2, ih - 6, VK_BOX_VERTICAL, 3);
+    vk_box_set_homogeneous(g_ed_form, false);
+    vk_widget_set_colors(VK_WIDGET(g_ed_form), COL_TEXT, COL_MENU);
+    vk_widget_set_expand(VK_WIDGET(g_ed_form));
+
+    for (int i = 0; i < 3; i++) {
+        int fields_w = iw - 2 - 13;
+        int in_w;
+        if (fields_w < 12 + 8)
+            fields_w = 12 + 8;
+        in_w = fields_w - 12;
+        if (in_w < 8)
+            in_w = 8;
+
+        g_ed_fields[i] = vk_grid_create(fields_w, 3, 2, 1);
+        vk_grid_set_homogeneous(g_ed_fields[i], false);
+        vk_grid_set_gap(g_ed_fields[i], 0);
+        vk_grid_set_col_width(g_ed_fields[i], 0, 12);
+        vk_grid_set_col_width(g_ed_fields[i], 1, in_w);
+        vk_grid_set_row_height(g_ed_fields[i], 0, 3);
+        vk_widget_set_colors(VK_WIDGET(g_ed_fields[i]), COL_TEXT, COL_MENU);
+        vk_widget_set_expand(VK_WIDGET(g_ed_fields[i]));
+        g_ed_lab[i] = vk_label_create(12);
+        vk_widget_set_colors(VK_WIDGET(g_ed_lab[i]), COL_TEXT, COL_MENU);
+        vk_label_set_text(g_ed_lab[i], names[i]);
+        vk_label_update(g_ed_lab[i]);
+        g_ed_in[i] = vk_input_create(in_w);
+        vk_input_set_border_style(g_ed_in[i], VK_BORDER_SINGLE);
+        vk_grid_set_widget(g_ed_fields[i], 0, 0, VK_WIDGET(g_ed_lab[i]), VK_INHERIT_NONE);
+        vk_grid_set_widget(g_ed_fields[i], 1, 0, VK_WIDGET(g_ed_in[i]), VK_INHERIT_NONE);
+
+        g_ed_row[i] = vk_grid_create(iw - 2, 3, 2, 1);
+        vk_grid_set_homogeneous(g_ed_row[i], false);
+        vk_grid_set_gap(g_ed_row[i], 0);
+        vk_grid_set_col_width(g_ed_row[i], 0, fields_w);
+        vk_grid_set_col_expand(g_ed_row[i], 0, true);
+        vk_grid_set_col_width(g_ed_row[i], 1, 13);
+        vk_grid_set_row_height(g_ed_row[i], 0, 3);
+        vk_widget_set_colors(VK_WIDGET(g_ed_row[i]), COL_TEXT, COL_MENU);
+        vk_grid_set_widget(g_ed_row[i], 0, 0, VK_WIDGET(g_ed_fields[i]), VK_INHERIT_NONE);
+        vk_box_set_widget(g_ed_form, i, VK_WIDGET(g_ed_row[i]), VK_INHERIT_NONE);
+    }
+
+    /* Pre-fill when editing an existing profile; leave every field blank
+     * when adding — the inputs append at the cursor, so a pre-filled value
+     * would concatenate with what the user types. Port defaults to 5250 at
+     * apply time when left blank. */
+    if (idx >= 0 && idx < g_tui_cfg.n_profiles) {
+        vk_input_set_text(g_ed_in[0], g_tui_cfg.profiles[idx].name);
+        vk_input_set_text(g_ed_in[1], g_tui_cfg.profiles[idx].host);
+        snprintf(buf, sizeof(buf), "%d", g_tui_cfg.profiles[idx].port);
+        vk_input_set_text(g_ed_in[2], buf);
+    }
+
+    g_ed_bar = vk_box_create(iw - 2, 3, VK_BOX_HORIZONTAL, 3);
+    vk_box_set_homogeneous(g_ed_bar, false);
+    vk_widget_set_colors(VK_WIDGET(g_ed_bar), COL_TEXT, COL_MENU);
+    g_ed_ok = mk_set_btn("OK", on_ed_ok);
+    g_ed_cancel = mk_set_btn("Cancel", on_ed_cancel);
+    g_ed_fill = vk_filler_create();
+    vk_widget_set_colors(VK_WIDGET(g_ed_fill), COL_TEXT, COL_MENU);
+    vk_widget_set_expand(VK_WIDGET(g_ed_fill));
+    vk_box_set_widget(g_ed_bar, 0, VK_WIDGET(g_ed_ok), VK_INHERIT_NONE);
+    vk_box_set_widget(g_ed_bar, 1, VK_WIDGET(g_ed_fill), VK_INHERIT_NONE);
+    vk_box_set_widget(g_ed_bar, 2, VK_WIDGET(g_ed_cancel), VK_INHERIT_NONE);
+
+    g_ed_inner = vk_box_create(iw - 2, ih - 2, VK_BOX_VERTICAL, 2);
+    vk_box_set_homogeneous(g_ed_inner, false);
+    vk_widget_set_colors(VK_WIDGET(g_ed_inner), COL_TEXT, COL_MENU);
+    vk_widget_set_expand(VK_WIDGET(g_ed_inner));
+    vk_box_set_widget(g_ed_inner, 0, VK_WIDGET(g_ed_form), VK_INHERIT_NONE);
+    vk_box_set_widget(g_ed_inner, 1, VK_WIDGET(g_ed_bar), VK_INHERIT_NONE);
+
+    g_ed_pad_left = mk_set_pad(1, ih - 2);
+    g_ed_pad_right = mk_set_pad(1, ih - 2);
+    g_ed_mid = vk_box_create(iw, ih - 2, VK_BOX_HORIZONTAL, 3);
+    vk_box_set_homogeneous(g_ed_mid, false);
+    vk_widget_set_colors(VK_WIDGET(g_ed_mid), COL_TEXT, COL_MENU);
+    vk_widget_set_expand(VK_WIDGET(g_ed_mid));
+    vk_box_set_widget(g_ed_mid, 0, VK_WIDGET(g_ed_pad_left), VK_INHERIT_NONE);
+    vk_box_set_widget(g_ed_mid, 1, VK_WIDGET(g_ed_inner), VK_INHERIT_NONE);
+    vk_box_set_widget(g_ed_mid, 2, VK_WIDGET(g_ed_pad_right), VK_INHERIT_NONE);
+
+    g_ed_pad_top = mk_set_pad(iw, 1);
+    g_ed_pad_bot = mk_set_pad(iw, 1);
+    g_ed_vbox = vk_box_create(iw, ih, VK_BOX_VERTICAL, 3);
+    vk_box_set_homogeneous(g_ed_vbox, false);
+    vk_widget_set_colors(VK_WIDGET(g_ed_vbox), COL_TEXT, COL_MENU);
+    vk_widget_set_expand(VK_WIDGET(g_ed_vbox));
+    vk_box_set_widget(g_ed_vbox, 0, VK_WIDGET(g_ed_pad_top), VK_INHERIT_NONE);
+    vk_box_set_widget(g_ed_vbox, 1, VK_WIDGET(g_ed_mid), VK_INHERIT_NONE);
+    vk_box_set_widget(g_ed_vbox, 2, VK_WIDGET(g_ed_pad_bot), VK_INHERIT_NONE);
+    vk_window_set_child(g_ed_win, VK_WIDGET(g_ed_vbox), VK_INHERIT_NONE);
+    mf_ui_attach(VK_WIDGET(g_ed_win), x, y);
+    paint_editor();
+
+    g_ed_focus = 0;
+    vk_input_show_cursor(g_ed_in[0], true);
+    vk_input_update(g_ed_in[0]);
+    g_editor_open = 1;
+    mf_ui_front_clear();
+    mf_ui_front_push(VK_WIDGET(g_ed_win));
+    mf_ui_refresh();
+}
+
+static void apply_editor(void)
+{
+    const char *name = vk_input_get_text(g_ed_in[0]);
+    const char *host = vk_input_get_text(g_ed_in[1]);
+    const char *ps = vk_input_get_text(g_ed_in[2]);
+    int port;
+    int i;
+
+    if (!name || !name[0] || !host || !host[0])
+        return;
+
+    /* Check for duplicate name (case-insensitive) */
+    for (i = 0; i < g_tui_cfg.n_profiles; i++) {
+        if (g_ed_edit_idx >= 0 && i == g_ed_edit_idx)
+            continue;
+        if (strncasecmp(name, g_tui_cfg.profiles[i].name,
+                        MF_PROFILE_NAME_SIZE) == 0)
+            return;
+    }
+
+    port = (ps && ps[0]) ? atoi(ps) : 5250;
+    if (port < 1)
+        port = 5250;
+    if (port > 65535)
+        port = 65535;
+
+    if (g_ed_edit_idx >= 0 && g_ed_edit_idx < g_tui_cfg.n_profiles) {
+        strncpy(g_tui_cfg.profiles[g_ed_edit_idx].name, name,
+                sizeof(g_tui_cfg.profiles[0].name) - 1);
+        strncpy(g_tui_cfg.profiles[g_ed_edit_idx].host, host,
+                sizeof(g_tui_cfg.profiles[0].host) - 1);
+        g_tui_cfg.profiles[g_ed_edit_idx].port = port;
+    } else {
+        if (g_tui_cfg.n_profiles < MF_MAX_PROFILES) {
+            mf_conn_profile_t *p = &g_tui_cfg.profiles[g_tui_cfg.n_profiles];
+            strncpy(p->name, name, sizeof(p->name) - 1);
+            strncpy(p->host, host, sizeof(p->host) - 1);
+            p->port = port;
+            g_tui_cfg.n_profiles++;
+        }
+    }
+
+    mf_ui_save_config();
+    close_editor();
+    rebuild_connections_list();
+}
+
+static int editor_key(wint_t c)
+{
+    vk_input_t *in;
+    if (!g_editor_open)
+        return 0;
+    if (c == 27 || c == KEY_EXIT || c == KEY_CANCEL) {
+        close_editor();
+        return 1;
+    }
+    if (c == '\t') {
+        /* Ring: Name(0) Host(1) Port(2) OK(3) Cancel(4). */
+        g_ed_focus = (g_ed_focus + 1) % 5;
+        paint_editor();
+        return 1;
+    }
+    if (c == KEY_BTAB) {
+        g_ed_focus = (g_ed_focus + 4) % 5;
+        paint_editor();
+        return 1;
+    }
+    if (c == '\n' || c == KEY_ENTER) {
+        if (g_ed_focus == 4)
+            close_editor();     /* Cancel */
+        else
+            apply_editor();     /* a field, or OK */
+        return 1;
+    }
+    if (g_ed_focus >= 3)
+        return 1;
+    in = g_ed_in[g_ed_focus];
+    if (c == KEY_BACKSPACE || c == 127) {
+        vk_input_backspace(in);
+        paint_editor();
+        return 1;
+    }
+    if (c == KEY_LEFT) {
+        vk_input_move_cursor(in, -1);
+        paint_editor();
+        return 1;
+    }
+    if (c == KEY_RIGHT) {
+        vk_input_move_cursor(in, 1);
+        paint_editor();
+        return 1;
+    }
+    if (c >= 32 && c < 127) {
+        vk_input_insert_char(in, (int)c);
+        paint_editor();
+        return 1;
+    }
+    return 1;
+}
+
+/* Recursively create a directory path (mkdir -p); existing dirs are ignored. */
+static void mkdir_p(const char *dir, mode_t mode)
+{
+    char tmp[512];
+    char *p;
+    size_t len;
+
+    len = (size_t)snprintf(tmp, sizeof(tmp), "%s", dir);
+    if (len == 0 || len >= sizeof(tmp))
+        return;
+    if (tmp[len - 1] == '/')
+        tmp[len - 1] = '\0';
+    for (p = tmp + 1; *p; p++) {
+        if (*p == '/') {
+            *p = '\0';
+            (void)mkdir(tmp, mode);
+            *p = '/';
+        }
+    }
+    (void)mkdir(tmp, mode);
+}
+
 void mf_ui_save_config(void)
 {
     char *s = mf_tui_config_serialize(&g_tui_cfg);
-    FILE *f;
     const char *path = g_cfg_path[0] ? g_cfg_path : NULL;
-    char tmp[256];
-    if (!path) {
-        const char *home = getenv("HOME");
-        snprintf(tmp, sizeof(tmp), "%s/.config/moonflare/moonflare.json",
-                 home ? home : ".");
-        path = tmp;
-    }
+    char pathbuf[512];
+    char tmpfile[600];
+    char parent[512];
+    char *last_slash;
+    int fd;
+    ssize_t written;
+    size_t len;
+
     if (!s)
         return;
-    f = fopen(path, "w");
-    if (f) {
-        fputs(s, f);
-        fclose(f);
+
+    if (!path) {
+        const char *home = getenv("HOME");
+        snprintf(pathbuf, sizeof(pathbuf),
+                 "%s/.config/moonflare/moonflare.json", home ? home : ".");
+        path = pathbuf;
+    }
+
+    /* Ensure the parent directory chain exists (mkdir -p). */
+    snprintf(parent, sizeof(parent), "%s", path);
+    last_slash = strrchr(parent, '/');
+    if (last_slash && last_slash != parent) {
+        *last_slash = '\0';
+        mkdir_p(parent, 0700);
+    }
+
+    /* Write to a temp file in a DISTINCT buffer (path may alias pathbuf),
+     * then rename atomically onto the target. */
+    snprintf(tmpfile, sizeof(tmpfile), "%s.tmp.%ld", path, (long)getpid());
+    fd = open(tmpfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) {
+        fprintf(stderr, "save config: cannot create %s.tmp: %s\n",
+                path, strerror(errno));
+        free(s);
+        return;
+    }
+    len = strlen(s);
+    written = write(fd, s, len);
+    close(fd);
+    if ((size_t)written != len) {
+        unlink(tmpfile);
+        fprintf(stderr, "save config: write failed to %s\n", path);
+        free(s);
+        return;
+    }
+    if (rename(tmpfile, path) < 0) {
+        unlink(tmpfile);
+        fprintf(stderr, "save config: rename failed for %s\n", path);
+        free(s);
+        return;
     }
     free(s);
 }
@@ -899,21 +1695,48 @@ static int dump_layout(const char *which)
     return 0;
 }
 
-int mf_tui_run(const char *connect, const char *config_path)
+int mf_tui_run(const char *connect, const char *profile, const char *config_path)
 {
+    char buf[160];
+    int rc;
+
     mf_tui_config_defaults(&g_tui_cfg);
     if (config_path && config_path[0])
         snprintf(g_cfg_path, sizeof(g_cfg_path), "%s", config_path);
     mf_tui_config_load(config_path, &g_tui_cfg);
-    if (connect && connect[0])
+
+    /* Launch precedence:
+     * 1. --connect HOST:PORT (highest)
+     * 2. --profile NAME
+     * 3. saved default profile
+     * 4. built-in fallback 127.0.0.1:5250
+     */
+    if (connect && connect[0]) {
         parse_connect(connect);
-    else if (g_tui_cfg.connect[0])
-        parse_connect(g_tui_cfg.connect);
-    else
-        parse_connect("127.0.0.1:5250");
+    } else if (profile && profile[0]) {
+        rc = mf_tui_config_endpoint(&g_tui_cfg, profile, buf, sizeof(buf));
+        if (rc == 0) {
+            parse_connect(buf);
+        } else {
+            fprintf(stderr, "warning: no such profile: %s\n", profile);
+            /* Fall through to (3) */
+            rc = mf_tui_config_endpoint(&g_tui_cfg, NULL, buf, sizeof(buf));
+            if (rc == 0) {
+                parse_connect(buf);
+            } else {
+                parse_connect("127.0.0.1:5250");
+            }
+        }
+    } else {
+        rc = mf_tui_config_endpoint(&g_tui_cfg, NULL, buf, sizeof(buf));
+        if (rc == 0) {
+            parse_connect(buf);
+        } else {
+            parse_connect("127.0.0.1:5250");
+        }
+    }
     if (g_tui_cfg.refresh_interval_s >= 0.25)
         g_refresh = g_tui_cfg.refresh_interval_s;
-    snprintf(g_tui_cfg.connect, sizeof(g_tui_cfg.connect), "%s", g_hostport);
     g_tui_cfg.refresh_interval_s = g_refresh;
 
     g_screen = vk_screen_create();
@@ -1122,6 +1945,10 @@ int mf_tui_run(const char *connect, const char *config_path)
             }
             if (g_settings_open && settings_key((wint_t)key))
                 continue;
+            if (g_editor_open && editor_key((wint_t)key))
+                continue;
+            if (g_connections_open && connections_key((wint_t)key))
+                continue;
             if (mf_menubar_key((wint_t)key))
                 continue;
             if (mf_pack_visible() && (key == 27 || key == KEY_EXIT)) {
@@ -1183,6 +2010,8 @@ int mf_tui_run(const char *connect, const char *config_path)
     }
 
     close_help();
+    close_editor();
+    close_connections();
     close_settings();
     mf_confirm_close();
     mf_devset_close();
@@ -1247,7 +2076,7 @@ mf_settings_mouse(int x, int y, mmask_t bstate)
     {
         int i, lx = x - win_x, ly = y - win_y, cy = 2;
 
-        for (i = 0; i < 3; i++) {
+        for (i = 0; i < 1; i++) {
             int rw = 0, rh = 3;
 
             if (g_set_row[i])
@@ -1291,3 +2120,70 @@ mf_settings_mouse(int x, int y, mmask_t bstate)
 
 int mf_ui_help_open(void) { return g_help_win != NULL; }
 int mf_ui_settings_open(void) { return g_settings_open; }
+int mf_ui_connections_open(void) { return g_connections_open || g_editor_open; }
+int mf_ui_editor_open(void) { return g_editor_open; }
+
+/* Mouse for the profile editor: field-row focus + OK/Cancel buttons.
+ * Mirrors mf_settings_mouse (identical box structure). */
+int
+mf_editor_mouse(int x, int y, mmask_t bstate)
+{
+    int win_x, win_y, win_w, win_h;
+    int ox, oy, bx, by, px, py, bw, bh;
+
+    if (!g_editor_open || !g_ed_win)
+        return 0;
+
+    vk_widget_get_position(VK_WIDGET(g_ed_win), &win_x, &win_y);
+    vk_widget_get_metrics(VK_WIDGET(g_ed_win), &win_w, &win_h);
+    if (x < win_x || y < win_y || x >= win_x + win_w || y >= win_y + win_h)
+        return 0;
+
+    if (!(bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON1_DOUBLE_CLICKED)))
+        return 1;
+    if (!g_ed_vbox || !g_ed_bar)
+        return 1;
+    {
+        int i, lx = x - win_x, ly = y - win_y, cy = 2;
+
+        for (i = 0; i < 3; i++) {
+            int rw = 0, rh = 3;
+
+            if (g_ed_row[i])
+                vk_widget_get_metrics(VK_WIDGET(g_ed_row[i]), &rw, &rh);
+            if (rh < 1)
+                rh = 3;
+            if (lx >= 2 && lx < win_w - 2 && ly >= cy && ly < cy + rh) {
+                if (g_ed_focus != i) {
+                    g_ed_focus = i;
+                    paint_editor();
+                }
+                return 1;
+            }
+            cy += rh;
+        }
+    }
+    vk_widget_get_position(VK_WIDGET(g_ed_vbox), &ox, &oy);
+    vk_widget_get_position(VK_WIDGET(g_ed_bar), &bx, &by);
+    ox += win_x + bx;
+    oy += win_y + by;
+    if (g_ed_ok) {
+        vk_widget_get_position(VK_WIDGET(g_ed_ok), &px, &py);
+        vk_widget_get_metrics(VK_WIDGET(g_ed_ok), &bw, &bh);
+        if (x >= ox + px && x < ox + px + bw &&
+            y >= oy + py && y < oy + py + bh) {
+            vk_button_press(g_ed_ok);
+            return 1;
+        }
+    }
+    if (g_ed_cancel) {
+        vk_widget_get_position(VK_WIDGET(g_ed_cancel), &px, &py);
+        vk_widget_get_metrics(VK_WIDGET(g_ed_cancel), &bw, &bh);
+        if (x >= ox + px && x < ox + px + bw &&
+            y >= oy + py && y < oy + py + bh) {
+            vk_button_press(g_ed_cancel);
+            return 1;
+        }
+    }
+    return 1;
+}
