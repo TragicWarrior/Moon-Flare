@@ -40,6 +40,7 @@ typedef struct {
     uint32_t start_mv;
     uint32_t ovp_mv;
     uint32_t ovpr_mv;
+    uint32_t rcv_mv;
     unsigned tick_wait;
 } cli_t;
 
@@ -119,7 +120,7 @@ static void build_settings_frame(cli_t *c)
     put_u32(buf, 18, c->ovp_mv ? c->ovp_mv : 3650);
     put_u32(buf, 22, c->ovpr_mv ? c->ovpr_mv : 3550);
     put_u32(buf, 26, c->trigger_mv ? c->trigger_mv : 10);
-    put_u32(buf, 38, 3600); /* RCV */
+    put_u32(buf, 38, c->rcv_mv ? c->rcv_mv : 3600); /* RCV */
     put_u32(buf, 46, 2400);
     put_u32(buf, 50, 80000);
     put_u32(buf, 62, 80000);
@@ -260,6 +261,7 @@ static void seed_mac(cli_t *c)
     c->balance = 0;
     c->ovp_mv = 3650;
     c->ovpr_mv = 3550;
+    c->rcv_mv = 3600;
     c->trigger_mv = 10;
     c->start_mv = 3000;
     if (mac_eq(c->mac, MAC_A))
@@ -299,6 +301,8 @@ static void apply_write(cli_t *c, const uint8_t *cmd, int n)
         c->ovp_mv = le32(cmd + 6);
     else if (reg == JK_REG_CELL_OVPR && n >= 10)
         c->ovpr_mv = le32(cmd + 6);
+    else if (reg == JK_REG_CELL_RCV && n >= 10)
+        c->rcv_mv = le32(cmd + 6);
 }
 
 static void handle_line(cli_t *c, int idx, const char *line)
@@ -363,7 +367,8 @@ static void handle_line(cli_t *c, int idx, const char *line)
         apply_write(c, raw, n);
         queue_ok(c, "write");
         /* 0x96/0x97 polls must not clobber an in-flight settings notify. */
-        if (n >= 5 && (raw[4] == JK_REG_CELL_OVP || raw[4] == JK_REG_CELL_OVPR))
+        if (n >= 5 && (raw[4] == JK_REG_CELL_OVP || raw[4] == JK_REG_CELL_OVPR ||
+                       raw[4] == JK_REG_CELL_RCV))
             build_settings_frame(c);
         else if (n >= 5 && (raw[4] == JK_REG_CHARGE ||
                             raw[4] == JK_REG_DISCHARGE ||
