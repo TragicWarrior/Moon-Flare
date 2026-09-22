@@ -443,10 +443,18 @@ static void on_line(jk_ctx_t *c, const char *line)
                         c->have_settings = 1;
                         c->want_settings = 0;
                         c->bal_want = -1;
-                        fprintf(stderr, "jk: settings ovp=%.3f ovpr=%.3f rcv=%.3f\n",
+                        c->trigger_v = (double)c->settings.balance_trigger_v;
+                        c->start_v = (double)c->settings.start_balance_v;
+                        c->have_trigger = 1;
+                        c->have_start = 1;
+                        fprintf(stderr,
+                                "jk: settings ovp=%.3f ovpr=%.3f rcv=%.3f "
+                                "trigger=%.3f start=%.3f\n",
                                 (double)c->settings.cell_ovp_v,
                                 (double)c->settings.cell_ovpr_v,
-                                (double)c->settings.cell_rcv_v);
+                                (double)c->settings.cell_rcv_v,
+                                (double)c->settings.balance_trigger_v,
+                                (double)c->settings.start_balance_v);
                     }
                 }
             } while (got > 0);
@@ -859,6 +867,36 @@ static int jk_put_settings(void *v, const char *json, char *err, size_t errsz)
             return MF_ERR_INVAL;
         }
         c->poll_interval_s = iv;
+    }
+    if (json && json_find_key(json, "cell_rcv_v"))
+    {
+        double rcv;
+        double ovp;
+
+        if (!c->handshake_ok) {
+            if (err && errsz)
+                snprintf(err, errsz, "offline");
+            return MF_ERR_OFFLINE;
+        }
+        rcv = json_double(json, "cell_rcv_v", 0.0);
+        if (c->have_settings)
+            ovp = (double)c->settings.cell_ovp_v;
+        else if (json_find_key(json, "cell_ovp_v"))
+            ovp = json_double(json, "cell_ovp_v", 3.65);
+        else
+            ovp = 3.65;
+        ovp = jk_clamp_ovp_v(ovp);
+        if (rcv < 2.50)
+            rcv = 2.50;
+        if (rcv > ovp - 0.01)
+            rcv = ovp - 0.01;
+        fprintf(stderr, "jk: write rcv=%.3f (was %.3f, ovp %.3f)\n",
+                rcv,
+                c->have_settings ? (double)c->settings.cell_rcv_v : 0.0,
+                ovp);
+        wq_push(c, JK_REG_CELL_RCV, jk_volts_to_mv(rcv));
+        c->settings.cell_rcv_v = (float)rcv;
+        c->have_settings = 1;
     }
     if (json && (json_find_key(json, "cell_ovp_v") ||
                  json_find_key(json, "cell_ovpr_v"))) {

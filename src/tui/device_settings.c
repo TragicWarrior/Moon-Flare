@@ -12,12 +12,13 @@
 
 #define COL_TEXT COLOR_BLACK
 #define COL_MENU COLOR_CYAN
-#define MAX_FIELDS 12
+#define MAX_FIELDS 16
 #define LAB_W 22
 #define HINT_W 13
 
 static vk_window_t *g_win;
 static vk_box_t    *g_vbox, *g_mid, *g_inner, *g_form, *g_bar;
+static vk_scroller_t *g_vscroll;
 static vk_grid_t   *g_row[MAX_FIELDS];
 static vk_grid_t   *g_fields[MAX_FIELDS];
 static vk_label_t  *g_lab[MAX_FIELDS];
@@ -33,6 +34,10 @@ static int          g_ro[MAX_FIELDS];
 static int          g_focus;
 static int          g_open;
 static int          g_touched;
+static int          g_scroll;
+static int          g_form_h;
+static int          g_row_h[MAX_FIELDS];
+static int          g_shown[MAX_FIELDS];
 static char         g_name[32];
 static char         g_id[40];
 static char         g_keys[MAX_FIELDS][40];
@@ -83,7 +88,7 @@ static void field_caption(const char *key, char *lab, size_t lab_cap,
         { "modbus.ip", "Modbus IP", "(IPv4)" },
         { "modbus.port", "Modbus Port", "(TCP)" },
         { "modbus.unit_id", "Modbus Unit", "(unit)" },
-        { "balance_trigger_v", "Balance Trigger", "(Volts)" },
+        { "balance_trigger_v", "Balance Trigger", "(delta mV)" },
         { "start_balance_v", "Start Balance", "(Volts)" },
         { "cell_ovp_v", "Cell OVP", "(protect)" },
         { "cell_ovpr_v", "Cell OVPR", "(resume)" },
@@ -198,6 +203,24 @@ static void style_input(vk_input_t *in, int focused, int readonly)
     vk_input_update(in);
 }
 
+/* Read-only captions use the same dim black as the value. */
+static void style_caption(vk_label_t *lab, int readonly)
+{
+    if (!lab)
+        return;
+    if (readonly)
+    {
+        vk_widget_set_colors(VK_WIDGET(lab), COLOR_BLACK, COL_MENU);
+        vk_widget_set_attrs(VK_WIDGET(lab), A_DIM);
+    }
+    else
+    {
+        vk_widget_set_colors(VK_WIDGET(lab), COL_TEXT, COL_MENU);
+        vk_widget_set_attrs(VK_WIDGET(lab), A_NORMAL);
+    }
+    vk_label_update(lab);
+}
+
 static int on_save_btn(vk_widget_t *w, void *a)
 {
     (void)w;
@@ -277,6 +300,14 @@ static void destroy_form(void)
 {
     int i;
 
+    if (g_vscroll)
+    {
+        if (g_form)
+            vk_widget_detach_scroller(VK_WIDGET(g_form), g_vscroll);
+        vk_scroller_destroy(g_vscroll);
+        g_vscroll = NULL;
+    }
+
     /* Unparent before free: box/grid dtors list_del children still slotted. */
     box_vacate(g_vbox);
     box_vacate(g_mid);
@@ -306,6 +337,8 @@ static void destroy_form(void)
             g_hint[i] = NULL;
         }
         g_keys[i][0] = '\0';
+        g_row_h[i] = 0;
+        g_shown[i] = 0;
     }
     if (g_btn_save) {
         vk_button_destroy(g_btn_save);
@@ -362,6 +395,8 @@ static void destroy_form(void)
     g_nfields = 0;
     g_nedit = 0;
     g_touched = 0;
+    g_scroll = 0;
+    g_form_h = 0;
 }
 
 static int key_already(const char *key)
@@ -377,9 +412,12 @@ static int key_already(const char *key)
 
 static int skip_form_key(const char *k)
 {
-    /* TUI-only / pack-view extras; keep 80x25 for OVP/OVPR/RCV. */
+    /* Added by hand below: graph interval is TUI-only, RCV and the
+     * balance voltages sit with the cell block, and the adapter name
+     * is noise. */
     return k && (strcmp(k, "balance_trigger_v") == 0 ||
                  strcmp(k, "start_balance_v") == 0 ||
+                 strcmp(k, "cell_rcv_v") == 0 ||
                  strcmp(k, "ble.adapter") == 0 ||
                  strcmp(k, "graph_interval_min") == 0);
 }
@@ -393,6 +431,7 @@ static int field_readonly(const char *key)
         "modbus.ip", "modbus.port", "modbus.unit_id",
         "cell_count",
         "balance_trigger_v", "start_balance_v",
+        /* This firmware echoes the previous RCV after a register write. */
         "cell_rcv_v",
     };
     size_t i;
@@ -494,6 +533,9 @@ static void add_field(const char *key, const char *val, int row_h, int iw)
     g_hint[i] = hint;
     g_in[i] = in;
     g_ro[i] = ro;
+    g_row_h[i] = row_h;
+    style_caption(lab, ro);
+    style_caption(hint, ro);
     snprintf(g_keys[i], sizeof(g_keys[i]), "%s", key);
     if (!ro && g_nedit < MAX_FIELDS)
         g_edit[g_nedit++] = i;
@@ -513,6 +555,34 @@ static void json_scalar(const cJSON *it, char *buf, size_t cap)
         snprintf(buf, cap, "%g", it->valuedouble);
     else if (cJSON_IsBool(it))
         snprintf(buf, cap, "%s", cJSON_IsTrue(it) ? "true" : "false");
+}
+
+/* Volt fields keep two decimals so 3.60 is not shown as 3.6.
+ * Balance trigger is a millivolt gap, not a cell voltage. */
+static void json_field_text(const char *key, const cJSON *it,
+                            char *buf, size_t cap)
+{
+    int volts;
+
+    if (!buf || cap == 0)
+        return;
+    buf[0] = '\0';
+    volts = key && (strcmp(key, "cell_ovp_v") == 0 ||
+                    strcmp(key, "cell_ovpr_v") == 0 ||
+                    strcmp(key, "cell_rcv_v") == 0 ||
+                    strcmp(key, "start_balance_v") == 0);
+    if (it && cJSON_IsNumber(it) && key &&
+        strcmp(key, "balance_trigger_v") == 0)
+    {
+        snprintf(buf, cap, "%.0f", it->valuedouble * 1000.0);
+        return;
+    }
+    if (it && cJSON_IsNumber(it) && volts)
+    {
+        snprintf(buf, cap, "%.2f", it->valuedouble);
+        return;
+    }
+    json_scalar(it, buf, cap);
 }
 
 static int json_key_dup(const cJSON *root, const cJSON *cur)
@@ -554,15 +624,306 @@ static void add_json_group(cJSON *root, int want_ro, int row_h, int iw, int n)
         ro = field_readonly(it->string);
         if ((want_ro && !ro) || (!want_ro && ro))
             continue;
-        json_scalar(it, buf, sizeof(buf));
+        json_field_text(it->string, it, buf, sizeof(buf));
         add_field(it->string, buf, row_h, iw);
     }
+}
+
+/*
+ * vk_box stacks every child and does not scroll. vk_widget_draw also
+ * cannot show the bottom of a row whose top sits above the canvas, so
+ * the scroll offset stays on a field boundary. vk_scroller draws the
+ * bar; apply slots only the rows that fit.
+ */
+static int form_row_h(int i)
+{
+    if (i < 0 || i >= g_nfields)
+        return 1;
+    return g_row_h[i] > 0 ? g_row_h[i] : 1;
+}
+
+static int form_scroll_limit(void)
+{
+    int i;
+    int y = 0;
+    int content = 0;
+
+    for (i = 0; i < g_nfields; i++)
+        content += form_row_h(i);
+    if (g_form_h < 1 || content <= g_form_h)
+        return 0;
+    for (i = 0; i < g_nfields; i++)
+    {
+        if (content - y <= g_form_h)
+            return y;
+        y += form_row_h(i);
+    }
+    return 0;
+}
+
+static int snap_back(int y)
+{
+    int i;
+    int top = 0;
+    int best = 0;
+    int limit = form_scroll_limit();
+
+    if (y > limit)
+        y = limit;
+    if (y < 0)
+        y = 0;
+    for (i = 0; i < g_nfields; i++)
+    {
+        if (top > y)
+            break;
+        best = top;
+        top += form_row_h(i);
+    }
+    return best;
+}
+
+static int snap_forward(int y)
+{
+    int i;
+    int top = 0;
+    int limit = form_scroll_limit();
+
+    if (y > limit)
+        y = limit;
+    if (y < 0)
+        y = 0;
+    for (i = 0; i < g_nfields; i++)
+    {
+        if (top >= y)
+            return top > limit ? limit : top;
+        top += form_row_h(i);
+    }
+    return limit;
+}
+
+static void form_slot_visible(void)
+{
+    int i;
+    int y;
+    int slot;
+    int used;
+    int nslots;
+    int limit;
+
+    if (!g_form)
+        return;
+    limit = form_scroll_limit();
+    if (g_scroll > limit)
+        g_scroll = limit;
+    if (g_scroll < 0)
+        g_scroll = 0;
+    g_scroll = snap_back(g_scroll);
+
+    nslots = vk_box_get_slot_count(g_form);
+    for (i = 0; i < nslots; i++)
+        vk_box_set_widget(g_form, i, NULL, VK_INHERIT_NONE);
+
+    y = 0;
+    slot = 0;
+    used = 0;
+    for (i = 0; i < g_nfields; i++)
+    {
+        int h = form_row_h(i);
+        int vis = (y >= g_scroll && y + h <= g_scroll + g_form_h);
+
+        g_shown[i] = vis;
+        if (vis && g_row[i] && slot < nslots)
+        {
+            vk_box_set_widget(g_form, slot, VK_WIDGET(g_row[i]),
+                              VK_INHERIT_NONE);
+            slot++;
+            used += h;
+        }
+        y += h;
+    }
+    if (g_form_fill && slot < nslots && used < g_form_h)
+    {
+        int slack = g_form_h - used;
+        int fw = 1;
+        int fh = 1;
+
+        vk_widget_get_metrics(VK_WIDGET(g_form), &fw, &fh);
+        if (slack < 1)
+            slack = 1;
+        if (fw < 1)
+            fw = 1;
+        vk_widget_resize(VK_WIDGET(g_form_fill), fw, slack);
+        vk_box_set_widget(g_form, slot, VK_WIDGET(g_form_fill),
+                          VK_INHERIT_NONE);
+    }
+}
+
+static void form_scroll_info(vk_widget_t *child,
+                             int *content_h, int *content_w,
+                             int *scroll_y, int *scroll_x)
+{
+    int visible = g_form_h > 0 ? g_form_h : 1;
+    int limit = form_scroll_limit();
+
+    (void)child;
+    if (content_h)
+        *content_h = visible + limit;
+    if (content_w)
+        *content_w = 0;
+    if (scroll_y)
+        *scroll_y = g_scroll;
+    if (scroll_x)
+        *scroll_x = 0;
+}
+
+static int form_scroll_apply(vk_widget_t *source, int scroll_y, int scroll_x)
+{
+    int y;
+
+    (void)scroll_x;
+    if (scroll_y > g_scroll)
+        y = snap_forward(scroll_y);
+    else if (scroll_y < g_scroll)
+        y = snap_back(scroll_y);
+    else
+        return 1;
+    if (y == g_scroll)
+        return 1;
+    g_scroll = y;
+    form_slot_visible();
+    if (source)
+        vk_object_emit(VK_OBJECT(source), VK_EVENT_ON_SCROLL);
+    return 0;
+}
+
+static int form_nudge(int dy)
+{
+    if (!g_vscroll || dy == 0)
+        return 0;
+    return vk_scroller_nudge(g_vscroll, dy, 0) == 0;
+}
+
+static void scroll_focus_into_view(void)
+{
+    int fi;
+    int i;
+    int top;
+    int start;
+    int end;
+    int y;
+
+    if (!g_vscroll || g_focus < 0 || g_focus >= g_nedit)
+        return;
+    fi = g_edit[g_focus];
+    if (fi < 0 || fi >= g_nfields)
+        return;
+    start = 0;
+    for (i = 0; i < fi; i++)
+        start += form_row_h(i);
+    end = start + form_row_h(fi);
+    if (start >= g_scroll && end <= g_scroll + g_form_h)
+        return;
+    if (start < g_scroll)
+    {
+        y = start;
+    }
+    else
+    {
+        y = start;
+        top = 0;
+        for (i = 0; i < g_nfields; i++)
+        {
+            int h = form_row_h(i);
+
+            if (top > start)
+                break;
+            if (end <= top + g_form_h)
+                y = top;
+            top += h;
+        }
+    }
+    if (g_form)
+        (void)form_scroll_apply(VK_WIDGET(g_form), y, 0);
+}
+
+static void paint_form_scroller(void)
+{
+    vk_widget_t *host;
+    vk_widget_t *sw;
+    int h;
+    int x;
+
+    if (!g_vscroll || !g_form)
+        return;
+    host = VK_WIDGET(g_form);
+    sw = VK_WIDGET(g_vscroll);
+    if (!vk_widget_get_canvas(host))
+        return;
+    vk_widget_get_metrics(host, &x, &h);
+    if (h < 1 || x < 1)
+        return;
+    x -= 1;
+    vk_widget_set_surface(sw, vk_widget_get_canvas(host));
+    vk_widget_resize(sw, 1, h);
+    vk_widget_move(sw, x, 0);
+    if (vk_scroller_update(g_vscroll) > 0)
+        vk_widget_draw(sw);
+}
+
+/*
+ * Leave the scrollbar column and one blank column to its left.
+ * Resizing the row already shrinks its expand child (the label|input
+ * grid) through the grid's resize handler. Shrinking that grid again
+ * clips the input's right border.
+ */
+static void narrow_rows(int delta)
+{
+    int i;
+
+    if (delta < 1)
+        return;
+    for (i = 0; i < g_nfields; i++)
+    {
+        int w = 0;
+        int h = 0;
+        int in_w = 0;
+        int in_h = 0;
+
+        if (!g_row[i])
+            continue;
+        vk_widget_get_metrics(VK_WIDGET(g_row[i]), &w, &h);
+        if (w - delta < LAB_W + HINT_W + 8)
+            continue;
+        vk_widget_resize(VK_WIDGET(g_row[i]), w - delta, h);
+        if (!g_in[i] || !g_fields[i])
+            continue;
+        vk_widget_get_metrics(VK_WIDGET(g_in[i]), &in_w, &in_h);
+        if (in_w <= delta)
+            continue;
+        vk_widget_resize(VK_WIDGET(g_in[i]), in_w - delta, in_h);
+        vk_grid_set_col_width(g_fields[i], 1, in_w - delta);
+    }
+}
+
+static void attach_form_scroller(void)
+{
+    if (form_scroll_limit() <= 0 || !g_form)
+        return;
+    g_vscroll = vk_scroller_create(VK_SCROLLBAR_VERTICAL);
+    if (!g_vscroll)
+        return;
+    vk_scroller_set_border_style(g_vscroll, VK_BORDER_SINGLE);
+    vk_scroller_set_border_colors(g_vscroll, COL_TEXT, COL_MENU);
+    vk_scroller_set_scroll_source(g_vscroll, VK_WIDGET(g_form));
+    vk_scroller_set_scroll_info(g_vscroll, form_scroll_info);
+    vk_scroller_set_scroll_apply(g_vscroll, form_scroll_apply);
+    vk_widget_attach_scroller(VK_WIDGET(g_form), g_vscroll);
 }
 
 static void build_form(int iw, int ih, const char *json)
 {
     cJSON *root = NULL, *it;
-    int n = 0, nedit = 1, nro = 1, row_h, i;
+    int n = 0, nedit = 1, nro = 1, row_h;
     char buf[160];
     int form_h;
 
@@ -604,13 +965,14 @@ static void build_form(int iw, int ih, const char *json)
         n = 2;
     if (n > MAX_FIELDS)
         n = MAX_FIELDS;
+    /* Top pad, one blank row above the buttons, and the 3-row button bar. */
     form_h = ih - 5;
     if (form_h < 1)
         form_h = 1;
     /* Editable knobs stay 3-row sunken whenever they fit; identity is 1-row. */
     row_h = (nedit * 3 <= form_h) ? 3 : 1;
 
-    g_form = vk_box_create(iw - 2, ih - 5, VK_BOX_VERTICAL, n + 1);
+    g_form = vk_box_create(iw - 2, form_h, VK_BOX_VERTICAL, MAX_FIELDS + 1);
     vk_box_set_homogeneous(g_form, false);
     style_menu(VK_WIDGET(g_form));
     vk_widget_set_expand(VK_WIDGET(g_form));
@@ -633,18 +995,36 @@ static void build_form(int iw, int ih, const char *json)
                     buf, sizeof(buf));
     add_field("capture_interval_s", buf[0] ? buf : "10", row_h, iw - 2);
 
-    add_field("graph_interval_min", "30", 3, iw - 2);
+    add_field("graph_interval_min", "30", row_h, iw - 2);
 
-    add_json_group(root, 0, row_h, iw - 2, n);
+    add_json_group(root, 0, row_h, iw - 2, MAX_FIELDS);
 
     buf[0] = '\0';
     if (root)
-        json_scalar(cJSON_GetObjectItemCaseSensitive(root, "cell_rcv_v"),
-                    buf, sizeof(buf));
+        json_field_text("cell_rcv_v",
+                        cJSON_GetObjectItemCaseSensitive(root, "cell_rcv_v"),
+                        buf, sizeof(buf));
     if (buf[0])
         add_field("cell_rcv_v", buf, 1, iw - 2);
 
-    add_json_group(root, 1, row_h, iw - 2, n);
+    if (root && (cJSON_GetObjectItemCaseSensitive(root, "cell_ovp_v") ||
+                 cJSON_GetObjectItemCaseSensitive(root, "ble.address") ||
+                 cJSON_GetObjectItemCaseSensitive(root, "balance_trigger_v") ||
+                 cJSON_GetObjectItemCaseSensitive(root, "start_balance_v")))
+    {
+        buf[0] = '\0';
+        json_field_text("balance_trigger_v",
+                        cJSON_GetObjectItemCaseSensitive(root, "balance_trigger_v"),
+                        buf, sizeof(buf));
+        add_field("balance_trigger_v", buf[0] ? buf : "--", 1, iw - 2);
+        buf[0] = '\0';
+        json_field_text("start_balance_v",
+                        cJSON_GetObjectItemCaseSensitive(root, "start_balance_v"),
+                        buf, sizeof(buf));
+        add_field("start_balance_v", buf[0] ? buf : "--", 1, iw - 2);
+    }
+
+    add_json_group(root, 1, row_h, iw - 2, MAX_FIELDS);
 
     buf[0] = '\0';
     if (root)
@@ -654,34 +1034,23 @@ static void build_form(int iw, int ih, const char *json)
 
     if (root)
         cJSON_Delete(root);
-    for (i = 0; i < g_nfields; i++)
-        vk_box_set_widget(g_form, i, VK_WIDGET(g_row[i]), VK_INHERIT_NONE);
+
+    g_form_h = form_h;
+    g_scroll = 0;
+    if (form_scroll_limit() > 0)
+        narrow_rows(2);
+    g_form_fill = vk_filler_create();
+    if (g_form_fill)
     {
-        int used = 0, j, rw, rh, slack;
+        uint32_t st = vk_widget_get_state(VK_WIDGET(g_form_fill));
 
-        for (j = 0; j < g_nfields; j++) {
-            rh = g_ro[j] ? 1 : row_h;
-            if (g_row[j]) {
-                vk_widget_get_metrics(VK_WIDGET(g_row[j]), &rw, &rh);
-                if (rh < 1)
-                    rh = 1;
-            }
-            used += rh;
-        }
-        /* Expand leftover of 0 hits newwin(0,...) in vk_widget_resize. */
-        slack = form_h - used;
-        if (slack > 0) {
-            uint32_t st;
-
-            g_form_fill = vk_filler_create();
-            st = vk_widget_get_state(VK_WIDGET(g_form_fill));
-            vk_widget_set_state(VK_WIDGET(g_form_fill),
-                                st & ~(uint32_t)VK_STATE_EXPAND);
-            style_menu(VK_WIDGET(g_form_fill));
-            vk_widget_resize(VK_WIDGET(g_form_fill), iw - 2, slack);
-            vk_box_set_widget(g_form, g_nfields, VK_WIDGET(g_form_fill), VK_INHERIT_NONE);
-        }
+        vk_widget_set_state(VK_WIDGET(g_form_fill),
+                            st & ~(uint32_t)VK_STATE_EXPAND);
+        style_menu(VK_WIDGET(g_form_fill));
+        vk_widget_resize(VK_WIDGET(g_form_fill), iw - 2, 1);
     }
+    form_slot_visible();
+    attach_form_scroller();
 
     g_bar = vk_box_create(iw - 2, 3, VK_BOX_HORIZONTAL, 3);
     vk_box_set_homogeneous(g_bar, false);
@@ -695,16 +1064,18 @@ static void build_form(int iw, int ih, const char *json)
     vk_box_set_widget(g_bar, 1, VK_WIDGET(g_fill), VK_INHERIT_NONE);
     vk_box_set_widget(g_bar, 2, VK_WIDGET(g_btn_exit), VK_INHERIT_NONE);
 
-    g_inner = vk_box_create(iw - 2, ih - 2, VK_BOX_VERTICAL, 2);
+    g_pad_bot = mk_pad(iw - 2, 1);
+    g_inner = vk_box_create(iw - 2, ih - 1, VK_BOX_VERTICAL, 3);
     vk_box_set_homogeneous(g_inner, false);
     style_menu(VK_WIDGET(g_inner));
     vk_widget_set_expand(VK_WIDGET(g_inner));
     vk_box_set_widget(g_inner, 0, VK_WIDGET(g_form), VK_INHERIT_NONE);
-    vk_box_set_widget(g_inner, 1, VK_WIDGET(g_bar), VK_INHERIT_NONE);
+    vk_box_set_widget(g_inner, 1, VK_WIDGET(g_pad_bot), VK_INHERIT_NONE);
+    vk_box_set_widget(g_inner, 2, VK_WIDGET(g_bar), VK_INHERIT_NONE);
 
-    g_pad_left = mk_pad(1, ih - 2);
-    g_pad_right = mk_pad(1, ih - 2);
-    g_mid = vk_box_create(iw, ih - 2, VK_BOX_HORIZONTAL, 3);
+    g_pad_left = mk_pad(1, ih - 1);
+    g_pad_right = mk_pad(1, ih - 1);
+    g_mid = vk_box_create(iw, ih - 1, VK_BOX_HORIZONTAL, 3);
     vk_box_set_homogeneous(g_mid, false);
     style_menu(VK_WIDGET(g_mid));
     vk_widget_set_expand(VK_WIDGET(g_mid));
@@ -713,14 +1084,12 @@ static void build_form(int iw, int ih, const char *json)
     vk_box_set_widget(g_mid, 2, VK_WIDGET(g_pad_right), VK_INHERIT_NONE);
 
     g_pad_top = mk_pad(iw, 1);
-    g_pad_bot = mk_pad(iw, 1);
-    g_vbox = vk_box_create(iw, ih, VK_BOX_VERTICAL, 3);
+    g_vbox = vk_box_create(iw, ih, VK_BOX_VERTICAL, 2);
     vk_box_set_homogeneous(g_vbox, false);
     style_menu(VK_WIDGET(g_vbox));
     vk_widget_set_expand(VK_WIDGET(g_vbox));
     vk_box_set_widget(g_vbox, 0, VK_WIDGET(g_pad_top), VK_INHERIT_NONE);
     vk_box_set_widget(g_vbox, 1, VK_WIDGET(g_mid), VK_INHERIT_NONE);
-    vk_box_set_widget(g_vbox, 2, VK_WIDGET(g_pad_bot), VK_INHERIT_NONE);
 }
 
 void mf_devset_close(void)
@@ -866,10 +1235,8 @@ static void paint_dialog(void)
      */
     for (pass = 0; pass < 2; pass++) {
         for (i = 0; i < g_nfields; i++) {
-            if (g_lab[i])
-                vk_label_update(g_lab[i]);
-            if (g_hint[i])
-                vk_label_update(g_hint[i]);
+            style_caption(g_lab[i], g_ro[i]);
+            style_caption(g_hint[i], g_ro[i]);
             style_input(g_in[i],
                         (g_focus >= 0 && g_focus < g_nedit &&
                          g_edit[g_focus] == i),
@@ -882,6 +1249,7 @@ static void paint_dialog(void)
         highlight_buttons();
         if (g_form)
             vk_box_update(g_form);
+        paint_form_scroller();
         if (g_bar)
             vk_box_update(g_bar);
         if (g_inner)
@@ -951,16 +1319,32 @@ int mf_devset_key(wint_t c)
     }
     if (c == '\t') {
         set_field_focus((g_focus + 1) % nbtn);
+        scroll_focus_into_view();
         paint_dialog();
         return 1;
     }
 #ifdef KEY_BTAB
     if (c == KEY_BTAB) {
         set_field_focus((g_focus + nbtn - 1) % nbtn);
+        scroll_focus_into_view();
         paint_dialog();
         return 1;
     }
 #endif
+    if (c == KEY_UP || c == KEY_DOWN || c == KEY_PPAGE || c == KEY_NPAGE)
+    {
+        int dy = 1;
+
+        if (c == KEY_UP)
+            dy = -1;
+        else if (c == KEY_PPAGE)
+            dy = g_form_h > 0 ? -g_form_h : -1;
+        else if (c == KEY_NPAGE)
+            dy = g_form_h > 0 ? g_form_h : 1;
+        if (form_nudge(dy))
+            paint_dialog();
+        return 1;
+    }
     if (c == '\n' || c == KEY_ENTER) {
         if (g_focus == g_nedit + 1) {
             mf_devset_close();
@@ -977,18 +1361,21 @@ int mf_devset_key(wint_t c)
         g_touched = 1;
         vk_input_backspace(in);
         vk_input_update(in);
+        scroll_focus_into_view();
         paint_dialog();
         return 1;
     }
     if (c == KEY_LEFT) {
         vk_input_move_cursor(in, -1);
         vk_input_update(in);
+        scroll_focus_into_view();
         paint_dialog();
         return 1;
     }
     if (c == KEY_RIGHT) {
         vk_input_move_cursor(in, 1);
         vk_input_update(in);
+        scroll_focus_into_view();
         paint_dialog();
         return 1;
     }
@@ -996,6 +1383,7 @@ int mf_devset_key(wint_t c)
         g_touched = 1;
         vk_input_insert_char(in, (int)c);
         vk_input_update(in);
+        scroll_focus_into_view();
         paint_dialog();
         return 1;
     }
@@ -1141,6 +1529,36 @@ mf_devset_mouse(int x, int y, mmask_t bstate)
     if (x < win_x || y < win_y || x >= win_x + win_w || y >= win_y + win_h)
         return 1;
 
+    if (bstate & (BUTTON4_PRESSED | BUTTON5_PRESSED))
+    {
+        if (form_nudge((bstate & BUTTON4_PRESSED) ? -1 : 1))
+            paint_dialog();
+        return 1;
+    }
+
+    if (g_vscroll && (bstate & LEFT))
+    {
+        int bar_y = y - win_y;
+
+        /* Bar sits on the form's last column: border + left pad + form. */
+        if (x - win_x == win_w - 3 && bar_y >= 2 && bar_y < 2 + g_form_h)
+        {
+            int dy;
+
+            if (bar_y == 2)
+                dy = -1;
+            else if (bar_y == 2 + g_form_h - 1)
+                dy = 1;
+            else if (bar_y < 2 + g_form_h / 2)
+                dy = g_form_h > 0 ? -g_form_h : -1;
+            else
+                dy = g_form_h > 0 ? g_form_h : 1;
+            if (form_nudge(dy))
+                paint_dialog();
+            return 1;
+        }
+    }
+
     if (!(bstate & LEFT) || !g_vbox || !g_bar)
         return 1;
 
@@ -1179,14 +1597,14 @@ mf_devset_mouse(int x, int y, mmask_t bstate)
     cx = 2;
     cy = 2;
     for (i = 0; i < g_nfields; i++) {
-        int rw, rh;
+        int rh;
 
-        if (!g_row[i])
+        if (!g_shown[i] || !g_row[i])
             continue;
-        vk_widget_get_metrics(VK_WIDGET(g_row[i]), &rw, &rh);
-        if (rh < 1)
-            rh = 1;
-        if (lx >= cx && lx < win_w - 2 && ly >= cy && ly < cy + rh) {
+        rh = form_row_h(i);
+        if (lx >= cx && lx < win_w - (g_vscroll ? 4 : 2) &&
+            ly >= cy && ly < cy + rh)
+        {
             if (!g_ro[i]) {
                 int e;
 

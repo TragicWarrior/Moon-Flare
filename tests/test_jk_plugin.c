@@ -321,6 +321,15 @@ int main(int argc, char **argv)
     CHECK(ops->get_reading(b, json, sizeof(json)) == 0, "read B after SET A");
     CHECK(json_true(json, "charge_mosfet_on"), "B charge still on (SET isolation)");
 
+    CHECK(ops->get_settings(a, json, sizeof(json)) == 0,
+          "settings A before trigger write");
+    CHECK(json_num(json, "balance_trigger_v") > 0.009 &&
+          json_num(json, "balance_trigger_v") < 0.011,
+          "A trigger from frame 0.010");
+    CHECK(json_num(json, "start_balance_v") > 2.99 &&
+          json_num(json, "start_balance_v") < 3.01,
+          "A start from frame 3.000");
+
     CHECK(ops->action(a, "set_balance_trigger", "{\"volts\":0.030}",
                       err, sizeof(err)) == MF_OK, "trigger 0.030 A");
     CHECK(ops->action(b, "set_balance_trigger", "{\"volts\":2.0}",
@@ -350,6 +359,12 @@ int main(int argc, char **argv)
           json_num(json, "cell_ovpr_v") < 3.56, "OVPR from device 3.55");
     CHECK(json_num(json, "cell_rcv_v") > 3.59 &&
           json_num(json, "cell_rcv_v") < 3.61, "RCV from device 3.60");
+    CHECK(ops->put_settings(a, "{\"cell_rcv_v\":3.58}",
+                            err, sizeof(err)) == MF_OK, "PUT RCV 3.58");
+    drive_both(ops, a, b, 2000);
+    CHECK(ops->get_settings(a, json, sizeof(json)) == 0, "settings A after RCV");
+    CHECK(json_num(json, "cell_rcv_v") > 3.575 &&
+          json_num(json, "cell_rcv_v") < 3.585, "RCV live 3.58");
     CHECK(ops->put_settings(a, "{\"cell_ovp_v\":3.55,\"cell_ovpr_v\":3.45}",
                             err, sizeof(err)) == MF_OK, "PUT OVP 3.55 OVPR 3.45");
     drive_both(ops, a, b, 2000);
