@@ -68,7 +68,7 @@ void mf_log(int prio, const char *fmt, ...)
 #define LOG_W(...) mf_log(LOG_WARNING, __VA_ARGS__)
 #define LOG_E(...) mf_log(LOG_ERR,     __VA_ARGS__)
 
-static state_t               g_pts;
+static protothread_t         g_pts;
 static int                   g_listen_fd = -1;
 static char                  g_chan_tick;
 static volatile sig_atomic_t g_quit = 0;
