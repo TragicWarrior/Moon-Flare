@@ -12,9 +12,10 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define CONNECT_TMO_S 5.0
-#define BACKOFF_MIN   0.5
-#define BACKOFF_MAX   5.0
+#define CONNECT_TMO_S  5.0
+#define INFLIGHT_TMO_S 8.0
+#define BACKOFF_MIN    0.5
+#define BACKOFF_MAX    5.0
 
 static void set_status(mf_http_cli_t *c, const char *s)
 {
@@ -28,6 +29,7 @@ void mf_http_cli_close(mf_http_cli_t *c)
     c->fd = -1;
     c->want = 0;
     c->inflight = 0;
+    c->req_since = 0;
     c->out_len = c->out_off = 0;
     c->in_len = 0;
     c->have_body = 0;
@@ -178,6 +180,15 @@ void mf_http_cli_pump(mf_http_cli_t *c, int readable, int writable, double now)
     if (c->state != MF_CONN_UP)
         return;
 
+    if (c->inflight) {
+        if (c->req_since <= 0.0)
+            c->req_since = now;
+        else if (now - c->req_since > INFLIGHT_TMO_S) {
+            schedule_retry(c, now, "request timeout");
+            return;
+        }
+    }
+
     if (!c->inflight && c->pend) {
         char m[8], pth[160], js[2048];
 
@@ -267,6 +278,7 @@ static int cli_begin(mf_http_cli_t *c, const char *method, const char *path,
     c->in_len = 0;
     c->have_body = 0;
     c->inflight = 1;
+    c->req_since = 0; /* stamped on the next pump, which has the clock */
     c->want = MF_CLI_IO_WRITE | MF_CLI_IO_READ;
     return 1;
 }
