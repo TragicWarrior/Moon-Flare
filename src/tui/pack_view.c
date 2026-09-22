@@ -544,6 +544,15 @@ void mf_pack_show(int charger)
             cw = bw / 4;
             if (cw < 1)
                 cw = 1;
+            /* Pack and Cells are fixed-height, non-EXPAND children of
+               g_batt_box, so the box layout never resizes them -- it only
+               grows the one EXPAND child (SOC).  Left at their creation width
+               (cols) they overhang the client-frame's right border by 2 cols
+               and the frame's right edge falls off the screen on first open.
+               Size them to the box interior (window width == bw + 2 borders),
+               the same width the box hands the SOC window. */
+            vk_widget_resize(VK_WIDGET(g_fr_pack), bw + 2, 6);
+            vk_widget_resize(VK_WIDGET(g_fr_cells), bw + 2, 7);
             vk_widget_resize(VK_WIDGET(g_pack_row0), bw, 1);
             vk_widget_resize(VK_WIDGET(g_pack_row1), bw, 1);
             vk_widget_resize(VK_WIDGET(g_cl_batt_row), bw, 1);
@@ -552,6 +561,34 @@ void mf_pack_show(int charger)
                 vk_widget_resize(VK_WIDGET(g_cell_row[i]), bw, 1);
             for (i = 0; i < NCELL_SHOW; i++)
                 vk_widget_resize(VK_WIDGET(g_cell_box[i]), cw, 1);
+            /* Scale the meters with the frame instead of letting the gaps
+               around them grow.  The bars are non-EXPAND, so the box never
+               resizes them -- left alone they stay METER_W/CELL_BAR_W and the
+               EXPAND fillers (and the slack at the right of each cell) soak up
+               all the extra width.  Size the bars explicitly from the row
+               width so they grow, leaving the fillers only a fixed 2-col gap;
+               then re-render each at its new width (a resize copies the old
+               bar, it does not redraw it).  At 80 cols these match METER_W(22)
+               and CELL_BAR_W(8), so the default layout is unchanged. */
+            {
+                int m0 = (bw - 2 * NAME_W - 2 * VAL_W - 2) / 2;  /* Pack/SOC/Cap */
+                int mc = cw - CELL_LAB_W - 2;                    /* cell bar    */
+
+                if (m0 < 6)
+                    m0 = 6;
+                if (mc < 4)
+                    mc = 4;
+                vk_widget_resize(VK_WIDGET(g_mt_pack), m0, 1);
+                vk_widget_resize(VK_WIDGET(g_mt_soc), m0, 1);
+                vk_widget_resize(VK_WIDGET(g_pr_cap), m0, 1);
+                vk_progress_update(VK_PROGRESS(g_mt_pack));
+                vk_progress_update(VK_PROGRESS(g_mt_soc));
+                vk_progress_update(g_pr_cap);
+                for (i = 0; i < NCELL_SHOW; i++) {
+                    vk_widget_resize(VK_WIDGET(g_mt_cell[i]), mc, 1);
+                    vk_progress_update(VK_PROGRESS(g_mt_cell[i]));
+                }
+            }
             /* Size the charger graph area explicitly.  The frame->window->body
                resize cascade only fires on an actual size change and only
                resizes an EXPAND child one level deep, so g_cl_body's canvas is
