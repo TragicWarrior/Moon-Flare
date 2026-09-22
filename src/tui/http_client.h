@@ -22,6 +22,7 @@ typedef struct mf_http_cli {
     unsigned        want;
     double          last_fresh;
     double          conn_since;
+    double          req_since;
     double          next_try;
     double          backoff;
     int             stale;
