@@ -61,7 +61,8 @@ static void conn_reset_req(mf_http_conn_t *c)
 
 static void conn_close(mf_http_conn_t *c)
 {
-    if (c->fd >= 0) {
+    if (c->fd >= 0)
+    {
         close(c->fd);
         c->fd = -1;
     }
@@ -83,7 +84,8 @@ static bool hdr_is_identity(const struct phr_header *h)
 {
     const char *v = h->value;
     size_t n = h->value_len;
-    while (n > 0 && (*v == ' ' || *v == '\t')) {
+    while (n > 0 && (*v == ' ' || *v == '\t'))
+    {
         v++;
         n--;
     }
@@ -98,8 +100,10 @@ static bool hdr_has_token(const struct phr_header *h, const char *tok)
     const char *v = h->value;
     size_t n = h->value_len;
     size_t i;
-    for (i = 0; i + tlen <= n; i++) {
-        if (i > 0) {
+    for (i = 0; i + tlen <= n; i++)
+    {
+        if (i > 0)
+        {
             char prev = v[i - 1];
             if (prev != ' ' && prev != '\t' && prev != ',')
                 continue;
@@ -119,7 +123,8 @@ static bool hdr_has_token(const struct phr_header *h, const char *tok)
 
 static const char *http_reason(int status)
 {
-    switch (status) {
+    switch (status)
+    {
     case 200: return "OK";
     case 201: return "Created";
     case 202: return "Accepted";
@@ -134,7 +139,9 @@ static const char *http_reason(int status)
 }
 
 /* Strong routes.c wins when linked; otherwise REST is a no-op. */
-__attribute__((weak)) void mf_rest_init(void) {}
+__attribute__((weak)) void mf_rest_init(void)
+{
+}
 __attribute__((weak)) int mf_rest_dispatch(const mf_rest_request_t *req,
                                            mf_rest_response_t *resp)
 {
@@ -205,8 +212,10 @@ static void handle_request(mf_http_t *h, mf_http_conn_t *c)
 
     LOG_I("http %s %s %s", c->peer[0] ? c->peer : "-", c->method, c->path);
 
-    if (strcmp(c->path, "/api/v1/health") == 0) {
-        if (strcmp(c->method, "GET") != 0) {
+    if (strcmp(c->path, "/api/v1/health") == 0)
+    {
+        if (strcmp(c->method, "GET") != 0)
+        {
             http_reply_or_close(c, 405, "Method Not Allowed",
                                 "{\"error\":\"method not allowed\"}", false);
             return;
@@ -216,8 +225,8 @@ static void handle_request(mf_http_t *h, mf_http_conn_t *c)
             if (up < 0.0)
                 up = 0.0;
             snprintf(body, sizeof(body),
-                     "{\"ok\":true,\"server\":\"%s\",\"uptime_s\":%.3f}",
-                     MF_HTTP_SERVER_ID, up);
+                      "{\"ok\":true,\"server\":\"%s\",\"uptime_s\":%.3f}",
+                      MF_HTTP_SERVER_ID, up);
         }
         http_reply_or_close(c, 200, "OK", body, false);
         return;
@@ -233,11 +242,13 @@ static void handle_request(mf_http_t *h, mf_http_conn_t *c)
         req.if_match = c->if_match[0] ? c->if_match : NULL;
         req.peer = c->peer[0] ? c->peer : NULL;
         if (c->content_length > 0 &&
-            c->header_len + c->content_length <= c->in_len) {
+            c->header_len + c->content_length <= c->in_len)
+        {
             req.body = c->in + c->header_len;
             req.body_len = c->content_length;
         }
-        if (mf_rest_dispatch(&req, &resp) == 0 && resp.status > 0) {
+        if (mf_rest_dispatch(&req, &resp) == 0 && resp.status > 0)
+        {
             if (http_reply(c, resp.status, http_reason(resp.status),
                            resp.body, false,
                            resp.location[0] ? resp.location : NULL,
@@ -265,15 +276,18 @@ static int parse_headers(mf_http_t *h, mf_http_conn_t *c)
 
     pret = phr_parse_request(c->in, view, &method, &method_len, &path, &path_len,
                              &minor, headers, &num_headers, c->last_len);
-    if (pret == -2) {
-        if (c->in_len >= MF_HTTP_HDR_CAP) {
+    if (pret == -2)
+    {
+        if (c->in_len >= MF_HTTP_HDR_CAP)
+        {
             http_reply_or_close(c, 400, "Bad Request",
                                 "{\"error\":\"bad request\"}", true);
             return 1;
         }
         return 0;
     }
-    if (pret == -1) {
+    if (pret == -1)
+    {
         http_reply_or_close(c, 400, "Bad Request",
                             "{\"error\":\"bad request\"}", true);
         return 1;
@@ -290,47 +304,59 @@ static int parse_headers(mf_http_t *h, mf_http_conn_t *c)
     c->content_length = 0;
     c->req_close = (c->minor < 1);
 
-    for (i = 0; i < num_headers; i++) {
-        if (hdr_name_eq(&headers[i], "transfer-encoding")) {
-            if (!hdr_is_identity(&headers[i])) {
+    for (i = 0; i < num_headers; i++)
+    {
+        if (hdr_name_eq(&headers[i], "transfer-encoding"))
+        {
+            if (!hdr_is_identity(&headers[i]))
+            {
                 LOG_I("http %s %s %s 400 chunked",
                       c->peer[0] ? c->peer : "-", c->method, c->path);
                 http_reply_or_close(c, 400, "Bad Request",
                                     "{\"error\":\"chunked not supported\"}", true);
                 return 1;
             }
-        } else if (hdr_name_eq(&headers[i], "content-length")) {
+        }
+        else if (hdr_name_eq(&headers[i], "content-length"))
+        {
             char tmp[32];
             char *end = NULL;
             unsigned long long cl;
             copy_token(tmp, sizeof(tmp), headers[i].value, headers[i].value_len);
             errno = 0;
             cl = strtoull(tmp, &end, 10);
-            if (errno != 0 || end == tmp) {
+            if (errno != 0 || end == tmp)
+            {
                 http_reply_or_close(c, 400, "Bad Request",
                                     "{\"error\":\"bad request\"}", true);
                 return 1;
             }
             have_cl = true;
-            if (cl > MF_HTTP_BODY_CAP) {
+            if (cl > MF_HTTP_BODY_CAP)
+            {
                 http_reply_or_close(c, 413, "Payload Too Large",
                                     "{\"error\":\"payload too large\"}", true);
                 return 1;
             }
             c->content_length = (size_t)cl;
-        } else if (hdr_name_eq(&headers[i], "connection")) {
+        }
+        else if (hdr_name_eq(&headers[i], "connection"))
+        {
             if (hdr_has_token(&headers[i], "close"))
                 c->req_close = true;
             else if (hdr_has_token(&headers[i], "keep-alive"))
                 c->req_close = false;
-        } else if (hdr_name_eq(&headers[i], "if-match")) {
+        }
+        else if (hdr_name_eq(&headers[i], "if-match"))
+        {
             copy_token(c->if_match, sizeof(c->if_match),
                        headers[i].value, headers[i].value_len);
         }
     }
     (void)have_cl;
 
-    if (c->content_length == 0) {
+    if (c->content_length == 0)
+    {
         handle_request(h, c);
         return 1;
     }
@@ -340,15 +366,18 @@ static int parse_headers(mf_http_t *h, mf_http_conn_t *c)
 
 static void conn_do_recv(mf_http_t *h, mf_http_conn_t *c)
 {
-    for (;;) {
+    for (;;)
+    {
         size_t room;
         ssize_t n;
 
         if (c->state == HTTP_RECV_HEADERS)
             room = (c->in_len < MF_HTTP_HDR_CAP) ? (MF_HTTP_HDR_CAP - c->in_len) : 0;
-        else {
+        else
+        {
             size_t need = c->header_len + c->content_length;
-            if (c->in_len >= need) {
+            if (c->in_len >= need)
+            {
                 handle_request(h, c);
                 return;
             }
@@ -357,13 +386,18 @@ static void conn_do_recv(mf_http_t *h, mf_http_conn_t *c)
                 room = sizeof(c->in) - c->in_len;
         }
 
-        if (room == 0) {
-            if (c->state == HTTP_RECV_HEADERS) {
-                if (parse_headers(h, c) == 0) {
+        if (room == 0)
+        {
+            if (c->state == HTTP_RECV_HEADERS)
+            {
+                if (parse_headers(h, c) == 0)
+                {
                     http_reply_or_close(c, 400, "Bad Request",
                                         "{\"error\":\"bad request\"}", true);
                 }
-            } else {
+            }
+            else
+            {
                 http_reply_or_close(c, 400, "Bad Request",
                                     "{\"error\":\"bad request\"}", true);
             }
@@ -371,20 +405,23 @@ static void conn_do_recv(mf_http_t *h, mf_http_conn_t *c)
         }
 
         n = read(c->fd, c->in + c->in_len, room);
-        if (n < 0) {
+        if (n < 0)
+        {
             if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
                 break;
             conn_close(c);
             return;
         }
-        if (n == 0) {
+        if (n == 0)
+        {
             conn_close(c);
             return;
         }
         c->in_len += (size_t)n;
         c->last_progress = mf_mono_now();
 
-        if (c->state == HTTP_RECV_HEADERS) {
+        if (c->state == HTTP_RECV_HEADERS)
+        {
             int progressed = parse_headers(h, c);
             c->last_len = c->in_len < MF_HTTP_HDR_CAP ? c->in_len : MF_HTTP_HDR_CAP;
             if (c->state == HTTP_SEND || c->state == HTTP_CLOSE)
@@ -392,8 +429,11 @@ static void conn_do_recv(mf_http_t *h, mf_http_conn_t *c)
             if (progressed && c->state == HTTP_RECV_BODY)
                 continue;
             /* incomplete headers; keep draining this slice */
-        } else {
-            if (c->in_len >= c->header_len + c->content_length) {
+        }
+        else
+        {
+            if (c->in_len >= c->header_len + c->content_length)
+            {
                 handle_request(h, c);
                 return;
             }
@@ -416,22 +456,26 @@ static void conn_keep_alive_reset(mf_http_t *h, mf_http_conn_t *c)
 
 static void conn_do_send(mf_http_t *h, mf_http_conn_t *c)
 {
-    while (c->out_off < c->out_len) {
+    while (c->out_off < c->out_len)
+    {
         ssize_t n = write(c->fd, c->out + c->out_off, c->out_len - c->out_off);
-        if (n < 0) {
+        if (n < 0)
+        {
             if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
                 return;
             conn_close(c);
             return;
         }
-        if (n == 0) {
+        if (n == 0)
+        {
             conn_close(c);
             return;
         }
         c->out_off += (size_t)n;
         c->last_progress = mf_mono_now();
     }
-    if (c->close_after) {
+    if (c->close_after)
+    {
         conn_close(c);
         return;
     }
@@ -445,10 +489,13 @@ static void peer_name(int fd, char *dst, size_t dstsz)
     dst[0] = '\0';
     if (getpeername(fd, (struct sockaddr *)&ss, &sl) != 0)
         return;
-    if (ss.ss_family == AF_INET) {
+    if (ss.ss_family == AF_INET)
+    {
         const struct sockaddr_in *in = (const struct sockaddr_in *)&ss;
         inet_ntop(AF_INET, &in->sin_addr, dst, (socklen_t)dstsz);
-    } else if (ss.ss_family == AF_INET6) {
+    }
+    else if (ss.ss_family == AF_INET6)
+    {
         const struct sockaddr_in6 *in6 = (const struct sockaddr_in6 *)&ss;
         inet_ntop(AF_INET6, &in6->sin6_addr, dst, (socklen_t)dstsz);
     }
@@ -457,7 +504,8 @@ static void peer_name(int fd, char *dst, size_t dstsz)
 static int conn_slot(mf_http_t *h)
 {
     int i;
-    for (i = 0; i < MF_MAX_HTTP_CLIENTS; i++) {
+    for (i = 0; i < MF_MAX_HTTP_CLIENTS; i++)
+    {
         if (!h->conns[i].in_use)
             return i;
     }
@@ -473,7 +521,8 @@ static void accept_one_fd(mf_http_t *h, int fd)
     (void)setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
     (void)setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &one, sizeof(one));
 
-    if (slot < 0) {
+    if (slot < 0)
+    {
         LOG_W("http: max %d clients, dropping", MF_MAX_HTTP_CLIENTS);
         close(fd);
         return;
@@ -500,11 +549,13 @@ static pt_t http_conn_pt(env_t e_)
     mf_http_conn_t *c = &h->conns[env->idx];
 
     pt_resume(env);
-    while (!*(h->quit) && c->in_use) {
+    while (!*(h->quit) && c->in_use)
+    {
         pt_wait(env, h->chan_tick);
         if (*(h->quit) || !c->in_use)
             break;
-        if (mf_mono_now() - c->last_progress > h->idle_s) {
+        if (mf_mono_now() - c->last_progress > h->idle_s)
+        {
             if (h->debug)
                 LOG_I("http idle close peer=%s", c->peer);
             conn_close(c);
@@ -524,9 +575,11 @@ static pt_t http_conn_pt(env_t e_)
 
 static void accept_drain(mf_http_t *h)
 {
-    for (;;) {
+    for (;;)
+    {
         int fd = accept4(h->listen_fd, NULL, NULL, SOCK_NONBLOCK | SOCK_CLOEXEC);
-        if (fd < 0) {
+        if (fd < 0)
+        {
             if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
                 return;
             LOG_W("accept: %s", strerror(errno));
@@ -542,11 +595,13 @@ static pt_t http_accept_pt(env_t e_)
     mf_http_t *h = env->srv;
 
     pt_resume(env);
-    while (!*(h->quit)) {
+    while (!*(h->quit))
+    {
         pt_wait(env, h->chan_tick);
         if (*(h->quit))
             break;
-        if (h->pending_listen_fd >= 0) {
+        if (h->pending_listen_fd >= 0)
+        {
             if (h->listen_fd >= 0)
                 close(h->listen_fd);
             h->listen_fd = h->pending_listen_fd;
@@ -571,10 +626,13 @@ static int bind_listen_spec(const char *spec)
     if (!spec || !spec[0])
         return -1;
     colon = strrchr(spec, ':');
-    if (!colon) {
+    if (!colon)
+    {
         snprintf(host, sizeof(host), "0.0.0.0");
         port = atoi(spec);
-    } else {
+    }
+    else
+    {
         size_t hlen = (size_t)(colon - spec);
         if (hlen == 0 || hlen >= sizeof(host))
             return -1;
@@ -594,7 +652,8 @@ static int bind_listen_spec(const char *spec)
     rc = getaddrinfo(host[0] ? host : NULL, portstr, &hints, &ai);
     if (rc != 0)
         return -1;
-    for (p = ai; p; p = p->ai_next) {
+    for (p = ai; p; p = p->ai_next)
+    {
         int one = 1;
         fd = socket(p->ai_family,
                     p->ai_socktype | SOCK_NONBLOCK | SOCK_CLOEXEC,
@@ -646,7 +705,8 @@ void mf_http_init(mf_http_t *h, protothread_t pts, char *chan_tick,
 void mf_http_start(mf_http_t *h)
 {
     int i;
-    for (i = 0; i < MF_MAX_HTTP_CLIENTS; i++) {
+    for (i = 0; i < MF_MAX_HTTP_CLIENTS; i++)
+    {
         h->conns[i].fd = -1;
         h->conns[i].in_use = false;
     }
@@ -656,12 +716,14 @@ void mf_http_start(mf_http_t *h)
 void mf_http_prepare_fds(mf_http_t *h, fd_set *rset, fd_set *wset, int *maxfd)
 {
     int i;
-    if (h->listen_fd >= 0) {
+    if (h->listen_fd >= 0)
+    {
         FD_SET(h->listen_fd, rset);
         if (h->listen_fd > *maxfd)
             *maxfd = h->listen_fd;
     }
-    for (i = 0; i < MF_MAX_HTTP_CLIENTS; i++) {
+    for (i = 0; i < MF_MAX_HTTP_CLIENTS; i++)
+    {
         mf_http_conn_t *c = &h->conns[i];
         if (!c->in_use || c->fd < 0)
             continue;
@@ -677,11 +739,13 @@ void mf_http_prepare_fds(mf_http_t *h, fd_set *rset, fd_set *wset, int *maxfd)
 void mf_http_close_all(mf_http_t *h)
 {
     int i;
-    for (i = 0; i < MF_MAX_HTTP_CLIENTS; i++) {
+    for (i = 0; i < MF_MAX_HTTP_CLIENTS; i++)
+    {
         if (h->conns[i].in_use || h->conns[i].fd >= 0)
             conn_close(&h->conns[i]);
     }
-    if (h->pending_listen_fd >= 0) {
+    if (h->pending_listen_fd >= 0)
+    {
         close(h->pending_listen_fd);
         h->pending_listen_fd = -1;
     }

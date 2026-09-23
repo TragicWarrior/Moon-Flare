@@ -51,11 +51,13 @@ static int pick_port(void)
     a.sin_family = AF_INET;
     a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     a.sin_port = 0;
-    if (bind(s, (struct sockaddr *)&a, sizeof(a)) != 0) {
+    if (bind(s, (struct sockaddr *)&a, sizeof(a)) != 0)
+    {
         close(s);
         return -1;
     }
-    if (getsockname(s, (struct sockaddr *)&a, &sl) != 0) {
+    if (getsockname(s, (struct sockaddr *)&a, &sl) != 0)
+    {
         close(s);
         return -1;
     }
@@ -80,20 +82,23 @@ static int tcp_connect(int port, double timeout_s)
     a.sin_family = AF_INET;
     a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     a.sin_port = htons((uint16_t)port);
-    if (connect(fd, (struct sockaddr *)&a, sizeof(a)) < 0 && errno != EINPROGRESS) {
+    if (connect(fd, (struct sockaddr *)&a, sizeof(a)) < 0 && errno != EINPROGRESS)
+    {
         close(fd);
         return -1;
     }
     pfd.fd = fd;
     pfd.events = POLLOUT;
-    if (poll(&pfd, 1, (int)(timeout_s * 1000.0)) <= 0) {
+    if (poll(&pfd, 1, (int)(timeout_s * 1000.0)) <= 0)
+    {
         close(fd);
         return -1;
     }
     {
         int err = 0;
         socklen_t el = (socklen_t)sizeof(err);
-        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &el) < 0 || err != 0) {
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &el) < 0 || err != 0)
+        {
             close(fd);
             return -1;
         }
@@ -107,7 +112,8 @@ static int tcp_connect(int port, double timeout_s)
 static int send_all(int fd, const char *s)
 {
     size_t len = strlen(s), off = 0;
-    while (off < len) {
+    while (off < len)
+    {
         ssize_t n = write(fd, s + off, len - off);
         if (n <= 0)
             return -1;
@@ -121,7 +127,8 @@ static int recv_http(int fd, char *buf, size_t cap, size_t *out, double timeout_
     struct pollfd pfd;
     *out = 0;
     buf[0] = '\0';
-    for (;;) {
+    for (;;)
+    {
         ssize_t n;
         char *hdr;
         pfd.fd = fd;
@@ -134,7 +141,8 @@ static int recv_http(int fd, char *buf, size_t cap, size_t *out, double timeout_
         *out += (size_t)n;
         buf[*out] = '\0';
         hdr = strstr(buf, "\r\n\r\n");
-        if (hdr) {
+        if (hdr)
+        {
             unsigned long cl = 0;
             const char *p = strstr(buf, "Content-Length:");
             if (p)
@@ -153,11 +161,13 @@ static int http_exchange(int port, const char *req, char *buf, size_t cap)
     int fd = tcp_connect(port, 1.0);
     if (fd < 0)
         return -1;
-    if (send_all(fd, req) < 0) {
+    if (send_all(fd, req) < 0)
+    {
         close(fd);
         return -1;
     }
-    if (recv_http(fd, buf, cap, &n, 1.5) < 0) {
+    if (recv_http(fd, buf, cap, &n, 1.5) < 0)
+    {
         close(fd);
         return -1;
     }
@@ -187,8 +197,10 @@ static pid_t spawn_daemon(const char *bin, const char *plugindir, int port,
     char portstr[16];
     if (pid < 0)
         return -1;
-    if (pid == 0) {
-        if (logfd >= 0) {
+    if (pid == 0)
+    {
+        if (logfd >= 0)
+        {
             dup2(logfd, STDERR_FILENO);
             if (logfd != STDERR_FILENO)
                 close(logfd);
@@ -213,7 +225,8 @@ static void stop_daemon(pid_t pid)
     if (pid <= 0)
         return;
     kill(pid, SIGTERM);
-    for (i = 0; i < 40; i++) {
+    for (i = 0; i < 40; i++)
+    {
         if (waitpid(pid, NULL, WNOHANG) == pid)
             return;
         sleep_s(0.05);
@@ -261,18 +274,21 @@ int main(int argc, char **argv)
     char delpath[256];
     const char *cfgpath = "/tmp/mf-http-devices-cfg.json";
 
-    if (argc < 3) {
+    if (argc < 3)
+    {
         fprintf(stderr, "usage: %s moonflared plugin-dir\n", argv[0]);
         return 2;
     }
     bin = argv[1];
     plugindir = argv[2];
     port = pick_port();
-    if (port <= 0) {
+    if (port <= 0)
+    {
         FAIL("pick_port");
         return 1;
     }
-    if (write_startup_cfg(cfgpath) != 0) {
+    if (write_startup_cfg(cfgpath) != 0)
+    {
         FAIL("write startup cfg");
         return 1;
     }
@@ -280,20 +296,24 @@ int main(int argc, char **argv)
     pid = spawn_daemon(bin, plugindir, port, logfd, cfgpath);
     if (logfd >= 0)
         close(logfd);
-    if (pid < 0) {
+    if (pid < 0)
+    {
         FAIL("fork");
         return 1;
     }
-    for (i = 0; i < 50; i++) {
+    for (i = 0; i < 50; i++)
+    {
         fd = tcp_connect(port, 0.1);
-        if (fd >= 0) {
+        if (fd >= 0)
+        {
             close(fd);
             ready = 1;
             break;
         }
         sleep_s(0.05);
     }
-    if (!ready) {
+    if (!ready)
+    {
         FAIL("daemon listen");
         stop_daemon(pid);
         return 1;
@@ -335,17 +355,20 @@ int main(int argc, char **argv)
         FAIL("POST device");
     else if (status_of(resp) != 201)
         FAIL("POST not 201");
-    else {
+    else
+    {
         const char *loc = strstr(resp, "Location:");
         const char *slash;
         uuid[0] = '\0';
         if (!loc)
             FAIL("POST missing Location");
-        else {
+        else
+        {
             slash = strrchr(loc, '/');
             if (!slash)
                 FAIL("Location path");
-            else {
+            else
+            {
                 int n = 0;
                 slash++;
                 while (slash[n] && slash[n] != '\r' && n < 36)
@@ -360,14 +383,16 @@ int main(int argc, char **argv)
 
     if (uuid[0] && http_exchange(port,
             "GET /api/v1/status HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
-            resp, sizeof(resp)) == 0) {
+            resp, sizeof(resp)) == 0)
+    {
         if (!strstr(body_of(resp), "pack-demo"))
             FAIL("status missing posted device");
         if (!strstr(body_of(resp), "pack_voltage_v"))
             FAIL("status missing demo reading");
     }
 
-    if (uuid[0]) {
+    if (uuid[0])
+    {
         snprintf(req, sizeof(req),
                  "GET /api/v1/devices/%s HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
                  uuid);
@@ -389,7 +414,8 @@ int main(int argc, char **argv)
     if (http_exchange(port, req, resp, sizeof(resp)) == 0 && status_of(resp) != 400)
         FAIL("unknown driver should 400");
 
-    if (uuid[0]) {
+    if (uuid[0])
+    {
         char req2[1024];
         {
             const char *sb = "{\"poll_interval_s\":0.1}";
@@ -466,7 +492,8 @@ int main(int argc, char **argv)
     }
     if (http_exchange(port,
                       "GET /api/v1/config HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
-                      resp, sizeof(resp)) == 0 && status_of(resp) == 200) {
+                      resp, sizeof(resp)) == 0 && status_of(resp) == 200)
+    {
         uint64_t gen = gen_of_body(body_of(resp));
         const char *body = "{\"listen\":\"127.0.0.1:99999\"}";
         snprintf(req, sizeof(req),
@@ -518,7 +545,8 @@ int main(int argc, char **argv)
     else if (!strstr(body_of(resp), "\"driver\":\"demo\""))
         FAIL("drivers still lists demo");
 
-    if (uuid[0]) {
+    if (uuid[0])
+    {
         snprintf(delpath, sizeof(delpath),
                  "DELETE /api/v1/devices/%s HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
                  uuid);
@@ -542,7 +570,8 @@ int main(int argc, char **argv)
     }
 
     stop_daemon(pid);
-    if (g_fail) {
+    if (g_fail)
+    {
         fprintf(stderr, "%d check(s) failed (see /tmp/mf-http-devices.log)\n", g_fail);
         return 1;
     }

@@ -61,11 +61,13 @@ static int pick_port(void)
     a.sin_family = AF_INET;
     a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     a.sin_port = 0;
-    if (bind(s, (struct sockaddr *)&a, sizeof(a)) != 0) {
+    if (bind(s, (struct sockaddr *)&a, sizeof(a)) != 0)
+    {
         close(s);
         return -1;
     }
-    if (getsockname(s, (struct sockaddr *)&a, &sl) != 0) {
+    if (getsockname(s, (struct sockaddr *)&a, &sl) != 0)
+    {
         close(s);
         return -1;
     }
@@ -90,20 +92,23 @@ static int tcp_connect(int port, double timeout_s)
     a.sin_family = AF_INET;
     a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     a.sin_port = htons((uint16_t)port);
-    if (connect(fd, (struct sockaddr *)&a, sizeof(a)) < 0 && errno != EINPROGRESS) {
+    if (connect(fd, (struct sockaddr *)&a, sizeof(a)) < 0 && errno != EINPROGRESS)
+    {
         close(fd);
         return -1;
     }
     pfd.fd = fd;
     pfd.events = POLLOUT;
-    if (poll(&pfd, 1, (int)(timeout_s * 1000.0)) <= 0) {
+    if (poll(&pfd, 1, (int)(timeout_s * 1000.0)) <= 0)
+    {
         close(fd);
         return -1;
     }
     {
         int err = 0;
         socklen_t el = (socklen_t)sizeof(err);
-        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &el) < 0 || err != 0) {
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &el) < 0 || err != 0)
+        {
             close(fd);
             return -1;
         }
@@ -115,10 +120,13 @@ static int send_all(int fd, const char *s)
 {
     size_t len = strlen(s);
     size_t off = 0;
-    while (off < len) {
+    while (off < len)
+    {
         ssize_t n = write(fd, s + off, len - off);
-        if (n < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+        if (n < 0)
+        {
+            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
+            {
                 struct pollfd pfd = { .fd = fd, .events = POLLOUT };
                 if (poll(&pfd, 1, 1000) <= 0)
                     return -1;
@@ -136,7 +144,8 @@ static int recv_http(int fd, char *buf, size_t cap, size_t *out, double timeout_
 {
     double deadline = mono_now() + timeout_s;
     *out = 0;
-    while (*out + 1 < cap) {
+    while (*out + 1 < cap)
+    {
         double left = deadline - mono_now();
         struct pollfd pfd;
         ssize_t n;
@@ -148,7 +157,8 @@ static int recv_http(int fd, char *buf, size_t cap, size_t *out, double timeout_
         if (poll(&pfd, 1, (int)(left * 1000.0 + 0.5)) <= 0)
             return -1;
         n = read(fd, buf + *out, cap - 1 - *out);
-        if (n < 0) {
+        if (n < 0)
+        {
             if (errno == EAGAIN || errno == EINTR)
                 continue;
             return -1;
@@ -158,7 +168,8 @@ static int recv_http(int fd, char *buf, size_t cap, size_t *out, double timeout_
         *out += (size_t)n;
         buf[*out] = '\0';
         hdr_end = strstr(buf, "\r\n\r\n");
-        if (hdr_end) {
+        if (hdr_end)
+        {
             size_t header_bytes = (size_t)(hdr_end - buf) + 4;
             const char *cl = strstr(buf, "Content-Length:");
             unsigned long body_len = 0;
@@ -194,8 +205,10 @@ static pid_t spawn_daemon(const char *bin, int port, int logfd)
     char spec[64];
     if (pid < 0)
         return -1;
-    if (pid == 0) {
-        if (logfd >= 0) {
+    if (pid == 0)
+    {
+        if (logfd >= 0)
+        {
             dup2(logfd, STDERR_FILENO);
             if (logfd != STDERR_FILENO)
                 close(logfd);
@@ -214,7 +227,8 @@ static void stop_daemon(pid_t pid)
     if (pid <= 0)
         return;
     kill(pid, SIGTERM);
-    for (i = 0; i < 40; i++) {
+    for (i = 0; i < 40; i++)
+    {
         if (waitpid(pid, NULL, WNOHANG) == pid)
             return;
         sleep_s(0.05);
@@ -236,13 +250,15 @@ int main(int argc, char **argv)
     int fd, a, b;
     double t0, dt;
 
-    if (argc < 2) {
+    if (argc < 2)
+    {
         fprintf(stderr, "usage: %s /path/to/moonflared\n", argv[0]);
         return 2;
     }
     bin = argv[1];
     port = pick_port();
-    if (port <= 0) {
+    if (port <= 0)
+    {
         FAIL("pick_port");
         return 1;
     }
@@ -251,21 +267,25 @@ int main(int argc, char **argv)
     pid = spawn_daemon(bin, port, logfd);
     if (logfd >= 0)
         close(logfd);
-    if (pid < 0) {
+    if (pid < 0)
+    {
         FAIL("fork moonflared");
         return 1;
     }
 
-    for (i = 0; i < 50; i++) {
+    for (i = 0; i < 50; i++)
+    {
         fd = tcp_connect(port, 0.1);
-        if (fd >= 0) {
+        if (fd >= 0)
+        {
             close(fd);
             ready = 1;
             break;
         }
         sleep_s(0.05);
     }
-    if (!ready) {
+    if (!ready)
+    {
         FAIL("daemon did not listen");
         stop_daemon(pid);
         return 1;
@@ -273,9 +293,12 @@ int main(int argc, char **argv)
 
     /* 1. GET /api/v1/health → 200 JSON with Content-Length */
     fd = tcp_connect(port, 1.0);
-    if (fd < 0) {
+    if (fd < 0)
+    {
         FAIL("connect health");
-    } else {
+    }
+    else
+    {
         const char *req =
             "GET /api/v1/health HTTP/1.1\r\n"
             "Host: 127.0.0.1\r\n"
@@ -298,9 +321,11 @@ int main(int argc, char **argv)
 
     /* 2. Peer A partial hold; peer B health within ~100 ms */
     a = tcp_connect(port, 1.0);
-    if (a < 0) {
+    if (a < 0)
+    {
         FAIL("connect peer A");
-    } else if (send_all(a, "GET /api/v1/hea") < 0) {
+    } else if (send_all(a, "GET /api/v1/hea") < 0)
+    {
         FAIL("send partial A");
         close(a);
         a = -1;
@@ -308,9 +333,12 @@ int main(int argc, char **argv)
 
     t0 = mono_now();
     b = tcp_connect(port, 1.0);
-    if (b < 0) {
+    if (b < 0)
+    {
         FAIL("connect peer B");
-    } else {
+    }
+    else
+    {
         const char *req =
             "GET /api/v1/health HTTP/1.1\r\n"
             "Host: 127.0.0.1\r\n"
@@ -329,7 +357,8 @@ int main(int argc, char **argv)
     }
 
     /* 3. Idle close of A at 0.2 s */
-    if (a >= 0) {
+    if (a >= 0)
+    {
         sleep_s(0.45);
         {
             char tmp[8];
@@ -352,9 +381,12 @@ int main(int argc, char **argv)
 
     /* 4. Chunked request → 400 */
     fd = tcp_connect(port, 1.0);
-    if (fd < 0) {
+    if (fd < 0)
+    {
         FAIL("connect chunked");
-    } else {
+    }
+    else
+    {
         const char *req =
             "GET /api/v1/health HTTP/1.1\r\n"
             "Host: 127.0.0.1\r\n"
@@ -374,7 +406,8 @@ int main(int argc, char **argv)
     }
 
     stop_daemon(pid);
-    if (g_fail) {
+    if (g_fail)
+    {
         fprintf(stderr, "%d check(s) failed (daemon log /tmp/mf-http-core.log)\n", g_fail);
         return 1;
     }

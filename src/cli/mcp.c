@@ -30,7 +30,8 @@ static void send_env(cJSON *env)
     if (!env)
         return;
     out = cJSON_PrintUnformatted(env);
-    if (out) {
+    if (out)
+    {
         send_json(out);
         free(out);
     }
@@ -78,7 +79,8 @@ static cJSON *fetch_get(cli_ctx_t *ctx, const char *path, int *http_status)
 
     memset(&resp, 0, sizeof(resp));
     if (cli_http_request(ctx->host, ctx->port, "GET", path, NULL,
-                         ctx->timeout, &resp, errbuf, sizeof(errbuf)) < 0) {
+                         ctx->timeout, &resp, errbuf, sizeof(errbuf)) < 0)
+    {
         fprintf(stderr, "mcp: http error: %s\n", errbuf);
         return NULL;
     }
@@ -86,7 +88,8 @@ static cJSON *fetch_get(cli_ctx_t *ctx, const char *path, int *http_status)
     if (http_status)
         *http_status = resp.status;
 
-    if (resp.status < 200 || resp.status >= 300) {
+    if (resp.status < 200 || resp.status >= 300)
+    {
         fprintf(stderr, "mcp: http %d: %s\n", resp.status,
             resp.body ? resp.body : "(empty)");
         cli_http_resp_free(&resp);
@@ -96,13 +99,15 @@ static cJSON *fetch_get(cli_ctx_t *ctx, const char *path, int *http_status)
     root = cJSON_Parse(resp.body);
     cli_http_resp_free(&resp);
 
-    if (!root) {
+    if (!root)
+    {
         fprintf(stderr, "mcp: json parse error\n");
         return NULL;
     }
 
     err_field = cJSON_GetObjectItemCaseSensitive(root, "error");
-    if (cJSON_IsString(err_field) && err_field->valuestring) {
+    if (cJSON_IsString(err_field) && err_field->valuestring)
+    {
         fprintf(stderr, "mcp: server error: %s\n", err_field->valuestring);
         cJSON_Delete(root);
         return NULL;
@@ -122,11 +127,13 @@ static char *mcp_resolve_device(cli_ctx_t *ctx, const char *id_or_name)
     /* Only try a direct by-id fetch when the token is uuid-shaped: the
      * /devices/{id} endpoint is keyed by uuid, so a name would just 404
      * (and an unescaped one with spaces would 400). Encode defensively. */
-    if (cli_is_uuid(id_or_name)) {
+    if (cli_is_uuid(id_or_name))
+    {
         cli_url_encode(id_or_name, enc, sizeof(enc));
         snprintf(path, sizeof(path), "/api/v1/devices/%s", enc);
         root = fetch_get(ctx, path, NULL);
-        if (root) {
+        if (root)
+        {
             const cJSON *idf = cJSON_GetObjectItemCaseSensitive(root, "id");
             if (cJSON_IsString(idf))
                 uuid = strdup(idf->valuestring);
@@ -139,12 +146,15 @@ static char *mcp_resolve_device(cli_ctx_t *ctx, const char *id_or_name)
     /* Fall back to name lookup. */
     {
         cJSON *devs = fetch_get(ctx, "/api/v1/devices", NULL);
-        if (devs && cJSON_IsArray(devs)) {
-            cJSON_ArrayForEach(item, devs) {
+        if (devs && cJSON_IsArray(devs))
+        {
+            cJSON_ArrayForEach(item, devs)
+            {
                 const cJSON *nf = cJSON_GetObjectItemCaseSensitive(item, "name");
                 const cJSON *idf = cJSON_GetObjectItemCaseSensitive(item, "id");
                 if (cJSON_IsString(nf) && cJSON_IsString(idf) &&
-                    strcasecmp(nf->valuestring, id_or_name) == 0) {
+                    strcasecmp(nf->valuestring, id_or_name) == 0)
+                {
                     uuid = strdup(idf->valuestring);
                     break;
                 }
@@ -165,7 +175,8 @@ static cJSON *handle_list_devices(cli_ctx_t *ctx)
     char *text;
     cJSON *result, *content, *item;
 
-    if (!devs) {
+    if (!devs)
+    {
         text = strdup("error: failed to fetch devices");
         result = cJSON_CreateObject();
         content = cJSON_CreateArray();
@@ -203,7 +214,8 @@ static cJSON *handle_query_device(cli_ctx_t *ctx, const cJSON *args)
     char *text;
     cJSON *result, *content, *item;
 
-    if (!cJSON_IsString(id_field) || !id_field->valuestring) {
+    if (!cJSON_IsString(id_field) || !id_field->valuestring)
+    {
         text = strdup("error: missing required parameter: id");
         result = cJSON_CreateObject();
         content = cJSON_CreateArray();
@@ -218,7 +230,8 @@ static cJSON *handle_query_device(cli_ctx_t *ctx, const cJSON *args)
     }
 
     uuid = mcp_resolve_device(ctx, id_field->valuestring);
-    if (!uuid) {
+    if (!uuid)
+    {
         text = malloc(256);
         snprintf(text, 256, "error: device not found: %s", id_field->valuestring);
         result = cJSON_CreateObject();
@@ -241,7 +254,8 @@ static cJSON *handle_query_device(cli_ctx_t *ctx, const cJSON *args)
     free(uuid);
 
     dev = fetch_get(ctx, path, NULL);
-    if (!dev) {
+    if (!dev)
+    {
         text = malloc(256);
         snprintf(text, 256, "error: device not found: %s", id_field->valuestring);
         result = cJSON_CreateObject();
@@ -280,7 +294,8 @@ static cJSON *handle_device_history(cli_ctx_t *ctx, const cJSON *args)
     char *text;
     cJSON *result, *content, *item;
 
-    if (!cJSON_IsString(id_field) || !id_field->valuestring) {
+    if (!cJSON_IsString(id_field) || !id_field->valuestring)
+    {
         text = strdup("error: missing required parameter: id");
         result = cJSON_CreateObject();
         content = cJSON_CreateArray();
@@ -295,7 +310,8 @@ static cJSON *handle_device_history(cli_ctx_t *ctx, const cJSON *args)
     }
 
     uuid = mcp_resolve_device(ctx, id_field->valuestring);
-    if (!uuid) {
+    if (!uuid)
+    {
         text = malloc(256);
         snprintf(text, 256, "error: device not found: %s", id_field->valuestring);
         result = cJSON_CreateObject();
@@ -318,7 +334,8 @@ static cJSON *handle_device_history(cli_ctx_t *ctx, const cJSON *args)
     free(uuid);
 
     hist = fetch_get(ctx, path, NULL);
-    if (!hist) {
+    if (!hist)
+    {
         text = malloc(256);
         snprintf(text, 256, "error: failed to fetch history for: %s",
             id_field->valuestring);
@@ -355,7 +372,8 @@ static cJSON *handle_status(cli_ctx_t *ctx)
     char *text;
     cJSON *result, *content, *item;
 
-    if (!status) {
+    if (!status)
+    {
         text = strdup("error: failed to fetch status");
         result = cJSON_CreateObject();
         content = cJSON_CreateArray();
@@ -473,13 +491,15 @@ static cJSON *dispatch_tool_call(cli_ctx_t *ctx, const cJSON *tool_name,
     if (strcmp(name, "list_devices") == 0)
         return handle_list_devices(ctx);
 
-    if (strcmp(name, "query_device") == 0) {
+    if (strcmp(name, "query_device") == 0)
+    {
         if (!args || !cJSON_IsObject(args))
             args = cJSON_CreateObject();
         return handle_query_device(ctx, args);
     }
 
-    if (strcmp(name, "device_history") == 0) {
+    if (strcmp(name, "device_history") == 0)
+    {
         if (!args || !cJSON_IsObject(args))
             args = cJSON_CreateObject();
         return handle_device_history(ctx, args);
@@ -535,7 +555,8 @@ int mcp_run(cli_ctx_t *ctx)
 
     fprintf(stderr, "mcp: starting on stdio\n");
 
-    while ((len = getline(&line, &cap, stdin)) > 0) {
+    while ((len = getline(&line, &cap, stdin)) > 0)
+    {
         cJSON *req;
         const cJSON *method, *id_field, *params;
         const char *m;
@@ -547,7 +568,8 @@ int mcp_run(cli_ctx_t *ctx)
             continue;
 
         req = cJSON_Parse(line);
-        if (!req) {
+        if (!req)
+        {
             fprintf(stderr, "mcp: parse error from: %.*s\n", (int)len, line);
             send_env(make_error(NULL, -32700, "Parse error"));
             continue;
@@ -559,7 +581,8 @@ int mcp_run(cli_ctx_t *ctx)
         /* A JSON-RPC request with no "id" is a notification: never reply. */
         is_notification = (id_field == NULL);
 
-        if (!cJSON_IsString(method) || !method->valuestring) {
+        if (!cJSON_IsString(method) || !method->valuestring)
+        {
             fprintf(stderr, "mcp: invalid request (no method)\n");
             if (!is_notification)
                 send_env(make_error(id_field, -32600, "Invalid request"));
@@ -568,33 +591,43 @@ int mcp_run(cli_ctx_t *ctx)
         }
         m = method->valuestring;
 
-        if (strcmp(m, "initialize") == 0) {
+        if (strcmp(m, "initialize") == 0)
+        {
             cJSON *result = handle_initialize(
                 params && cJSON_IsObject(params) ? params : NULL);
             if (!is_notification)
                 send_env(make_resp(id_field, result));
             else
                 cJSON_Delete(result);
-        } else if (strcmp(m, "notifications/initialized") == 0) {
+        }
+        else if (strcmp(m, "notifications/initialized") == 0)
+        {
             fprintf(stderr, "mcp: initialized notification\n");
-        } else if (strcmp(m, "ping") == 0) {
+        }
+        else if (strcmp(m, "ping") == 0)
+        {
             cJSON *result = handle_ping();
             if (!is_notification)
                 send_env(make_resp(id_field, result));
             else
                 cJSON_Delete(result);
-        } else if (strcmp(m, "tools/list") == 0) {
+        }
+        else if (strcmp(m, "tools/list") == 0)
+        {
             cJSON *result = cJSON_CreateObject();
             cJSON_AddItemToObject(result, "tools", build_tools_list());
             if (!is_notification)
                 send_env(make_resp(id_field, result));
             else
                 cJSON_Delete(result);
-        } else if (strcmp(m, "tools/call") == 0) {
+        }
+        else if (strcmp(m, "tools/call") == 0)
+        {
             const cJSON *tool_name, *tool_args;
             cJSON *tool_result;
 
-            if (!params || !cJSON_IsObject(params)) {
+            if (!params || !cJSON_IsObject(params))
+            {
                 if (!is_notification)
                     send_env(make_error(id_field, -32602, "Invalid params"));
                 cJSON_Delete(req);
@@ -602,7 +635,8 @@ int mcp_run(cli_ctx_t *ctx)
             }
             tool_name = cJSON_GetObjectItemCaseSensitive(params, "name");
             tool_args = cJSON_GetObjectItemCaseSensitive(params, "arguments");
-            if (!cJSON_IsString(tool_name) || !tool_name->valuestring) {
+            if (!cJSON_IsString(tool_name) || !tool_name->valuestring)
+            {
                 if (!is_notification)
                     send_env(make_error(id_field, -32602, "Invalid params"));
                 cJSON_Delete(req);
@@ -612,18 +646,25 @@ int mcp_run(cli_ctx_t *ctx)
             /* dispatch_tool_call returns a ready {content, isError} object,
              * which is exactly the tools/call result shape. */
             tool_result = dispatch_tool_call(ctx, tool_name, tool_args);
-            if (!tool_result) {
+            if (!tool_result)
+            {
                 char msg[256];
                 snprintf(msg, sizeof(msg), "unknown tool: %s",
                          tool_name->valuestring);
                 if (!is_notification)
                     send_env(make_error(id_field, -32602, msg));
-            } else if (!is_notification) {
+            }
+            else if (!is_notification)
+            {
                 send_env(make_resp(id_field, tool_result));
-            } else {
+            }
+            else
+            {
                 cJSON_Delete(tool_result);
             }
-        } else {
+        }
+        else
+        {
             char msg[256];
             snprintf(msg, sizeof(msg), "Method not found: %s", m);
             if (!is_notification)

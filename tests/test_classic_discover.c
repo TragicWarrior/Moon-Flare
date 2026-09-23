@@ -28,7 +28,8 @@ static int g_nkids;
 static void stop_kids(void)
 {
     int i;
-    for (i = 0; i < g_nkids; i++) {
+    for (i = 0; i < g_nkids; i++)
+    {
         if (g_kids[i] <= 0)
             continue;
         kill(g_kids[i], SIGTERM);
@@ -53,7 +54,8 @@ static int spawn_fake(const char *bin, const char *name_reg)
     child = fork();
     if (child < 0)
         exit(1);
-    if (child == 0) {
+    if (child == 0)
+    {
         dup2(sp[1], STDOUT_FILENO);
         close(sp[0]);
         close(sp[1]);
@@ -66,11 +68,13 @@ static int spawn_fake(const char *bin, const char *name_reg)
     close(sp[1]);
     g_kids[g_nkids++] = child;
     fp = fdopen(sp[0], "r");
-    if (!fp || !fgets(line, sizeof(line), fp)) {
+    if (!fp || !fgets(line, sizeof(line), fp))
+    {
         fprintf(stderr, "FAIL: no listen line\n");
         exit(1);
     }
-    if (sscanf(line, "fake_classic: listening on 127.0.0.1:%u", &port) != 1) {
+    if (sscanf(line, "fake_classic: listening on 127.0.0.1:%u", &port) != 1)
+    {
         fprintf(stderr, "FAIL: parse %s", line);
         exit(1);
     }
@@ -94,11 +98,13 @@ static int listen_loopback(int *port_out)
     a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     a.sin_port = 0;
     if (bind(fd, (struct sockaddr *)&a, sizeof(a)) != 0 ||
-        listen(fd, 16) != 0) {
+        listen(fd, 16) != 0)
+    {
         close(fd);
         return -1;
     }
-    if (getsockname(fd, (struct sockaddr *)&a, &alen) != 0) {
+    if (getsockname(fd, (struct sockaddr *)&a, &alen) != 0)
+    {
         close(fd);
         return -1;
     }
@@ -114,7 +120,8 @@ static int decoy_accepted(int fd)
     struct sockaddr_in a;
     socklen_t n = (socklen_t)sizeof(a);
     int c = accept(fd, (struct sockaddr *)&a, &n);
-    if (c >= 0) {
+    if (c >= 0)
+    {
         close(c);
         return 1;
     }
@@ -130,7 +137,8 @@ static int count_probe_fds(const mf_plugin_ops_t *ops, void *job)
     ops->probe_prepare_fds(job, &r, &w, &maxfd);
     if (maxfd < 0)
         return 0;
-    for (i = 0; i <= maxfd; i++) {
+    for (i = 0; i <= maxfd; i++)
+    {
         if (FD_ISSET(i, &r) || FD_ISSET(i, &w))
             n++;
     }
@@ -143,7 +151,8 @@ static int drive_probe(const mf_plugin_ops_t *ops, void *job, int max_ms,
     int waited = 0;
     if (max_if)
         *max_if = count_probe_fds(ops, job);
-    while (waited <= max_ms) {
+    while (waited <= max_ms)
+    {
         fd_set r, w;
         int maxfd = -1, nfd, to = 50;
         mf_step_t st;
@@ -153,20 +162,25 @@ static int drive_probe(const mf_plugin_ops_t *ops, void *job, int max_ms,
         FD_ZERO(&w);
         ops->probe_prepare_fds(job, &r, &w, &maxfd);
         nfd = 0;
-        if (maxfd >= 0) {
+        if (maxfd >= 0)
+        {
             int i;
-            for (i = 0; i <= maxfd; i++) {
+            for (i = 0; i <= maxfd; i++)
+            {
                 if (FD_ISSET(i, &r) || FD_ISSET(i, &w))
                     nfd++;
             }
         }
         if (max_if && nfd > *max_if)
             *max_if = nfd;
-        if (maxfd >= 0) {
+        if (maxfd >= 0)
+        {
             tv.tv_sec = 0;
             tv.tv_usec = (suseconds_t)to * 1000;
             (void)select(maxfd + 1, &r, &w, NULL, &tv);
-        } else {
+        }
+        else
+        {
             usleep((useconds_t)to * 1000);
         }
         waited += to;
@@ -190,18 +204,21 @@ static const mf_plugin_ops_t *load_ops(const char *so_path, void **dl_out)
     size_t n;
 
     dl = dlopen(so_path, RTLD_NOW);
-    if (!dl) {
+    if (!dl)
+    {
         fprintf(stderr, "FAIL: dlopen %s: %s\n", so_path, dlerror());
         return NULL;
     }
     entries = (size_t (*)(const mf_plugin_ops_t **))dlsym(dl, "mf_plugin_entries");
-    if (!entries) {
+    if (!entries)
+    {
         fprintf(stderr, "FAIL: missing mf_plugin_entries\n");
         dlclose(dl);
         return NULL;
     }
     n = entries(&ops);
-    if (n != 1 || !ops) {
+    if (n != 1 || !ops)
+    {
         fprintf(stderr, "FAIL: entries n=%zu\n", n);
         dlclose(dl);
         return NULL;
@@ -233,7 +250,8 @@ int main(int argc, char **argv)
     char cand[512];
     size_t off;
 
-    if (argc < 3) {
+    if (argc < 3)
+    {
         fprintf(stderr, "usage: %s fake_classic libmf_charger_classic.so\n",
                 argv[0]);
         return 2;
@@ -333,7 +351,8 @@ int main(int argc, char **argv)
     /* 6. ≥9 candidates never exceed 8 in-flight */
     off = 0;
     cand[0] = '\0';
-    for (i = 0; i < 9; i++) {
+    for (i = 0; i < 9; i++)
+    {
         stall_fd[i] = listen_loopback(&stall[i]);
         CHECK(stall_fd[i] >= 0, "stall listen");
         off += (size_t)snprintf(cand + off, sizeof(cand) - off, "%s\"127.0.0.1:%d\"",
@@ -365,7 +384,8 @@ int main(int argc, char **argv)
     close(decoy_fd);
     dlclose(dl);
     stop_kids();
-    if (g_fail) {
+    if (g_fail)
+    {
         fprintf(stderr, "%d check(s) failed\n", g_fail);
         return 1;
     }

@@ -57,9 +57,12 @@ void mf_log(int prio, const char *fmt, ...)
     va_start(ap, fmt);
     vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
-    if (g_foreground) {
+    if (g_foreground)
+    {
         fprintf(stderr, "%s\n", buf);
-    } else {
+    }
+    else
+    {
         syslog(prio, "%s", buf);
     }
 }
@@ -89,7 +92,8 @@ static void on_quit(int sig)
 static int parse_listen(const char *spec, char *host, size_t hostsz, int *port)
 {
     const char *colon = strrchr(spec, ':');
-    if (!colon) {
+    if (!colon)
+    {
         int n = snprintf(host, hostsz, "0.0.0.0");
         if (n < 0 || (size_t)n >= hostsz) return -1;
         *port = atoi(spec);
@@ -107,7 +111,8 @@ static int listen_tcp(const char *spec)
 {
     char host[128];
     int port = 0;
-    if (parse_listen(spec, host, sizeof(host), &port) < 0 || port <= 0 || port > 65535) {
+    if (parse_listen(spec, host, sizeof(host), &port) < 0 || port <= 0 || port > 65535)
+    {
         LOG_E("invalid --listen: %s", spec);
         return -1;
     }
@@ -124,27 +129,31 @@ static int listen_tcp(const char *spec)
 
     struct addrinfo *ai = NULL;
     int rc = getaddrinfo(host[0] ? host : NULL, portstr, &hints, &ai);
-    if (rc != 0) {
+    if (rc != 0)
+    {
         LOG_E("getaddrinfo(%s,%d): %s", host, port, gai_strerror(rc));
         return -1;
     }
 
     int fd = -1;
-    for (struct addrinfo *p = ai; p; p = p->ai_next) {
+    for (struct addrinfo *p = ai; p; p = p->ai_next)
+    {
         fd = socket(p->ai_family,
                     p->ai_socktype | SOCK_NONBLOCK | SOCK_CLOEXEC,
                     p->ai_protocol);
         if (fd < 0) continue;
         int one = 1;
         (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
-        if (bind(fd, p->ai_addr, p->ai_addrlen) == 0) {
+        if (bind(fd, p->ai_addr, p->ai_addrlen) == 0)
+        {
             if (listen(fd, 16) == 0) break;
         }
         close(fd);
         fd = -1;
     }
     freeaddrinfo(ai);
-    if (fd < 0) {
+    if (fd < 0)
+    {
         LOG_E("listen on %s:%d failed: %s", host, port, strerror(errno));
         return -1;
     }
@@ -185,30 +194,48 @@ int main(int argc, char **argv)
     const char *plugin_dir = NULL;
     double http_idle_s = MF_HTTP_IDLE_S;
 
-    for (int i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "--listen") && i + 1 < argc) {
+    for (int i = 1; i < argc; i++)
+    {
+        if (!strcmp(argv[i], "--listen") && i + 1 < argc)
+        {
             listen_spec = argv[++i];
             listen_from_cli = 1;
-        } else if (!strcmp(argv[i], "--config") && i + 1 < argc) {
+        }
+        else if (!strcmp(argv[i], "--config") && i + 1 < argc)
+        {
             config_path = argv[++i];
-        } else if (!strcmp(argv[i], "--plugin-dir") && i + 1 < argc) {
+        }
+        else if (!strcmp(argv[i], "--plugin-dir") && i + 1 < argc)
+        {
             plugin_dir = argv[++i];
-        } else if (!strcmp(argv[i], "--http-idle-s") && i + 1 < argc) {
+        }
+        else if (!strcmp(argv[i], "--http-idle-s") && i + 1 < argc)
+        {
             http_idle_s = atof(argv[++i]);
             if (http_idle_s <= 0.0)
                 http_idle_s = MF_HTTP_IDLE_S;
-        } else if (!strncmp(argv[i], "--http-idle-s=", 14)) {
+        }
+        else if (!strncmp(argv[i], "--http-idle-s=", 14))
+        {
             http_idle_s = atof(argv[i] + 14);
             if (http_idle_s <= 0.0)
                 http_idle_s = MF_HTTP_IDLE_S;
-        } else if (!strcmp(argv[i], "--foreground")) {
+        }
+        else if (!strcmp(argv[i], "--foreground"))
+        {
             g_foreground = true;
-        } else if (!strcmp(argv[i], "--debug")) {
+        }
+        else if (!strcmp(argv[i], "--debug"))
+        {
             g_debug = true;
-        } else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
+        }
+        else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h"))
+        {
             usage(argv[0]);
             return 0;
-        } else {
+        }
+        else
+        {
             fprintf(stderr, "unknown option: %s\n", argv[i]);
             usage(argv[0]);
             return 2;
@@ -235,8 +262,10 @@ int main(int argc, char **argv)
         return 1;
     snprintf(g_cfg.listen, sizeof(g_cfg.listen), "%s", listen_spec);
 
-    if (!g_foreground) {
-        if (daemon(0, 0) < 0) {
+    if (!g_foreground)
+    {
+        if (daemon(0, 0) < 0)
+        {
             LOG_E("daemon(): %s", strerror(errno));
             return 1;
         }
@@ -257,14 +286,16 @@ int main(int argc, char **argv)
         setenv("MF_GATT_BIN", g_cfg.gatt_bin, 1);
 
     g_pts = protothread_create();
-    if (!g_pts) {
+    if (!g_pts)
+    {
         LOG_E("protothread_create failed");
         close(g_listen_fd);
         return 1;
     }
 
     mf_devices_init(g_pts, &g_chan_tick, &g_quit, &g_plugins);
-    if (g_cfg.history.enabled && g_cfg.history.path[0]) {
+    if (g_cfg.history.enabled && g_cfg.history.path[0])
+    {
         if (mf_history_open(g_cfg.history.path) != 0)
             LOG_W("history: open %s failed", g_cfg.history.path);
         else
@@ -285,7 +316,8 @@ int main(int argc, char **argv)
     while (protothread_run(g_pts))
         ; /* park accept PT on g_chan_tick before the first select */
 
-    while (!g_quit) {
+    while (!g_quit)
+    {
         fd_set rset, wset;
         FD_ZERO(&rset);
         FD_ZERO(&wset);
@@ -299,7 +331,8 @@ int main(int argc, char **argv)
         tv.tv_usec = (suseconds_t)TICK_US;
 
         int n = select(maxfd + 1, &rset, &wset, NULL, &tv);
-        if (n < 0 && errno != EINTR) {
+        if (n < 0 && errno != EINTR)
+        {
             LOG_E("select: %s", strerror(errno));
             break;
         }

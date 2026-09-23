@@ -31,12 +31,14 @@ static int connect_timeout(const struct addrinfo *ai, double timeout_s,
     const struct addrinfo *rp;
     int last_errno = 0;
 
-    for (rp = ai; rp; rp = rp->ai_next) {
+    for (rp = ai; rp; rp = rp->ai_next)
+    {
         int fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
         int flags;
         int one = 1;
 
-        if (fd < 0) {
+        if (fd < 0)
+        {
             last_errno = errno;
             continue;
         }
@@ -45,8 +47,10 @@ static int connect_timeout(const struct addrinfo *ai, double timeout_s,
         if (flags >= 0)
             (void)fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 
-        if (connect(fd, rp->ai_addr, rp->ai_addrlen) != 0) {
-            if (errno != EINPROGRESS) {
+        if (connect(fd, rp->ai_addr, rp->ai_addrlen) != 0)
+        {
+            if (errno != EINPROGRESS)
+            {
                 last_errno = errno;
                 close(fd);
                 continue;
@@ -61,7 +65,8 @@ static int connect_timeout(const struct addrinfo *ai, double timeout_s,
                 FD_ZERO(&wfds);
                 FD_SET(fd, &wfds);
                 sel = select(fd + 1, NULL, &wfds, NULL, &tv);
-                if (sel <= 0) {
+                if (sel <= 0)
+                {
                     last_errno = (sel == 0) ? ETIMEDOUT : errno;
                     close(fd);
                     continue;
@@ -70,7 +75,8 @@ static int connect_timeout(const struct addrinfo *ai, double timeout_s,
                     int soerr = 0;
                     socklen_t sl = (socklen_t)sizeof(soerr);
                     if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &soerr, &sl) < 0 ||
-                        soerr != 0) {
+                        soerr != 0)
+                    {
                         last_errno = soerr ? soerr : errno;
                         close(fd);
                         continue;
@@ -120,7 +126,8 @@ int cli_http_request(const char *host, int port, const char *method,
     snprintf(portstr, sizeof(portstr), "%d", port);
     {
         int gai_rc = getaddrinfo(host, portstr, &hints, &ai);
-        if (gai_rc != 0) {
+        if (gai_rc != 0)
+        {
             if (got_errbuf)
                 snprintf(errbuf, errcap, "getaddrinfo: %s", gai_strerror(gai_rc));
             return -1;
@@ -137,7 +144,8 @@ int cli_http_request(const char *host, int port, const char *method,
     (void)setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
     /* Build request line + headers. */
-    if (json && json[0]) {
+    if (json && json[0])
+    {
         (void)snprintf(hdr, sizeof(hdr),
             "%s %s HTTP/1.1\r\n"
             "Host: %s\r\n"
@@ -146,7 +154,9 @@ int cli_http_request(const char *host, int port, const char *method,
             "Content-Length: %zu\r\n"
             "\r\n%s",
             method ? method : "GET", path, host, strlen(json), json);
-    } else {
+    }
+    else
+    {
         (void)snprintf(hdr, sizeof(hdr),
             "%s %s HTTP/1.1\r\n"
             "Host: %s\r\n"
@@ -159,9 +169,11 @@ int cli_http_request(const char *host, int port, const char *method,
     {
         size_t hlen = strlen(hdr);
         size_t sent = 0;
-        while (sent < hlen) {
+        while (sent < hlen)
+        {
             n = send(fd, hdr + sent, hlen - sent, MSG_NOSIGNAL);
-            if (n < 0) {
+            if (n < 0)
+            {
                 if (errno == EINTR)
                     continue;
                 if (got_errbuf)
@@ -177,12 +189,15 @@ int cli_http_request(const char *host, int port, const char *method,
         size_t hdr_end = 0;
         size_t buf_len = 0;
 
-        for (;;) {
+        for (;;)
+        {
             n = recv(fd, buf + buf_len, sizeof(buf) - buf_len - 1, 0);
-            if (n < 0) {
+            if (n < 0)
+            {
                 if (errno == EINTR)
                     continue;
-                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK)
+                {
                     if (got_errbuf)
                         snprintf(errbuf, errcap, "recv: timeout waiting for headers");
                     goto done;
@@ -196,21 +211,25 @@ int cli_http_request(const char *host, int port, const char *method,
             buf_len += (size_t)n;
             buf[buf_len] = '\0';
 
-            if (buf_len >= 4) {
+            if (buf_len >= 4)
+            {
                 char *sep = strstr(buf, "\r\n\r\n");
-                if (sep) {
+                if (sep)
+                {
                     hdr_end = (size_t)(sep - buf) + 4;
                     break;
                 }
             }
-            if (buf_len >= MAX_BODY) {
+            if (buf_len >= MAX_BODY)
+            {
                 if (got_errbuf)
                     snprintf(errbuf, errcap, "response too large");
                 goto done;
             }
         }
 
-        if (hdr_end == 0) {
+        if (hdr_end == 0)
+        {
             if (got_errbuf)
                 snprintf(errbuf, errcap, "no header terminator");
             goto done;
@@ -237,9 +256,11 @@ int cli_http_request(const char *host, int port, const char *method,
             {
                 size_t body_start = hdr_end;
                 size_t remaining = buf_len - body_start;
-                if (remaining > 0) {
+                if (remaining > 0)
+                {
                     body = (char *)malloc(remaining + 1);
-                    if (!body) {
+                    if (!body)
+                    {
                         if (got_errbuf)
                             snprintf(errbuf, errcap, "malloc");
                         goto done;
@@ -247,9 +268,12 @@ int cli_http_request(const char *host, int port, const char *method,
                     memcpy(body, buf + body_start, remaining);
                     body[remaining] = '\0';
                     body_len = remaining;
-                } else {
+                }
+                else
+                {
                     body = (char *)malloc(1);
-                    if (!body) {
+                    if (!body)
+                    {
                         if (got_errbuf)
                             snprintf(errbuf, errcap, "malloc");
                         goto done;
@@ -261,10 +285,12 @@ int cli_http_request(const char *host, int port, const char *method,
         }
 
         /* Read remaining body to EOF. */
-        for (;;) {
+        for (;;)
+        {
             char *new_body;
             n = recv(fd, buf, sizeof(buf), 0);
-            if (n < 0) {
+            if (n < 0)
+            {
                 if (errno == EINTR)
                     continue;
                 if (errno == EAGAIN || errno == EWOULDBLOCK)
@@ -274,7 +300,8 @@ int cli_http_request(const char *host, int port, const char *method,
             if (n == 0)
                 break;
             new_body = (char *)realloc(body, body_len + (size_t)n + 1);
-            if (!new_body) {
+            if (!new_body)
+            {
                 if (got_errbuf)
                     snprintf(errbuf, errcap, "realloc");
                 goto done;
@@ -283,7 +310,8 @@ int cli_http_request(const char *host, int port, const char *method,
             memcpy(body + body_len, buf, (size_t)n);
             body_len += (size_t)n;
             body[body_len] = '\0';
-            if (body_len >= MAX_BODY) {
+            if (body_len >= MAX_BODY)
+            {
                 if (got_errbuf)
                     snprintf(errbuf, errcap, "response too large");
                 goto done;
@@ -296,8 +324,10 @@ int cli_http_request(const char *host, int port, const char *method,
     rc = 0;
 
 done:
-    if (rc < 0) {
-        if (resp->body) {
+    if (rc < 0)
+    {
+        if (resp->body)
+        {
             free(resp->body);
             resp->body = NULL;
         }
@@ -331,16 +361,20 @@ int cli_url_encode(const char *in, char *out, size_t cap)
     if (!in || !out || cap == 0)
         return -1;
 
-    for (p = (const unsigned char *)in; *p; p++) {
+    for (p = (const unsigned char *)in; *p; p++)
+    {
         unsigned char c = *p;
         int unreserved = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
                          (c >= '0' && c <= '9') ||
                          c == '-' || c == '.' || c == '_' || c == '~';
-        if (unreserved) {
+        if (unreserved)
+        {
             if (o + 1 >= cap)
                 break;
             out[o++] = (char)c;
-        } else {
+        }
+        else
+        {
             if (o + 3 >= cap)
                 break;
             out[o++] = '%';
@@ -358,7 +392,8 @@ int cli_is_uuid(const char *s)
 
     if (!s)
         return 0;
-    for (; *s; s++) {
+    for (; *s; s++)
+    {
         if (*s == '-')
             continue;
         if (!isxdigit((unsigned char)*s))

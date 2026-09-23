@@ -83,7 +83,8 @@ static vk_label_t *mk_lab_c(int w)
 static vk_label_t *mk_lab_txt_c(int w, const char *txt)
 {
     vk_label_t *l = mk_lab_c(w);
-    if (txt) {
+    if (txt)
+    {
         vk_label_set_text(l, txt);
         vk_label_update(l);
     }
@@ -113,13 +114,17 @@ static void style_cell_idx(vk_label_t *l, int role)
 {
     if (!l)
         return;
-    if (role == 1) {
+    if (role == 1)
+    {
         vk_widget_set_colors(VK_WIDGET(l), COLOR_GREEN, COL_BG);
         vk_widget_set_attrs(VK_WIDGET(l), A_BOLD);
-    } else if (role == 2) {
+    } else if (role == 2)
+    {
         vk_widget_set_colors(VK_WIDGET(l), COLOR_YELLOW, COL_BG);
         vk_widget_set_attrs(VK_WIDGET(l), A_BOLD);
-    } else {
+    }
+    else
+    {
         vk_widget_set_colors(VK_WIDGET(l), COL_TEXT, COL_BG);
         vk_widget_set_attrs(VK_WIDGET(l), A_NORMAL);
     }
@@ -224,7 +229,8 @@ void mf_pack_init(void)
     g_fr_cells = vk_window_create(cols, 7);
     style_frame(g_fr_cells);
     vk_window_set_title(g_fr_cells, " Cells ");
-    for (i = 0; i < NCELL_SHOW; i++) {
+    for (i = 0; i < NCELL_SHOW; i++)
+    {
         g_mt_cell[i] = mk_meter_c(CELL_BAR_W, 2.80, 3.65);
         band_cell_v(g_mt_cell[i], 1.0);
         g_lb_cidx[i] = mk_lab_c(CELL_IDX_W);
@@ -233,7 +239,8 @@ void mf_pack_init(void)
         vk_box_set_homogeneous(g_cell_box[i], false);
     }
     g_lb_spread = mk_lab_c(iw);
-    for (r = 0; r < 4; r++) {
+    for (r = 0; r < 4; r++)
+    {
         g_cell_row[r] = vk_box_create(iw, 1, VK_BOX_HORIZONTAL, 4);
         vk_box_set_homogeneous(g_cell_row[r], false);
     }
@@ -250,7 +257,8 @@ void mf_pack_init(void)
         for (c = 0; c < 4; c++)
             vk_box_set_widget(g_cell_row[r], c, VK_WIDGET(g_cell_box[r * 4 + c]),
                               VK_INHERIT_COLOR);
-    for (i = 0; i < NCELL_SHOW; i++) {
+    for (i = 0; i < NCELL_SHOW; i++)
+    {
         vk_box_set_widget(g_cell_box[i], 0, VK_WIDGET(g_lb_cidx[i]), VK_INHERIT_COLOR);
         vk_box_set_widget(g_cell_box[i], 1, VK_WIDGET(g_lb_cell[i]), VK_INHERIT_COLOR);
         vk_box_set_widget(g_cell_box[i], 2, VK_WIDGET(g_mt_cell[i]), VK_INHERIT_COLOR);
@@ -514,11 +522,13 @@ void mf_pack_show(int charger)
 
         if (clientH < 3)
             clientH = 3;
-        if (g_cf_batt) {
+        if (g_cf_batt)
+        {
             vk_widget_resize(VK_WIDGET(g_cf_batt), cols, clientH + 1);
             vk_widget_resize(VK_WIDGET(g_cf_batt), cols, clientH);
         }
-        if (g_cf_chg) {
+        if (g_cf_chg)
+        {
             vk_widget_resize(VK_WIDGET(g_cf_chg), cols, clientH + 1);
             vk_widget_resize(VK_WIDGET(g_cf_chg), cols, clientH);
         }
@@ -526,7 +536,8 @@ void mf_pack_show(int charger)
            It is created at a fixed row and otherwise only repositioned on a
            resize event, so on a tall terminal opened directly it would sit
            inside the frame and punch through its left border. */
-        if (g_hints) {
+        if (g_hints)
+        {
             vk_widget_resize(VK_WIDGET(g_hints), cols, 1);
             vk_widget_move(VK_WIDGET(g_hints), 0, rows - 1);
         }
@@ -584,7 +595,8 @@ void mf_pack_show(int charger)
                 vk_progress_update(VK_PROGRESS(g_mt_pack));
                 vk_progress_update(VK_PROGRESS(g_mt_soc));
                 vk_progress_update(g_pr_cap);
-                for (i = 0; i < NCELL_SHOW; i++) {
+                for (i = 0; i < NCELL_SHOW; i++)
+                {
                     vk_widget_resize(VK_WIDGET(g_mt_cell[i]), mc, 1);
                     vk_progress_update(VK_PROGRESS(g_mt_cell[i]));
                 }
@@ -628,7 +640,8 @@ void mf_pack_show(int charger)
                     remaining space.  SOC interior = g_fr_soc height - 2 border.
                     g_soc_body fills that interior; g_pk_graph_row fills the
                     body below the 1-row top/bottom pads (like the charger). */
-                if (g_kind == 0 && g_soc_body && g_pk_graph) {
+                if (g_kind == 0 && g_soc_body && g_pk_graph)
+                {
                     int soc_h = clientH - 15;    /* box leftover: (clientH-2) - pack(6) - cells(7) */
                     int bodyH_soc, gh_soc;
 
@@ -678,13 +691,15 @@ void mf_pack_show(int charger)
         show_pack_widgets();
     g_visible = 1;
     pack_hints();
-    if (g_fr_pack) {
+    if (g_fr_pack)
+    {
         vk_box_update(g_pack_row0);
         vk_box_update(g_pack_row1);
         vk_box_update(g_pack_body);
         vk_window_update(g_fr_pack);
     }
-    if (g_fr_cells) {
+    if (g_fr_cells)
+    {
         for (i = 0; i < NCELL_SHOW; i++)
             vk_box_update(g_cell_box[i]);
         for (i = 0; i < 4; i++)
@@ -692,23 +707,29 @@ void mf_pack_show(int charger)
         vk_box_update(g_cells_body);
         vk_window_update(g_fr_cells);
     }
-    if (g_fr_charger) {
+    if (g_fr_charger)
+    {
         vk_box_update(g_cl_batt_row);
         vk_box_update(g_cl_watts_row);
         vk_box_update(g_cl_body);
         vk_window_update(g_fr_charger);
     }
-    if (g_fr_prod) {
+    if (g_fr_prod)
+    {
         vk_box_update(g_cl_graph_row);
         vk_box_update(g_prod_body);
         vk_window_update(g_fr_prod);
     }
-    if (g_kind) {
+    if (g_kind)
+    {
         vk_box_update(g_chg_box);
         if (g_cf_chg)
             vk_frame_update(g_cf_chg);
-    } else {
-        if (g_pk_graph) {
+    }
+    else
+    {
+        if (g_pk_graph)
+        {
             vk_box_update(g_pk_graph_row);
             vk_box_update(g_soc_body);
             vk_window_update(g_fr_soc);
@@ -741,9 +762,18 @@ void mf_pack_on_resize(void)
     mf_pack_show(g_kind);
 }
 
-int mf_pack_visible(void) { return g_visible; }
-int mf_pack_is_charger(void) { return g_kind; }
-int mf_pack_has_switch(void) { return g_has_switch; }
+int mf_pack_visible(void)
+{
+    return g_visible;
+}
+int mf_pack_is_charger(void)
+{
+    return g_kind;
+}
+int mf_pack_has_switch(void)
+{
+    return g_has_switch;
+}
 
 int mf_pack_switch_on(const char *key)
 {
@@ -764,21 +794,27 @@ static void fmt_interface(const char *ep, const char *driver,
     const char *kind = "unknown";
     const char *id = "";
 
-    if (ep && strncmp(ep, "ble:", 4) == 0) {
+    if (ep && strncmp(ep, "ble:", 4) == 0)
+    {
         kind = "bluetooth";
         id = ep + 4;
-    } else if (ep && strncmp(ep, "usb-id:", 7) == 0) {
+    } else if (ep && strncmp(ep, "usb-id:", 7) == 0)
+    {
         kind = "usb";
         id = ep + 7;
-    } else if (ep && strncmp(ep, "usb:", 4) == 0) {
+    } else if (ep && strncmp(ep, "usb:", 4) == 0)
+    {
         kind = "usb";
         id = ep + 4;
-    } else if (ep && strncmp(ep, "tcp:", 4) == 0) {
+    } else if (ep && strncmp(ep, "tcp:", 4) == 0)
+    {
         kind = "tcp";
         id = ep + 4;
-    } else if (ep && ep[0]) {
+    } else if (ep && ep[0])
+    {
         kind = ep;
-    } else if (driver && driver[0]) {
+    } else if (driver && driver[0])
+    {
         kind = driver;
     }
     if (id[0])
@@ -814,14 +850,16 @@ static void fmt_temps(cJSON *data, char *line, size_t cap, const char *fallback)
         return;
     temps = data ? cJSON_GetObjectItemCaseSensitive(data, "temperatures_c") : NULL;
     labels = data ? cJSON_GetObjectItemCaseSensitive(data, "temp_labels") : NULL;
-    if (!temps || !cJSON_IsArray(temps) || cJSON_GetArraySize(temps) < 1) {
+    if (!temps || !cJSON_IsArray(temps) || cJSON_GetArraySize(temps) < 1)
+    {
         snprintf(line, cap, "%s", fallback);
         return;
     }
     n = cJSON_GetArraySize(temps);
     nlab = (labels && cJSON_IsArray(labels)) ? cJSON_GetArraySize(labels) : 0;
     line[0] = '\0';
-    for (i = 0; i < n && off < (int)cap - 1; i++) {
+    for (i = 0; i < n && off < (int)cap - 1; i++)
+    {
         const char *lab;
         char piece[24];
         int m;
@@ -850,7 +888,8 @@ static int caps_switch(cJSON *root)
     if (!caps || !cJSON_IsArray(caps))
         return 0;
     n = cJSON_GetArraySize(caps);
-    for (i = 0; i < n; i++) {
+    for (i = 0; i < n; i++)
+    {
         cJSON *it = cJSON_GetArrayItem(caps, i);
         if (cJSON_IsString(it) && it->valuestring &&
             strstr(it->valuestring, "switch"))
@@ -975,7 +1014,8 @@ void mf_pack_set_history(const double *values, int count, double y_max,
 {
     if (count <= 0)
         return;
-    if (g_kind == 0 && g_pk_graph) {
+    if (g_kind == 0 && g_pk_graph)
+    {
         /* Battery view: SOC chart, always 0-100% y-range. */
         vk_graph_set_data(g_pk_graph, values, count);
         if (labels)
@@ -987,7 +1027,8 @@ void mf_pack_set_history(const double *values, int count, double y_max,
         vk_window_update(g_fr_soc);
         if (g_cf_batt)
             vk_frame_update(g_cf_batt);
-     } else if (g_cl_graph) {
+     } else if (g_cl_graph)
+     {
          /* Charger view: power chart, data-driven y-range. */
          vk_graph_set_data(g_cl_graph, values, count);
          if (labels)
@@ -1044,7 +1085,8 @@ void mf_pack_update(const char *json)
     }
     g_has_switch = caps_switch(root);
 
-    if (!g_kind) {
+    if (!g_kind)
+    {
         pack_v = jnum(data, "pack_voltage_v", 0);
         soc = jnum(data, "soc_pct", 0);
         cur = jnum(data, "current_a", 0);
@@ -1059,11 +1101,14 @@ void mf_pack_update(const char *json)
             band_cell_v(g_mt_pack, (double)ns);
             vk_progress_set_value(VK_PROGRESS(g_mt_pack), pack_v);
             vk_progress_set_value(VK_PROGRESS(g_mt_soc), soc);
-            if (full > 0) {
+            if (full > 0)
+            {
                 vk_progress_set_range(g_pr_cap, 0, full);
                 vk_progress_set_value(g_pr_cap, rem > 0 ? rem : 0);
                 snprintf(line, sizeof(line), " %.1f Ah", rem);
-            } else {
+            }
+            else
+            {
                 vk_progress_set_range(g_pr_cap, 0, 100);
                 vk_progress_set_value(g_pr_cap, jnum(data, "soh_pct", 0));
                 snprintf(line, sizeof(line), " SOH %.0f%%",
@@ -1090,7 +1135,8 @@ void mf_pack_update(const char *json)
         g_chg_on = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(data, "charge_mosfet_on"));
         g_dsg_on = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(data, "discharge_mosfet_on"));
         g_bal_on = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(data, "balancer_switch"));
-        if (g_has_switch) {
+        if (g_has_switch)
+        {
             double iba = jnum(data, "balance_current_a", 0);
             int n = snprintf(line, sizeof(line), "CHG %s  DSG %s  BAL %s",
                              g_chg_on ? "on" : "off",
@@ -1099,7 +1145,9 @@ void mf_pack_update(const char *json)
             if (n > 0 && iba != 0.0 && (size_t)n < sizeof(line))
                 snprintf(line + n, sizeof(line) - (size_t)n, "  %+.2f A", iba);
             vk_label_set_text(g_lb_mos, line);
-        } else {
+        }
+        else
+        {
             vk_label_set_text(g_lb_mos, "--");
         }
         vk_label_update(g_lb_mos);
@@ -1113,15 +1161,18 @@ void mf_pack_update(const char *json)
             int cbal[NCELL_SHOW];
             int spread;
 
-            for (i = 0; i < NCELL_SHOW; i++) {
+            for (i = 0; i < NCELL_SHOW; i++)
+            {
                 cv[i] = 0;
                 cbal[i] = 0;
-                if (i < ncell) {
+                if (i < ncell)
+                {
                     cJSON *cell = cJSON_GetArrayItem(cells, i);
                     cv[i] = jnum(cell, "voltage_v", 0);
                     cbal[i] = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(
                                                cell, "balancing"));
-                    if (cv[i] > 0) {
+                    if (cv[i] > 0)
+                    {
                         vsum += cv[i];
                         nv++;
                         if (cv[i] < vmin)
@@ -1132,7 +1183,8 @@ void mf_pack_update(const char *json)
                 }
             }
             spread = (nv > 1 && vmax > vmin);
-            for (i = 0; i < NCELL_SHOW; i++) {
+            for (i = 0; i < NCELL_SHOW; i++)
+            {
                 char idx[4], lab[12];
                 int role = 0;
 
@@ -1142,7 +1194,8 @@ void mf_pack_update(const char *json)
                              cbal[i] ? 'b' : ' ');
                 else
                     snprintf(lab, sizeof(lab), " --");
-                if (spread && cv[i] > 0) {
+                if (spread && cv[i] > 0)
+                {
                     if (cv[i] == vmax)
                         role = 1;
                     else if (cv[i] == vmin)
@@ -1174,7 +1227,8 @@ void mf_pack_update(const char *json)
             snprintf(line, sizeof(line), "dV %.0f mV", (vmax - vmin) * 1000.0);
         else
             snprintf(line, sizeof(line), "dV --");
-        if (ncell > NCELL_SHOW) {
+        if (ncell > NCELL_SHOW)
+        {
             char extra[32];
             snprintf(extra, sizeof(extra), "  +%d", ncell - NCELL_SHOW);
             strncat(line, extra, sizeof(line) - strlen(line) - 1);
@@ -1191,7 +1245,9 @@ void mf_pack_update(const char *json)
             vk_box_update(g_cell_row[i]);
         vk_box_update(g_cells_body);
         vk_window_update(g_fr_cells);
-    } else {
+    }
+    else
+    {
         double bv = jnum(data, "battery_voltage_v", 0);
         double w = jnum(data, "charging_watts", 0);
         vk_progress_set_value(VK_PROGRESS(g_mt_batt), bv);
@@ -1225,11 +1281,14 @@ void mf_pack_update(const char *json)
     /* Composite the freshly rendered windows up through the client frame to the
        screen.  The vk_window_update calls above only redraw onto the window
        canvases; without this the new content never reaches the frame. */
-    if (g_kind) {
+    if (g_kind)
+    {
         vk_box_update(g_chg_box);
         if (g_cf_chg)
             vk_frame_update(g_cf_chg);
-    } else {
+    }
+    else
+    {
         if (g_batt_box)
             vk_box_update(g_batt_box);
         if (g_cf_batt)
@@ -1281,12 +1340,14 @@ void mf_pack_shutdown(void)
     vk_box_destroy(g_pack_body);
     vk_widget_destroy(VK_WIDGET(g_fr_pack));
     vk_window_set_child(g_fr_cells, NULL, VK_INHERIT_NONE);
-    for (i = 0; i < NCELL_SHOW; i++) {
+    for (i = 0; i < NCELL_SHOW; i++)
+    {
         vk_box_set_widget(g_cell_box[i], 0, NULL, VK_INHERIT_NONE);
         vk_box_set_widget(g_cell_box[i], 1, NULL, VK_INHERIT_NONE);
         vk_box_set_widget(g_cell_box[i], 2, NULL, VK_INHERIT_NONE);
     }
-    for (i = 0; i < 4; i++) {
+    for (i = 0; i < 4; i++)
+    {
         vk_box_set_widget(g_cell_row[i], 0, NULL, VK_INHERIT_NONE);
         vk_box_set_widget(g_cell_row[i], 1, NULL, VK_INHERIT_NONE);
         vk_box_set_widget(g_cell_row[i], 2, NULL, VK_INHERIT_NONE);
@@ -1294,7 +1355,8 @@ void mf_pack_shutdown(void)
     }
     for (i = 0; i < 5; i++)
         vk_box_set_widget(g_cells_body, i, NULL, VK_INHERIT_NONE);
-    for (i = 0; i < NCELL_SHOW; i++) {
+    for (i = 0; i < NCELL_SHOW; i++)
+    {
         vk_widget_destroy(VK_WIDGET(g_lb_cidx[i]));
         vk_widget_destroy(VK_WIDGET(g_lb_cell[i]));
         vk_widget_destroy(VK_WIDGET(g_mt_cell[i]));
@@ -1308,7 +1370,8 @@ void mf_pack_shutdown(void)
     vk_widget_destroy(VK_WIDGET(g_fr_cells));
     /* SOC history teardown: vacate slots, destroy leaves (pads/graph),
        then boxes, then the window — leaves before boxes. */
-    if (g_soc_body) {
+    if (g_soc_body)
+    {
         vk_box_set_widget(g_soc_body, 0, NULL, VK_INHERIT_NONE);
         vk_box_set_widget(g_soc_body, 1, NULL, VK_INHERIT_NONE);
         vk_box_set_widget(g_soc_body, 2, NULL, VK_INHERIT_NONE);

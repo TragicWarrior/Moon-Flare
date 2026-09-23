@@ -108,10 +108,29 @@ static void wallpaper(vk_screen_t *s, int id, WINDOW *c)
     werase(c);
 }
 
-vk_screen_t *mf_ui_screen(void) { return g_screen; }
-int mf_ui_cols(void) { return COLS > 0 ? COLS : 80; }
-int mf_ui_rows(void) { return LINES > 0 ? LINES : 25; }
-void mf_ui_quit(void) { g_quit = 1; }
+vk_screen_t *
+mf_ui_screen(void)
+{
+    return g_screen;
+}
+
+int
+mf_ui_cols(void)
+{
+    return COLS > 0 ? COLS : 80;
+}
+
+int
+mf_ui_rows(void)
+{
+    return LINES > 0 ? LINES : 25;
+}
+
+void
+mf_ui_quit(void)
+{
+    g_quit = 1;
+}
 
 void mf_ui_attach(vk_widget_t *w, int x, int y)
 {
@@ -132,7 +151,11 @@ vk_frame_t *mf_ui_make_client_frame(int w, int h)
     return f;
 }
 
-void mf_ui_front_clear(void) { g_nfront = 0; }
+void
+mf_ui_front_clear(void)
+{
+    g_nfront = 0;
+}
 
 void mf_ui_front_push(vk_widget_t *w)
 {
@@ -188,10 +211,13 @@ static void style_set_input(vk_input_t *in, int focused)
 {
     if (!in)
         return;
-    if (focused) {
+    if (focused)
+    {
         vk_widget_set_colors(VK_WIDGET(in), COLOR_WHITE, COL_MENU);
         vk_widget_set_attrs(VK_WIDGET(in), A_BOLD);
-    } else {
+    }
+    else
+    {
         vk_widget_set_colors(VK_WIDGET(in), COL_TEXT, COL_MENU);
         vk_widget_set_attrs(VK_WIDGET(in), A_NORMAL);
     }
@@ -204,8 +230,10 @@ static void paint_settings(void)
 {
     int pass, i;
 
-    for (pass = 0; pass < 2; pass++) {
-        for (i = 0; i < 1; i++) {
+    for (pass = 0; pass < 2; pass++)
+    {
+        for (i = 0; i < 1; i++)
+        {
             if (g_set_lab[i])
                 vk_label_update(g_set_lab[i]);
             if (g_set_hint[i])
@@ -274,81 +302,101 @@ static void close_settings(void)
     box_vacate(g_set_inner);
     box_vacate(g_set_form);
     box_vacate(g_set_bar);
-    for (i = 0; i < 1; i++) {
-        if (g_set_row[i]) {
+    for (i = 0; i < 1; i++)
+    {
+        if (g_set_row[i])
+        {
             vk_grid_destroy(g_set_row[i]);
             g_set_row[i] = NULL;
         }
-        if (g_set_fields[i]) {
+        if (g_set_fields[i])
+        {
             vk_grid_destroy(g_set_fields[i]);
             g_set_fields[i] = NULL;
         }
-        if (g_set_in[i]) {
+        if (g_set_in[i])
+        {
             vk_input_destroy(g_set_in[i]);
             g_set_in[i] = NULL;
         }
-        if (g_set_lab[i]) {
+        if (g_set_lab[i])
+        {
             vk_label_destroy(g_set_lab[i]);
             g_set_lab[i] = NULL;
         }
-        if (g_set_hint[i]) {
+        if (g_set_hint[i])
+        {
             vk_label_destroy(g_set_hint[i]);
             g_set_hint[i] = NULL;
         }
     }
-    if (g_set_ok) {
+    if (g_set_ok)
+    {
         vk_button_destroy(g_set_ok);
         g_set_ok = NULL;
     }
-    if (g_set_cancel) {
+    if (g_set_cancel)
+    {
         vk_button_destroy(g_set_cancel);
         g_set_cancel = NULL;
     }
-    if (g_set_fill) {
+    if (g_set_fill)
+    {
         vk_filler_destroy(g_set_fill);
         g_set_fill = NULL;
     }
-    if (g_set_form_fill) {
+    if (g_set_form_fill)
+    {
         vk_filler_destroy(g_set_form_fill);
         g_set_form_fill = NULL;
     }
-    if (g_set_bar) {
+    if (g_set_bar)
+    {
         vk_box_destroy(g_set_bar);
         g_set_bar = NULL;
     }
-    if (g_set_form) {
+    if (g_set_form)
+    {
         vk_box_destroy(g_set_form);
         g_set_form = NULL;
     }
-    if (g_set_inner) {
+    if (g_set_inner)
+    {
         vk_box_destroy(g_set_inner);
         g_set_inner = NULL;
     }
-    if (g_set_pad_left) {
+    if (g_set_pad_left)
+    {
         vk_filler_destroy(g_set_pad_left);
         g_set_pad_left = NULL;
     }
-    if (g_set_pad_right) {
+    if (g_set_pad_right)
+    {
         vk_filler_destroy(g_set_pad_right);
         g_set_pad_right = NULL;
     }
-    if (g_set_mid) {
+    if (g_set_mid)
+    {
         vk_box_destroy(g_set_mid);
         g_set_mid = NULL;
     }
-    if (g_set_pad_top) {
+    if (g_set_pad_top)
+    {
         vk_filler_destroy(g_set_pad_top);
         g_set_pad_top = NULL;
     }
-    if (g_set_pad_bot) {
+    if (g_set_pad_bot)
+    {
         vk_filler_destroy(g_set_pad_bot);
         g_set_pad_bot = NULL;
     }
-    if (g_set_vbox) {
+    if (g_set_vbox)
+    {
         vk_box_destroy(g_set_vbox);
         g_set_vbox = NULL;
     }
-    if (g_set_win) {
+    if (g_set_win)
+    {
         vk_screen_detach_widget(g_screen, 0, VK_WIDGET(g_set_win));
         vk_window_destroy(g_set_win);
         g_set_win = NULL;
@@ -427,7 +475,8 @@ void mf_ui_open_settings(void)
     {
         int slack = (ih - 5) - 3;
 
-        if (slack > 0) {
+        if (slack > 0)
+        {
             uint32_t st;
 
             g_set_form_fill = vk_filler_create();
@@ -510,25 +559,30 @@ static int settings_key(wint_t c)
     vk_input_t *in;
     if (!g_settings_open)
         return 0;
-    if (c == 27 || c == KEY_EXIT || c == KEY_CANCEL) {
+    if (c == 27 || c == KEY_EXIT || c == KEY_CANCEL)
+    {
         close_settings();
         return 1;
     }
-    if (c == '\t') {
+    if (c == '\t')
+    {
         if (g_set_focus == 0)
             vk_input_show_cursor(g_set_in[0], false);
         g_set_focus = (g_set_focus + 1) % 3;
-        if (g_set_focus == 0) {
+        if (g_set_focus == 0)
+        {
             vk_input_show_cursor(g_set_in[0], true);
             vk_input_update(g_set_in[0]);
         }
-        if (g_set_ok) {
+        if (g_set_ok)
+        {
             vk_widget_set_colors(VK_WIDGET(g_set_ok),
                                  g_set_focus == 1 ? COLOR_YELLOW : COL_TEXT,
                                  COL_MENU);
             vk_button_update(g_set_ok);
         }
-        if (g_set_cancel) {
+        if (g_set_cancel)
+        {
             vk_widget_set_colors(VK_WIDGET(g_set_cancel),
                                  g_set_focus == 2 ? COLOR_YELLOW : COL_TEXT,
                                  COL_MENU);
@@ -537,7 +591,8 @@ static int settings_key(wint_t c)
         paint_settings();
         return 1;
     }
-    if (c == '\n' || c == KEY_ENTER) {
+    if (c == '\n' || c == KEY_ENTER)
+    {
         if (g_set_focus == 2)
             close_settings();
         else
@@ -547,22 +602,26 @@ static int settings_key(wint_t c)
     if (g_set_focus >= 1)
         return 1;
     in = g_set_in[g_set_focus];
-    if (c == KEY_BACKSPACE || c == 127) {
+    if (c == KEY_BACKSPACE || c == 127)
+    {
         vk_input_backspace(in);
         paint_settings();
         return 1;
     }
-    if (c == KEY_LEFT) {
+    if (c == KEY_LEFT)
+    {
         vk_input_move_cursor(in, -1);
         paint_settings();
         return 1;
     }
-    if (c == KEY_RIGHT) {
+    if (c == KEY_RIGHT)
+    {
         vk_input_move_cursor(in, 1);
         paint_settings();
         return 1;
     }
-    if (c >= 32 && c < 127) {
+    if (c >= 32 && c < 127)
+    {
         vk_input_insert_char(in, (int)c);
         paint_settings();
         return 1;
@@ -572,7 +631,8 @@ static int settings_key(wint_t c)
 
 static void close_help(void)
 {
-    if (g_help_win) {
+    if (g_help_win)
+    {
         vk_screen_detach_widget(g_screen, 0, VK_WIDGET(g_help_win));
         vk_window_destroy(g_help_win);
         g_help_win = NULL;
@@ -596,10 +656,13 @@ void mf_ui_show_help(int about)
     vk_widget_set_colors(VK_WIDGET(g_help_win), COL_TEXT, COL_MENU);
     lb = vk_listbox_create(w - 2, h - 2);
     vk_widget_set_colors(VK_WIDGET(lb), COL_TEXT, COL_MENU);
-    if (about) {
+    if (about)
+    {
         vk_listbox_add_item(lb, "Moon Flare TUI 0.1.0", NULL, NULL);
         vk_listbox_add_item(lb, "libviper/VDK  80x25", NULL, NULL);
-    } else {
+    }
+    else
+    {
         vk_listbox_add_item(lb, "F10  menubar", NULL, NULL);
         vk_listbox_add_item(lb, "q    quit", NULL, NULL);
         vk_listbox_add_item(lb, "Esc  close dialog", NULL, NULL);
@@ -622,23 +685,28 @@ static void close_connections(void)
     if (g_conn_win)
         vk_window_set_child(g_conn_win, NULL, VK_INHERIT_NONE);
     box_vacate(g_conn_vbox);
-    if (g_conn_list) {
+    if (g_conn_list)
+    {
         vk_listbox_destroy(g_conn_list);
         g_conn_list = NULL;
     }
-    if (g_conn_hint) {
+    if (g_conn_hint)
+    {
         vk_label_destroy(g_conn_hint);
         g_conn_hint = NULL;
     }
-    if (g_conn_spacer) {
+    if (g_conn_spacer)
+    {
         vk_label_destroy(g_conn_spacer);
         g_conn_spacer = NULL;
     }
-    if (g_conn_vbox) {
+    if (g_conn_vbox)
+    {
         vk_box_destroy(g_conn_vbox);
         g_conn_vbox = NULL;
     }
-    if (g_conn_win) {
+    if (g_conn_win)
+    {
         vk_screen_detach_widget(g_screen, 0, VK_WIDGET(g_conn_win));
         vk_window_destroy(g_conn_win);
         g_conn_win = NULL;
@@ -705,7 +773,8 @@ void mf_ui_open_connections(void)
 
     /* Inner width = widest of the rows, the key legend, or a floor. */
     inner_w = (int)strlen(hint);
-    for (i = 0; i < n; i++) {
+    for (i = 0; i < n; i++)
+    {
         conn_row_text(i, line, sizeof(line));
         len = (int)strlen(line);
         if (len > inner_w)
@@ -748,7 +817,8 @@ void mf_ui_open_connections(void)
     vk_widget_set_colors(VK_WIDGET(lb), COLOR_WHITE, COLOR_CYAN);
     vk_widget_set_attrs(VK_WIDGET(lb), A_BOLD);
     vk_widget_set_expand(VK_WIDGET(lb));
-    for (i = 0; i < n; i++) {
+    for (i = 0; i < n; i++)
+    {
         conn_row_text(i, line, sizeof(line));
         vk_listbox_add_item(lb, line, NULL, (void *)(intptr_t)i);
     }
@@ -791,13 +861,16 @@ static int connections_key(wint_t c)
     if (!g_connections_open)
         return 0;
 
-    if (c == 27 || c == KEY_EXIT || c == KEY_CANCEL) {
+    if (c == 27 || c == KEY_EXIT || c == KEY_CANCEL)
+    {
         close_connections();
         return 1;
     }
 
-    if (c == KEY_UP || c == KEY_BTAB) {
-        if (g_conn_sel > 0) {
+    if (c == KEY_UP || c == KEY_BTAB)
+    {
+        if (g_conn_sel > 0)
+        {
             g_conn_sel--;
             vk_listbox_set_curr(g_conn_list, g_conn_sel);
             vk_listbox_update(g_conn_list);
@@ -807,8 +880,10 @@ static int connections_key(wint_t c)
         return 1;
     }
 
-    if (c == KEY_DOWN || c == '\t') {
-        if (g_conn_sel < g_tui_cfg.n_profiles - 1) {
+    if (c == KEY_DOWN || c == '\t')
+    {
+        if (g_conn_sel < g_tui_cfg.n_profiles - 1)
+        {
             g_conn_sel++;
             vk_listbox_set_curr(g_conn_list, g_conn_sel);
             vk_listbox_update(g_conn_list);
@@ -818,9 +893,11 @@ static int connections_key(wint_t c)
         return 1;
     }
 
-    if (c == '\n' || c == KEY_ENTER) {
+    if (c == '\n' || c == KEY_ENTER)
+    {
         /* Connect now: resolve selected profile, set globals, reconnect */
-        if (g_conn_sel >= 0 && g_conn_sel < g_tui_cfg.n_profiles) {
+        if (g_conn_sel >= 0 && g_conn_sel < g_tui_cfg.n_profiles)
+        {
             const mf_conn_profile_t *p = &g_tui_cfg.profiles[g_conn_sel];
             snprintf(g_host, sizeof(g_host), "%.127s", p->host);
             g_port = p->port;
@@ -833,9 +910,11 @@ static int connections_key(wint_t c)
         return 1;
     }
 
-    if (c == 'd' || c == 'D') {
+    if (c == 'd' || c == 'D')
+    {
         /* Set as default */
-        if (g_conn_sel >= 0 && g_conn_sel < g_tui_cfg.n_profiles) {
+        if (g_conn_sel >= 0 && g_conn_sel < g_tui_cfg.n_profiles)
+        {
             strncpy(g_tui_cfg.default_profile,
                     g_tui_cfg.profiles[g_conn_sel].name,
                     sizeof(g_tui_cfg.default_profile) - 1);
@@ -845,38 +924,47 @@ static int connections_key(wint_t c)
         return 1;
     }
 
-    if (c == 'a' || c == 'A') {
+    if (c == 'a' || c == 'A')
+    {
         /* Add new profile */
         open_editor(-1);
         return 1;
     }
 
-    if (c == 'e' || c == 'E') {
+    if (c == 'e' || c == 'E')
+    {
         /* Edit selected profile */
         if (g_conn_sel >= 0 && g_conn_sel < g_tui_cfg.n_profiles)
             open_editor(g_conn_sel);
         return 1;
     }
 
-    if (c == 'x' || c == 'X' || c == KEY_DC) {
+    if (c == 'x' || c == 'X' || c == KEY_DC)
+    {
         /* Delete selected profile */
-        if (g_tui_cfg.n_profiles <= 1) {
+        if (g_tui_cfg.n_profiles <= 1)
+        {
             mf_ui_refresh();
             return 1;
         }
-        if (g_conn_sel >= 0 && g_conn_sel < g_tui_cfg.n_profiles) {
+        if (g_conn_sel >= 0 && g_conn_sel < g_tui_cfg.n_profiles)
+        {
             /* If deleting the default, reassign to first remaining */
             if (g_tui_cfg.default_profile[0] &&
                 strcmp(g_tui_cfg.profiles[g_conn_sel].name,
-                       g_tui_cfg.default_profile) == 0) {
-                if (g_tui_cfg.n_profiles > 1) {
+                       g_tui_cfg.default_profile) == 0)
+            {
+                if (g_tui_cfg.n_profiles > 1)
+                {
                     int new_idx = g_conn_sel;
                     if (new_idx >= g_tui_cfg.n_profiles - 1)
                         new_idx = 0;
                     strncpy(g_tui_cfg.default_profile,
                             g_tui_cfg.profiles[new_idx].name,
                             sizeof(g_tui_cfg.default_profile) - 1);
-                } else {
+                }
+                else
+                {
                     g_tui_cfg.default_profile[0] = '\0';
                 }
             }
@@ -911,9 +999,11 @@ int mf_connections_mouse(int x, int y, mmask_t bstate)
         return 0;
 
     /* Wheel → move selection */
-    if (bstate & (BUTTON4_PRESSED | BUTTON5_PRESSED)) {
+    if (bstate & (BUTTON4_PRESSED | BUTTON5_PRESSED))
+    {
         lb = g_conn_list;
-        if (lb) {
+        if (lb)
+        {
             if (bstate & BUTTON4_PRESSED)
                 vk_listbox_set_prev(lb);
             else
@@ -938,11 +1028,13 @@ int mf_connections_mouse(int x, int y, mmask_t bstate)
     /* Interior of window frame: inset 1 for border */
     lx = x - win_x - 1;
     ly = y - win_y - 1;
-    if (lx >= 0 && ly >= 0) {
+    if (lx >= 0 && ly >= 0)
+    {
         n = vk_listbox_get_item_count(lb);
         scroll = vk_listbox_get_scroll_pos(lb);
         row = scroll + ly;
-        if (row >= 0 && row < n && row < g_tui_cfg.n_profiles) {
+        if (row >= 0 && row < n && row < g_tui_cfg.n_profiles)
+        {
             g_conn_sel = row;
             vk_listbox_set_curr(lb, row);
             vk_listbox_update(lb);
@@ -984,77 +1076,96 @@ static void close_editor(void)
     box_vacate(g_ed_inner);
     box_vacate(g_ed_form);
     box_vacate(g_ed_bar);
-    for (i = 0; i < 3; i++) {
-        if (g_ed_row[i]) {
+    for (i = 0; i < 3; i++)
+    {
+        if (g_ed_row[i])
+        {
             vk_grid_destroy(g_ed_row[i]);
             g_ed_row[i] = NULL;
         }
-        if (g_ed_fields[i]) {
+        if (g_ed_fields[i])
+        {
             vk_grid_destroy(g_ed_fields[i]);
             g_ed_fields[i] = NULL;
         }
-        if (g_ed_in[i]) {
+        if (g_ed_in[i])
+        {
             vk_input_destroy(g_ed_in[i]);
             g_ed_in[i] = NULL;
         }
-        if (g_ed_lab[i]) {
+        if (g_ed_lab[i])
+        {
             vk_label_destroy(g_ed_lab[i]);
             g_ed_lab[i] = NULL;
         }
     }
-    if (g_ed_ok) {
+    if (g_ed_ok)
+    {
         vk_button_destroy(g_ed_ok);
         g_ed_ok = NULL;
     }
-    if (g_ed_cancel) {
+    if (g_ed_cancel)
+    {
         vk_button_destroy(g_ed_cancel);
         g_ed_cancel = NULL;
     }
-    if (g_ed_fill) {
+    if (g_ed_fill)
+    {
         vk_filler_destroy(g_ed_fill);
         g_ed_fill = NULL;
     }
-    if (g_ed_form_fill) {
+    if (g_ed_form_fill)
+    {
         vk_filler_destroy(g_ed_form_fill);
         g_ed_form_fill = NULL;
     }
-    if (g_ed_bar) {
+    if (g_ed_bar)
+    {
         vk_box_destroy(g_ed_bar);
         g_ed_bar = NULL;
     }
-    if (g_ed_form) {
+    if (g_ed_form)
+    {
         vk_box_destroy(g_ed_form);
         g_ed_form = NULL;
     }
-    if (g_ed_inner) {
+    if (g_ed_inner)
+    {
         vk_box_destroy(g_ed_inner);
         g_ed_inner = NULL;
     }
-    if (g_ed_pad_left) {
+    if (g_ed_pad_left)
+    {
         vk_filler_destroy(g_ed_pad_left);
         g_ed_pad_left = NULL;
     }
-    if (g_ed_pad_right) {
+    if (g_ed_pad_right)
+    {
         vk_filler_destroy(g_ed_pad_right);
         g_ed_pad_right = NULL;
     }
-    if (g_ed_mid) {
+    if (g_ed_mid)
+    {
         vk_box_destroy(g_ed_mid);
         g_ed_mid = NULL;
     }
-    if (g_ed_pad_top) {
+    if (g_ed_pad_top)
+    {
         vk_filler_destroy(g_ed_pad_top);
         g_ed_pad_top = NULL;
     }
-    if (g_ed_pad_bot) {
+    if (g_ed_pad_bot)
+    {
         vk_filler_destroy(g_ed_pad_bot);
         g_ed_pad_bot = NULL;
     }
-    if (g_ed_vbox) {
+    if (g_ed_vbox)
+    {
         vk_box_destroy(g_ed_vbox);
         g_ed_vbox = NULL;
     }
-    if (g_ed_win) {
+    if (g_ed_win)
+    {
         vk_screen_detach_widget(g_screen, 0, VK_WIDGET(g_ed_win));
         vk_window_destroy(g_ed_win);
         g_ed_win = NULL;
@@ -1069,8 +1180,10 @@ static void close_editor(void)
 static void paint_editor(void)
 {
     int pass, i;
-    for (pass = 0; pass < 2; pass++) {
-        for (i = 0; i < 3; i++) {
+    for (pass = 0; pass < 2; pass++)
+    {
+        for (i = 0; i < 3; i++)
+        {
             if (g_ed_lab[i])
                 vk_label_update(g_ed_lab[i]);
             style_set_input(g_ed_in[i], i == g_ed_focus);
@@ -1081,13 +1194,15 @@ static void paint_editor(void)
         }
         if (g_ed_form)
             vk_box_update(g_ed_form);
-        if (g_ed_ok) {
+        if (g_ed_ok)
+        {
             vk_widget_set_colors(VK_WIDGET(g_ed_ok),
                                  g_ed_focus == 3 ? COLOR_YELLOW : COL_TEXT,
                                  COL_MENU);
             vk_button_update(g_ed_ok);
         }
-        if (g_ed_cancel) {
+        if (g_ed_cancel)
+        {
             vk_widget_set_colors(VK_WIDGET(g_ed_cancel),
                                  g_ed_focus == 4 ? COLOR_YELLOW : COL_TEXT,
                                  COL_MENU);
@@ -1139,7 +1254,8 @@ static void open_editor(int idx)
     vk_widget_set_colors(VK_WIDGET(g_ed_form), COL_TEXT, COL_MENU);
     vk_widget_set_expand(VK_WIDGET(g_ed_form));
 
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 3; i++)
+    {
         int fields_w = iw - 2 - 13;
         int in_w;
         if (fields_w < 12 + 8)
@@ -1181,7 +1297,8 @@ static void open_editor(int idx)
      * when adding — the inputs append at the cursor, so a pre-filled value
      * would concatenate with what the user types. Port defaults to 5250 at
      * apply time when left blank. */
-    if (idx >= 0 && idx < g_tui_cfg.n_profiles) {
+    if (idx >= 0 && idx < g_tui_cfg.n_profiles)
+    {
         vk_input_set_text(g_ed_in[0], g_tui_cfg.profiles[idx].name);
         vk_input_set_text(g_ed_in[1], g_tui_cfg.profiles[idx].host);
         snprintf(buf, sizeof(buf), "%d", g_tui_cfg.profiles[idx].port);
@@ -1251,7 +1368,8 @@ static void apply_editor(void)
         return;
 
     /* Check for duplicate name (case-insensitive) */
-    for (i = 0; i < g_tui_cfg.n_profiles; i++) {
+    for (i = 0; i < g_tui_cfg.n_profiles; i++)
+    {
         if (g_ed_edit_idx >= 0 && i == g_ed_edit_idx)
             continue;
         if (strncasecmp(name, g_tui_cfg.profiles[i].name,
@@ -1265,14 +1383,18 @@ static void apply_editor(void)
     if (port > 65535)
         port = 65535;
 
-    if (g_ed_edit_idx >= 0 && g_ed_edit_idx < g_tui_cfg.n_profiles) {
+    if (g_ed_edit_idx >= 0 && g_ed_edit_idx < g_tui_cfg.n_profiles)
+    {
         strncpy(g_tui_cfg.profiles[g_ed_edit_idx].name, name,
                 sizeof(g_tui_cfg.profiles[0].name) - 1);
         strncpy(g_tui_cfg.profiles[g_ed_edit_idx].host, host,
                 sizeof(g_tui_cfg.profiles[0].host) - 1);
         g_tui_cfg.profiles[g_ed_edit_idx].port = port;
-    } else {
-        if (g_tui_cfg.n_profiles < MF_MAX_PROFILES) {
+    }
+    else
+    {
+        if (g_tui_cfg.n_profiles < MF_MAX_PROFILES)
+        {
             mf_conn_profile_t *p = &g_tui_cfg.profiles[g_tui_cfg.n_profiles];
             strncpy(p->name, name, sizeof(p->name) - 1);
             strncpy(p->host, host, sizeof(p->host) - 1);
@@ -1291,22 +1413,26 @@ static int editor_key(wint_t c)
     vk_input_t *in;
     if (!g_editor_open)
         return 0;
-    if (c == 27 || c == KEY_EXIT || c == KEY_CANCEL) {
+    if (c == 27 || c == KEY_EXIT || c == KEY_CANCEL)
+    {
         close_editor();
         return 1;
     }
-    if (c == '\t') {
+    if (c == '\t')
+    {
         /* Ring: Name(0) Host(1) Port(2) OK(3) Cancel(4). */
         g_ed_focus = (g_ed_focus + 1) % 5;
         paint_editor();
         return 1;
     }
-    if (c == KEY_BTAB) {
+    if (c == KEY_BTAB)
+    {
         g_ed_focus = (g_ed_focus + 4) % 5;
         paint_editor();
         return 1;
     }
-    if (c == '\n' || c == KEY_ENTER) {
+    if (c == '\n' || c == KEY_ENTER)
+    {
         if (g_ed_focus == 4)
             close_editor();     /* Cancel */
         else
@@ -1316,22 +1442,26 @@ static int editor_key(wint_t c)
     if (g_ed_focus >= 3)
         return 1;
     in = g_ed_in[g_ed_focus];
-    if (c == KEY_BACKSPACE || c == 127) {
+    if (c == KEY_BACKSPACE || c == 127)
+    {
         vk_input_backspace(in);
         paint_editor();
         return 1;
     }
-    if (c == KEY_LEFT) {
+    if (c == KEY_LEFT)
+    {
         vk_input_move_cursor(in, -1);
         paint_editor();
         return 1;
     }
-    if (c == KEY_RIGHT) {
+    if (c == KEY_RIGHT)
+    {
         vk_input_move_cursor(in, 1);
         paint_editor();
         return 1;
     }
-    if (c >= 32 && c < 127) {
+    if (c >= 32 && c < 127)
+    {
         vk_input_insert_char(in, (int)c);
         paint_editor();
         return 1;
@@ -1351,8 +1481,10 @@ static void mkdir_p(const char *dir, mode_t mode)
         return;
     if (tmp[len - 1] == '/')
         tmp[len - 1] = '\0';
-    for (p = tmp + 1; *p; p++) {
-        if (*p == '/') {
+    for (p = tmp + 1; *p; p++)
+    {
+        if (*p == '/')
+        {
             *p = '\0';
             (void)mkdir(tmp, mode);
             *p = '/';
@@ -1376,7 +1508,8 @@ void mf_ui_save_config(void)
     if (!s)
         return;
 
-    if (!path) {
+    if (!path)
+    {
         const char *home = getenv("HOME");
         snprintf(pathbuf, sizeof(pathbuf),
                  "%s/.config/moonflare/moonflare.json", home ? home : ".");
@@ -1386,7 +1519,8 @@ void mf_ui_save_config(void)
     /* Ensure the parent directory chain exists (mkdir -p). */
     snprintf(parent, sizeof(parent), "%s", path);
     last_slash = strrchr(parent, '/');
-    if (last_slash && last_slash != parent) {
+    if (last_slash && last_slash != parent)
+    {
         *last_slash = '\0';
         mkdir_p(parent, 0700);
     }
@@ -1395,7 +1529,8 @@ void mf_ui_save_config(void)
      * then rename atomically onto the target. */
     snprintf(tmpfile, sizeof(tmpfile), "%s.tmp.%ld", path, (long)getpid());
     fd = open(tmpfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (fd < 0) {
+    if (fd < 0)
+    {
         fprintf(stderr, "save config: cannot create %s.tmp: %s\n",
                 path, strerror(errno));
         free(s);
@@ -1404,13 +1539,15 @@ void mf_ui_save_config(void)
     len = strlen(s);
     written = write(fd, s, len);
     close(fd);
-    if ((size_t)written != len) {
+    if ((size_t)written != len)
+    {
         unlink(tmpfile);
         fprintf(stderr, "save config: write failed to %s\n", path);
         free(s);
         return;
     }
-    if (rename(tmpfile, path) < 0) {
+    if (rename(tmpfile, path) < 0)
+    {
         unlink(tmpfile);
         fprintf(stderr, "save config: rename failed for %s\n", path);
         free(s);
@@ -1512,21 +1649,24 @@ void mf_ui_handle_history(void)
     /* Data is oldest-first. Keep the latest 4096 (match daemon cap). */
     int cap = 4096;
     int skip = 0;
-    if (n > cap) {
+    if (n > cap)
+    {
         skip = n - cap;
         n = cap;
     }
 
     ts = malloc((size_t)n * sizeof(double));
     vals = malloc((size_t)n * sizeof(double));
-    if (!ts || !vals) {
+    if (!ts || !vals)
+    {
         free(ts);
         free(vals);
         cJSON_Delete(root);
         g_hist_json[0] = '\0';
         return;
     }
-    for (i = 0; i < n; i++) {
+    for (i = 0; i < n; i++)
+    {
         int idx = i + skip;
         cJSON *te = cJSON_GetArrayItem(ts_arr, idx);
         cJSON *ve = cJSON_GetArrayItem(val_arr, idx);
@@ -1559,7 +1699,8 @@ void mf_ui_handle_history(void)
         bucketed[bi] = 0.0;
 
     /* Assign each sample to a bucket. */
-    for (i = 0; i < n; i++) {
+    for (i = 0; i < n; i++)
+    {
         int bucket = (int)((ts[i] - t_start) / interval_s);
         if (bucket < 0 || bucket >= n_bars)
             continue;
@@ -1568,15 +1709,18 @@ void mf_ui_handle_history(void)
 
     /* Compute mean per bucket. */
     bucket_count = n_bars;
-    for (bi = 0; bi < n_bars; bi++) {
+    for (bi = 0; bi < n_bars; bi++)
+    {
         /* Count samples in this bucket to compute the mean. */
         int cnt = 0;
         double sum = 0;
-        for (i = 0; i < n; i++) {
+        for (i = 0; i < n; i++)
+        {
             int b = (int)((ts[i] - t_start) / interval_s);
             if (b < 0 || b >= n_bars)
                 continue;
-            if (b == bi) {
+            if (b == bi)
+            {
                 sum += vals[i];
                 cnt++;
             }
@@ -1597,17 +1741,21 @@ void mf_ui_handle_history(void)
     const char *labels[512];
     int label_count = 0;
     int interval_min = mf_pack_get_graph_interval();
-    for (bi = 0; bi < n_bars && label_count < 512; bi++) {
+    for (bi = 0; bi < n_bars && label_count < 512; bi++)
+    {
         time_t bt = (time_t)(t_start + (double)bi * interval_s);
         struct tm tm_buf;
         struct tm *tmp = localtime_r(&bt, &tm_buf);
         char buf[16];
-        if (tmp) {
+        if (tmp)
+        {
             if (interval_min >= 24 * 60)
                 strftime(buf, sizeof(buf), "%b %d %H:%M", tmp);
             else
                 strftime(buf, sizeof(buf), "%H:%M", tmp);
-        } else {
+        }
+        else
+        {
             snprintf(buf, sizeof(buf), "??:??");
         }
         labels[label_count] = strdup(buf);
@@ -1658,7 +1806,8 @@ static void parse_connect(const char *spec)
     if (!spec || !spec[0])
         spec = "127.0.0.1:5250";
     colon = strrchr(spec, ':');
-    if (colon && colon != spec) {
+    if (colon && colon != spec)
+    {
         size_t n = (size_t)(colon - spec);
         if (n >= sizeof(g_host))
             n = sizeof(g_host) - 1;
@@ -1667,7 +1816,9 @@ static void parse_connect(const char *spec)
         g_port = atoi(colon + 1);
         if (g_port <= 0)
             g_port = 5250;
-    } else {
+    }
+    else
+    {
         snprintf(g_host, sizeof(g_host), "%s", spec);
         g_port = 5250;
     }
@@ -1711,27 +1862,41 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
      * 3. saved default profile
      * 4. built-in fallback 127.0.0.1:5250
      */
-    if (connect && connect[0]) {
+    if (connect && connect[0])
+    {
         parse_connect(connect);
-    } else if (profile && profile[0]) {
+    }
+    else if (profile && profile[0])
+    {
         rc = mf_tui_config_endpoint(&g_tui_cfg, profile, buf, sizeof(buf));
-        if (rc == 0) {
+        if (rc == 0)
+        {
             parse_connect(buf);
-        } else {
+        }
+        else
+        {
             fprintf(stderr, "warning: no such profile: %s\n", profile);
             /* Fall through to (3) */
             rc = mf_tui_config_endpoint(&g_tui_cfg, NULL, buf, sizeof(buf));
-            if (rc == 0) {
+            if (rc == 0)
+            {
                 parse_connect(buf);
-            } else {
+            }
+            else
+            {
                 parse_connect("127.0.0.1:5250");
             }
         }
-    } else {
+    }
+    else
+    {
         rc = mf_tui_config_endpoint(&g_tui_cfg, NULL, buf, sizeof(buf));
-        if (rc == 0) {
+        if (rc == 0)
+        {
             parse_connect(buf);
-        } else {
+        }
+        else
+        {
             parse_connect("127.0.0.1:5250");
         }
     }
@@ -1740,7 +1905,8 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
     g_tui_cfg.refresh_interval_s = g_refresh;
 
     g_screen = vk_screen_create();
-    if (!g_screen) {
+    if (!g_screen)
+    {
         fprintf(stderr, "vk_screen_create failed\n");
         return 1;
     }
@@ -1769,7 +1935,8 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
     mf_http_cli_start(&g_cli, mono_now());
     g_last_get = 0;
 
-    while (!g_quit) {
+    while (!g_quit)
+    {
         fd_set r, w;
         int maxfd = STDIN_FILENO;
         struct timeval tv = { 0, 100000 };
@@ -1791,7 +1958,8 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
 
         if (g_cli.state == MF_CONN_UP && !g_cli.inflight &&
             t - g_last_get >= g_refresh && !g_devset_fetch &&
-            !mf_devset_open()) {
+             !mf_devset_open())
+            {
             if (mf_http_cli_get(&g_cli, mf_ui_poll_path()) == 1)
                 g_last_get = t;
         }
@@ -1804,17 +1972,20 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
                 tag = g_cli.stale ? "STALE" : "UP";
             else if (g_cli.state == MF_CONN_CONNECTING)
                 tag = "reconnecting";
-            if (mf_http_cli_take_body(&g_cli, body, sizeof(body))) {
+            if (mf_http_cli_take_body(&g_cli, body, sizeof(body)))
+            {
                 snprintf(last_json, sizeof(last_json), "%s", body);
                 if (strstr(body, "\"values\"") && strstr(body, "\"column\""))
                     snprintf(g_hist_json, sizeof(g_hist_json), "%s", body);
                 dirty = 1;
             }
-            if (strcmp(tag, last_tag) != 0) {
+            if (strcmp(tag, last_tag) != 0)
+            {
                 snprintf(last_tag, sizeof(last_tag), "%s", tag);
                 dirty = 1;
             }
-            if (g_devset_fetch && !mf_devset_open()) {
+            if (g_devset_fetch && !mf_devset_open())
+            {
                 g_devset_fetch = 0;
                 g_devset_wait_ovp = 0;
             }
@@ -1825,26 +1996,31 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
             if (mf_devset_open() && g_devset_wait_ovp && !g_devset_fetch &&
                 !g_cli.inflight && g_cli.state == MF_CONN_UP &&
                 !mf_devset_touched() &&
-                t >= g_devset_next_try && g_devset_ovp_tries < 15) {
+                t >= g_devset_next_try && g_devset_ovp_tries < 15)
+                {
                 char spath[192];
 
                 snprintf(spath, sizeof(spath),
                          "/api/v1/devices/%s/settings", mf_devset_id());
-                if (mf_http_cli_get(&g_cli, spath) == 1) {
+                if (mf_http_cli_get(&g_cli, spath) == 1)
+                {
                     g_devset_fetch = 1;
                     g_devset_ovp_tries++;
                     g_devset_next_try = t + 1.0;
                 }
             }
-            if (dirty) {
+            if (dirty)
+            {
                 int is_status = last_json[0] &&
                     (strstr(last_json, "\"batteries\"") != NULL ||
                      strstr(last_json, "\"chargers\"") != NULL);
                 int is_devset = last_json[0] &&
                     strstr(last_json, "\"uuid\"") != NULL && !is_status;
-                if (g_devset_fetch && mf_devset_open()) {
+                if (g_devset_fetch && mf_devset_open())
+                {
                     g_devset_fetch = 0;
-                    if (is_devset && !mf_devset_touched()) {
+                    if (is_devset && !mf_devset_touched())
+                    {
                         mf_devset_apply_json(last_json);
                         /* JK waits for a settings frame with OVP. XD/Classic
                          * never send those keys — stop retrying or the form
@@ -1853,18 +2029,26 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
                             strstr(last_json, "\"ble.address\"") == NULL)
                             g_devset_wait_ovp = 0;
                     }
-                } else if (g_view_idx >= 0 && strstr(last_json, "\"data\"")) {
+                }
+                else if (g_view_idx >= 0 && strstr(last_json, "\"data\""))
+                {
                     snprintf(g_view_json, sizeof(g_view_json), "%s", last_json);
                     mf_pack_update(g_view_json);
                     mf_ui_handle_history();
                     if (!g_cli.inflight)
                         mf_ui_request_history(mf_pack_get_device_id());
-                } else if (strstr(last_json, "\"values\"") &&
-                    strstr(last_json, "\"column\"")) {
+                }
+                else if (strstr(last_json, "\"values\"") &&
+                    strstr(last_json, "\"column\""))
+                {
                     mf_ui_handle_history();
-                } else if (is_status) {
+                }
+                else if (is_status)
+                {
                     mf_dash_update(g_hostport, tag, last_json);
-                } else {
+                }
+                else
+                {
                     /* PUT/POST replies are not a device list; keep catalog. */
                     mf_dash_update(g_hostport, tag, NULL);
                 }
@@ -1876,9 +2060,11 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
             g_cli.stale = 1;
 
         key = vk_kmio_fetch(&mev);
-        if (key == KEY_MOUSE) {
+        if (key == KEY_MOUSE)
+        {
             int mr = mf_mouse_handle(&mev);
-            if (mr == 2 && mf_confirm_open() && g_view_idx >= 0) {
+            if (mr == 2 && mf_confirm_open() && g_view_idx >= 0)
+            {
                 char path[192], payload[80];
                 snprintf(path, sizeof(path),
                          "/api/v1/devices/%s/actions/set_switch",
@@ -1888,7 +2074,9 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
                          mf_confirm_action());
                 mf_confirm_close();
                 (void)mf_http_cli_post(&g_cli, path, payload);
-            } else if (mr == 2 && mf_devset_open()) {
+            }
+            else if (mr == 2 && mf_devset_open())
+            {
                 char path[192];
                 int gi = mf_devset_get_graph_interval();
                 snprintf(path, sizeof(path),
@@ -1900,23 +2088,29 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
             }
             continue;
         }
-        if (key <= 0) {
+        if (key <= 0)
+        {
             int ch = getch();
             if (ch != ERR)
                 key = ch;
         }
-        if (key > 0) {
-            if (key == KEY_RESIZE) {
+        if (key > 0)
+        {
+            if (key == KEY_RESIZE)
+            {
                 mf_ui_resize();
                 continue;
             }
-            if (g_help_win && (key == 27 || key == 'q')) {
+            if (g_help_win && (key == 27 || key == 'q'))
+            {
                 close_help();
                 continue;
             }
-            if (mf_confirm_open()) {
+            if (mf_confirm_open())
+            {
                 int cr = mf_confirm_handle((wint_t)key);
-                if (cr == 2 && g_view_idx >= 0) {
+                if (cr == 2 && g_view_idx >= 0)
+                {
                     char path[192], payload[80];
                     snprintf(path, sizeof(path),
                              "/api/v1/devices/%s/actions/set_switch",
@@ -1929,9 +2123,11 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
                 }
                 continue;
             }
-            if (mf_devset_open()) {
+            if (mf_devset_open())
+            {
                 int sr = mf_devset_key((wint_t)key);
-                if (sr == 2) {
+                if (sr == 2)
+                {
                     char path[192];
                     int gi = mf_devset_get_graph_interval();
                     snprintf(path, sizeof(path),
@@ -1951,55 +2147,65 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
                 continue;
             if (mf_menubar_key((wint_t)key))
                 continue;
-            if (mf_pack_visible() && (key == 27 || key == KEY_EXIT)) {
+            if (mf_pack_visible() && (key == 27 || key == KEY_EXIT))
+            {
                 mf_ui_show_dashboard();
                 continue;
             }
-            if (mf_pack_visible() && (key == 'e' || key == 'E')) {
+            if (mf_pack_visible() && (key == 'e' || key == 'E'))
+            {
                 if (g_view_idx >= 0)
                     mf_ui_open_device_settings(g_view_idx);
                 continue;
             }
             if (mf_pack_visible() && mf_pack_is_charger() &&
-                (key == '+' || key == '=')) {
+                (key == '+' || key == '='))
+            {
                 if (mf_pack_graph_zoom(1))
                     mf_ui_handle_history();
                 continue;
             }
             if (mf_pack_visible() && mf_pack_is_charger() &&
-                (key == '-' || key == '_')) {
+                (key == '-' || key == '_'))
+            {
                 if (mf_pack_graph_zoom(0))
                     mf_ui_handle_history();
                 continue;
             }
             if (mf_pack_visible() && !mf_pack_is_charger() &&
-                (key == '+' || key == '=')) {
+                (key == '+' || key == '='))
+            {
                 if (mf_pack_graph_zoom(1))
                     mf_ui_handle_history();
                 continue;
             }
             if (mf_pack_visible() && !mf_pack_is_charger() &&
-                (key == '-' || key == '_')) {
+                (key == '-' || key == '_'))
+            {
                 if (mf_pack_graph_zoom(0))
                     mf_ui_handle_history();
                 continue;
             }
-            if (mf_pack_visible() && !mf_pack_is_charger() && mf_pack_has_switch()) {
-                if (key == 'c' || key == 'C') {
+            if (mf_pack_visible() && !mf_pack_is_charger() && mf_pack_has_switch())
+            {
+                if (key == 'c' || key == 'C')
+                {
                     if (mf_pack_switch_on("charge"))
                         mf_confirm_show(g_view_name, "charge");
                     else
                         post_switch("charge", 1);
                     continue;
                 }
-                if (key == 'd' || key == 'D') {
+                if (key == 'd' || key == 'D')
+                {
                     if (mf_pack_switch_on("discharge"))
                         mf_confirm_show(g_view_name, "discharge");
                     else
                         post_switch("discharge", 1);
                     continue;
                 }
-                if (key == 'b' || key == 'B') {
+                if (key == 'b' || key == 'B')
+                {
                     post_switch("balance", !mf_pack_switch_on("balance"));
                     continue;
                 }
@@ -2076,15 +2282,18 @@ mf_settings_mouse(int x, int y, mmask_t bstate)
     {
         int i, lx = x - win_x, ly = y - win_y, cy = 2;
 
-        for (i = 0; i < 1; i++) {
+        for (i = 0; i < 1; i++)
+        {
             int rw = 0, rh = 3;
 
             if (g_set_row[i])
                 vk_widget_get_metrics(VK_WIDGET(g_set_row[i]), &rw, &rh);
             if (rh < 1)
                 rh = 3;
-            if (lx >= 2 && lx < win_w - 2 && ly >= cy && ly < cy + rh) {
-                if (g_set_focus != i) {
+            if (lx >= 2 && lx < win_w - 2 && ly >= cy && ly < cy + rh)
+            {
+                if (g_set_focus != i)
+                {
                     g_set_focus = i;
                     paint_settings();
                 }
@@ -2097,20 +2306,24 @@ mf_settings_mouse(int x, int y, mmask_t bstate)
     vk_widget_get_position(VK_WIDGET(g_set_bar), &bx, &by);
     ox += win_x + bx;
     oy += win_y + by;
-    if (g_set_ok) {
+    if (g_set_ok)
+    {
         vk_widget_get_position(VK_WIDGET(g_set_ok), &px, &py);
         vk_widget_get_metrics(VK_WIDGET(g_set_ok), &bw, &bh);
         if (x >= ox + px && x < ox + px + bw &&
-            y >= oy + py && y < oy + py + bh) {
+            y >= oy + py && y < oy + py + bh)
+        {
             vk_button_press(g_set_ok);
             return 1;
         }
     }
-    if (g_set_cancel) {
+    if (g_set_cancel)
+    {
         vk_widget_get_position(VK_WIDGET(g_set_cancel), &px, &py);
         vk_widget_get_metrics(VK_WIDGET(g_set_cancel), &bw, &bh);
         if (x >= ox + px && x < ox + px + bw &&
-            y >= oy + py && y < oy + py + bh) {
+            y >= oy + py && y < oy + py + bh)
+        {
             vk_button_press(g_set_cancel);
             return 1;
         }
@@ -2118,10 +2331,29 @@ mf_settings_mouse(int x, int y, mmask_t bstate)
     return 1;
 }
 
-int mf_ui_help_open(void) { return g_help_win != NULL; }
-int mf_ui_settings_open(void) { return g_settings_open; }
-int mf_ui_connections_open(void) { return g_connections_open || g_editor_open; }
-int mf_ui_editor_open(void) { return g_editor_open; }
+int
+mf_ui_help_open(void)
+{
+    return g_help_win != NULL;
+}
+
+int
+mf_ui_settings_open(void)
+{
+    return g_settings_open;
+}
+
+int
+mf_ui_connections_open(void)
+{
+    return g_connections_open || g_editor_open;
+}
+
+int
+mf_ui_editor_open(void)
+{
+    return g_editor_open;
+}
 
 /* Mouse for the profile editor: field-row focus + OK/Cancel buttons.
  * Mirrors mf_settings_mouse (identical box structure). */
@@ -2146,15 +2378,18 @@ mf_editor_mouse(int x, int y, mmask_t bstate)
     {
         int i, lx = x - win_x, ly = y - win_y, cy = 2;
 
-        for (i = 0; i < 3; i++) {
+        for (i = 0; i < 3; i++)
+        {
             int rw = 0, rh = 3;
 
             if (g_ed_row[i])
                 vk_widget_get_metrics(VK_WIDGET(g_ed_row[i]), &rw, &rh);
             if (rh < 1)
                 rh = 3;
-            if (lx >= 2 && lx < win_w - 2 && ly >= cy && ly < cy + rh) {
-                if (g_ed_focus != i) {
+            if (lx >= 2 && lx < win_w - 2 && ly >= cy && ly < cy + rh)
+            {
+                if (g_ed_focus != i)
+                {
                     g_ed_focus = i;
                     paint_editor();
                 }
@@ -2167,20 +2402,24 @@ mf_editor_mouse(int x, int y, mmask_t bstate)
     vk_widget_get_position(VK_WIDGET(g_ed_bar), &bx, &by);
     ox += win_x + bx;
     oy += win_y + by;
-    if (g_ed_ok) {
+    if (g_ed_ok)
+    {
         vk_widget_get_position(VK_WIDGET(g_ed_ok), &px, &py);
         vk_widget_get_metrics(VK_WIDGET(g_ed_ok), &bw, &bh);
         if (x >= ox + px && x < ox + px + bw &&
-            y >= oy + py && y < oy + py + bh) {
+            y >= oy + py && y < oy + py + bh)
+        {
             vk_button_press(g_ed_ok);
             return 1;
         }
     }
-    if (g_ed_cancel) {
+    if (g_ed_cancel)
+    {
         vk_widget_get_position(VK_WIDGET(g_ed_cancel), &px, &py);
         vk_widget_get_metrics(VK_WIDGET(g_ed_cancel), &bw, &bh);
         if (x >= ox + px && x < ox + px + bw &&
-            y >= oy + py && y < oy + py + bh) {
+            y >= oy + py && y < oy + py + bh)
+        {
             vk_button_press(g_ed_cancel);
             return 1;
         }

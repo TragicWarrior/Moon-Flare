@@ -37,27 +37,40 @@ int main(int argc, char **argv)
     int help = 0, dump = 0;
     int i;
 
-    for (i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "--connect") && i + 1 < argc) {
+    for (i = 1; i < argc; i++)
+    {
+        if (!strcmp(argv[i], "--connect") && i + 1 < argc)
+        {
             connect = argv[++i];
-        } else if (!strcmp(argv[i], "--profile") && i + 1 < argc) {
+        }
+        else if (!strcmp(argv[i], "--profile") && i + 1 < argc)
+        {
             profile = argv[++i];
-        } else if (!strcmp(argv[i], "--config") && i + 1 < argc) {
+        }
+        else if (!strcmp(argv[i], "--config") && i + 1 < argc)
+        {
             config = argv[++i];
-        } else if (!strcmp(argv[i], "--dump-layout")) {
+        }
+        else if (!strcmp(argv[i], "--dump-layout"))
+        {
             dump = 1;
             if (i + 1 < argc && argv[i + 1][0] != '-')
                 dump_kind = argv[++i];
-        } else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
+        }
+        else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h"))
+        {
             help = 1;
-        } else {
+        }
+        else
+        {
             fprintf(stderr, "unknown option: %s\n", argv[i]);
             usage(argv[0]);
             return 2;
         }
     }
 
-    if (help) {
+    if (help)
+    {
         usage(argv[0]);
         return 0;
     }

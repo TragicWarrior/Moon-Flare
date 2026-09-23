@@ -38,7 +38,8 @@ static int send_all(int fd, const void *buf, size_t len)
 {
     const uint8_t *p = buf;
     size_t sent = 0;
-    while (sent < len) {
+    while (sent < len)
+    {
         ssize_t n = send(fd, p + sent, len - sent, MSG_NOSIGNAL);
         if (n <= 0)
             return -1;
@@ -51,7 +52,8 @@ static int recv_all(int fd, void *buf, size_t len)
 {
     uint8_t *p = buf;
     size_t got = 0;
-    while (got < len) {
+    while (got < len)
+    {
         ssize_t n = recv(fd, p + got, len - got, 0);
         if (n <= 0)
             return -1;
@@ -70,7 +72,8 @@ static int tcp_connect(int port)
     a.sin_family = AF_INET;
     a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     a.sin_port = htons((uint16_t)port);
-    if (connect(fd, (struct sockaddr *)&a, sizeof(a)) != 0) {
+    if (connect(fd, (struct sockaddr *)&a, sizeof(a)) != 0)
+    {
         close(fd);
         return -1;
     }
@@ -120,16 +123,19 @@ static void spawn_server(const char *bin)
     unsigned port = 0;
     int i;
 
-    if (pipe(sp) != 0) {
+    if (pipe(sp) != 0)
+    {
         perror("pipe");
         exit(1);
     }
     g_child = fork();
-    if (g_child < 0) {
+    if (g_child < 0)
+    {
         perror("fork");
         exit(1);
     }
-    if (g_child == 0) {
+    if (g_child == 0)
+    {
         dup2(sp[1], STDOUT_FILENO);
         close(sp[0]);
         close(sp[1]);
@@ -138,20 +144,24 @@ static void spawn_server(const char *bin)
     }
     close(sp[1]);
     fp = fdopen(sp[0], "r");
-    if (!fp || !fgets(line, sizeof(line), fp)) {
+    if (!fp || !fgets(line, sizeof(line), fp))
+    {
         fprintf(stderr, "FAIL: no listen line from fake_classic\n");
         exit(1);
     }
     /* keep fp open so the pipe doesn't SIGPIPE the child; we don't read more */
     if (sscanf(line, "fake_classic: listening on 127.0.0.1:%u", &port) != 1 ||
-        port == 0) {
+        port == 0)
+    {
         fprintf(stderr, "FAIL: parse listen line: %s", line);
         exit(1);
     }
     g_port = (int)port;
-    for (i = 0; i < 50; i++) {
+    for (i = 0; i < 50; i++)
+    {
         int fd = tcp_connect(g_port);
-        if (fd >= 0) {
+        if (fd >= 0)
+        {
             close(fd);
             return;
         }
@@ -167,7 +177,8 @@ static void stop_server(void)
     if (g_child <= 0)
         return;
     kill(g_child, SIGTERM);
-    for (i = 0; i < 20; i++) {
+    for (i = 0; i < 20; i++)
+    {
         if (waitpid(g_child, NULL, WNOHANG) == g_child)
             return;
         usleep(20000);
@@ -202,7 +213,8 @@ static void test_multi_and_codec(void)
 
     CHECK(fd >= 0, "connect codec");
     memset(wire, 0, sizeof(wire));
-    for (off = 0; off < 4220; ) {
+    for (off = 0; off < 4220; )
+    {
         uint16_t qty = 125;
         if ((uint32_t)off + qty > 4220)
             qty = (uint16_t)(4220 - off);
@@ -300,7 +312,8 @@ static void test_identity(void)
 int main(int argc, char **argv)
 {
     const char *bin;
-    if (argc < 2) {
+    if (argc < 2)
+    {
         fprintf(stderr, "usage: %s /path/to/fake_classic\n", argv[0]);
         return 2;
     }
@@ -312,7 +325,8 @@ int main(int argc, char **argv)
     test_write_rejected();
     test_identity();
     stop_server();
-    if (g_fail) {
+    if (g_fail)
+    {
         fprintf(stderr, "%d check(s) failed\n", g_fail);
         return 1;
     }

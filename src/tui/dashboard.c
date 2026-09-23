@@ -109,12 +109,15 @@ static void ensure_cards(void)
 static void show_too_small(int cols)
 {
     int w = cols > 4 ? cols - 2 : 20;
-    if (!g_small) {
+    if (!g_small)
+    {
         g_small = vk_label_create(w);
         vk_widget_set_colors(VK_WIDGET(g_small), COLOR_RED, COL_BG);
         vk_label_set_text(g_small, "Terminal too small (need >= 80x25)");
         mf_ui_attach(VK_WIDGET(g_small), 2, 8);
-    } else {
+    }
+    else
+    {
         vk_widget_resize(VK_WIDGET(g_small), w, 1);
         vk_widget_show(VK_WIDGET(g_small));
     }
@@ -148,18 +151,21 @@ void mf_dash_on_resize(void)
 
     if (g_status)
         vk_widget_resize(VK_WIDGET(g_status), cw, 1);
-    if (g_hints) {
+    if (g_hints)
+    {
         vk_widget_resize(VK_WIDGET(g_hints), cw, 1);
         vk_widget_move(VK_WIDGET(g_hints), 0, rows > 0 ? rows - 1 : 24);
     }
-    if (!g_dash_visible) {
+    if (!g_dash_visible)
+    {
         /* Not the active view (a device/pack view is up) -- keep the client
            frame hidden so it doesn't leak in behind it on resize. */
         if (g_client)
             hide_w(VK_WIDGET(g_client));
         return;
     }
-    if (small) {
+    if (small)
+    {
         show_too_small(cols);
         if (g_client)
             hide_w(VK_WIDGET(g_client));
@@ -187,19 +193,22 @@ static void fill_lb(vk_listbox_t *lb, cJSON *arr, const char *kind)
     int n, i;
     vk_listbox_reset(lb);
     n = arr ? cJSON_GetArraySize(arr) : 0;
-    if (n <= 0) {
+    if (n <= 0)
+    {
         vk_listbox_add_item(lb, "not connected", NULL, NULL);
         vk_listbox_update(lb);
         return;
     }
-    for (i = 0; i < n && i < MAX_LINE; i++) {
+    for (i = 0; i < n && i < MAX_LINE; i++)
+    {
         cJSON *o = cJSON_GetArrayItem(arr, i);
         cJSON *name = cJSON_GetObjectItemCaseSensitive(o, "name");
         char line[40], nm[20];
         nm[0] = '\0';
         if (cJSON_IsString(name) && name->valuestring)
             snprintf(nm, sizeof(nm), "%.16s", name->valuestring);
-        if (strcmp(kind, "battery") == 0) {
+        if (strcmp(kind, "battery") == 0)
+        {
             cJSON *v = cJSON_GetObjectItemCaseSensitive(o, "pack_voltage_v");
             cJSON *s = cJSON_GetObjectItemCaseSensitive(o, "soc_pct");
             cJSON *cur = cJSON_GetObjectItemCaseSensitive(o, "current_a");
@@ -217,12 +226,16 @@ static void fill_lb(vk_listbox_t *lb, cJSON *arr, const char *kind)
                 cur && cJSON_IsNumber(cur) ? cur->valuedouble : 0);
             snprintf(line, sizeof(line), "%s %.1fV %.0f%%",
                      nm[0] ? nm : "pack", pack, soc);
-        } else if (strcmp(kind, "charger") == 0) {
+        }
+        else if (strcmp(kind, "charger") == 0)
+        {
             cJSON *w = cJSON_GetObjectItemCaseSensitive(o, "charging_watts");
             snprintf(line, sizeof(line), "%s %.0fW",
                      nm[0] ? nm : "chg",
                      w && cJSON_IsNumber(w) ? w->valuedouble : 0);
-        } else {
+        }
+        else
+        {
             snprintf(line, sizeof(line), "%s", nm[0] ? nm : "inv");
         }
         vk_listbox_add_item(lb, line, NULL, NULL);
@@ -236,7 +249,8 @@ static void cat_add(cJSON *arr, const char *kind)
     if (!arr || !cJSON_IsArray(arr))
         return;
     n = cJSON_GetArraySize(arr);
-    for (i = 0; i < n && g_ncat < MAX_CAT; i++) {
+    for (i = 0; i < n && g_ncat < MAX_CAT; i++)
+    {
         cJSON *o = cJSON_GetArrayItem(arr, i);
         cJSON *id = cJSON_GetObjectItemCaseSensitive(o, "id");
         cJSON *name = cJSON_GetObjectItemCaseSensitive(o, "name");
@@ -250,7 +264,10 @@ static void cat_add(cJSON *arr, const char *kind)
     }
 }
 
-int mf_dash_catalog_n(void) { return g_ncat; }
+int mf_dash_catalog_n(void)
+{
+    return g_ncat;
+}
 const char *mf_dash_catalog_id(int i)
 {
     return (i >= 0 && i < g_ncat) ? g_cat[i].id : "";
@@ -267,19 +284,22 @@ const char *mf_dash_catalog_kind(int i)
 void mf_dash_set_visible(int vis)
 {
     g_dash_visible = vis;
-    if (g_client) {
+    if (g_client)
+    {
         if (vis)
             vk_widget_show(VK_WIDGET(g_client));
         else
             hide_w(VK_WIDGET(g_client));
     }
-    if (g_status) {
+    if (g_status)
+    {
         if (vis)
             vk_widget_show(VK_WIDGET(g_status));
         else
             hide_w(VK_WIDGET(g_status));
     }
-    if (g_hints) {
+    if (g_hints)
+    {
         if (vis)
             vk_widget_show(VK_WIDGET(g_hints));
         else
@@ -297,7 +317,8 @@ void mf_dash_update(const char *hostport, const char *tag, const char *json)
     snprintf(g_last_tag, sizeof(g_last_tag), "%s", tag ? tag : "");
     snprintf(st, sizeof(st), "%s  [%s]",
              hostport ? hostport : "", tag ? tag : "");
-    if (g_status) {
+    if (g_status)
+    {
         vk_label_set_text(g_status, st);
         vk_label_update(g_status);
     }
@@ -343,39 +364,47 @@ void mf_dash_update(const char *hostport, const char *tag, const char *json)
 void mf_dash_shutdown(void)
 {
     int i;
-    if (g_cards_box) {
+    if (g_cards_box)
+    {
         for (i = 0; i < 3; i++)
             vk_box_set_widget(g_cards_box, i, NULL, VK_INHERIT_NONE);
     }
     if (g_client)
         vk_frame_set_child(g_client, NULL, VK_INHERIT_NONE);
-    for (i = 0; i < 3; i++) {
-        if (g_fr[i]) {
+    for (i = 0; i < 3; i++)
+    {
+        if (g_fr[i])
+        {
             vk_frame_destroy(g_fr[i]);
             g_fr[i] = NULL;
             g_lb[i] = NULL;
         }
     }
-    if (g_cards_box) {
+    if (g_cards_box)
+    {
         vk_box_destroy(g_cards_box);
         g_cards_box = NULL;
     }
-    if (g_client) {
+    if (g_client)
+    {
         vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_client));
         vk_frame_destroy(g_client);
         g_client = NULL;
     }
-    if (g_status) {
+    if (g_status)
+    {
         vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_status));
         vk_label_destroy(g_status);
         g_status = NULL;
     }
-    if (g_hints) {
+    if (g_hints)
+    {
         vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_hints));
         vk_label_destroy(g_hints);
         g_hints = NULL;
     }
-    if (g_small) {
+    if (g_small)
+    {
         vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_small));
         vk_label_destroy(g_small);
         g_small = NULL;
@@ -410,7 +439,8 @@ int mf_dash_mouse(int x, int y, mmask_t bstate)
     fy = MF_CARD_Y + 1;              /* inside the client frame's top border */
     fh = rows - MF_CARD_Y - 1 - 2;   /* client frame interior height */
 
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < 2; i++)
+    {
         if (!g_fr[i] || !g_lb[i])
             continue;
         fx = 1 + i * slot;           /* inside the client frame's left border */
@@ -424,10 +454,12 @@ int mf_dash_mouse(int x, int y, mmask_t bstate)
             return 1;
         want = (i == 0) ? "battery" : "charger";
         seen = 0;
-        for (k = 0; k < g_ncat; k++) {
+        for (k = 0; k < g_ncat; k++)
+        {
             if (strcmp(g_cat[k].kind, want) != 0)
                 continue;
-            if (seen == row) {
+            if (seen == row)
+            {
                 if (!g_cat[k].id[0])
                     return 1;
                 mf_ui_open_device_view(k);

@@ -41,21 +41,25 @@ static cJSON *merge_offline_config(cJSON *devices, const char *config_override)
     if (!merged)
         return NULL;
 
-    for (i = 0; i < daemon_cfg.n_devices; i++) {
+    for (i = 0; i < daemon_cfg.n_devices; i++)
+    {
         cJSON *existing = NULL;
         const char *uuid = daemon_cfg.devices[i].uuid;
         int found = 0;
 
-        cJSON_ArrayForEach(item, merged) {
+        cJSON_ArrayForEach(item, merged)
+        {
             const cJSON *uid = cJSON_GetObjectItemCaseSensitive(item, "id");
-            if (cJSON_IsString(uid) && strcmp(uid->valuestring, uuid) == 0) {
+            if (cJSON_IsString(uid) && strcmp(uid->valuestring, uuid) == 0)
+            {
                 existing = item;
                 found = 1;
                 break;
             }
         }
 
-        if (!found) {
+        if (!found)
+        {
             /* Add the offline configured device. */
             cJSON *dev = cJSON_CreateObject();
             char online_str[8];
@@ -66,9 +70,12 @@ static cJSON *merge_offline_config(cJSON *devices, const char *config_override)
             cJSON_AddStringToObject(dev, "driver", daemon_cfg.devices[i].driver);
             cJSON_AddBoolToObject(dev, "online", 0);
             cJSON_AddItemToArray(merged, dev);
-        } else {
+        }
+        else
+        {
             /* Mark enabled column if we had config. */
-            if (daemon_cfg.devices[i].enabled) {
+            if (daemon_cfg.devices[i].enabled)
+            {
                 cJSON_AddTrueToObject(existing, "enabled");
             }
         }
@@ -91,7 +98,8 @@ static char *resolve_name_to_uuid(cli_ctx_t *ctx, const char *name)
                          ctx->timeout, &resp, NULL, 0) < 0)
         return NULL;
 
-    if (resp.status < 200 || resp.status >= 300) {
+    if (resp.status < 200 || resp.status >= 300)
+    {
         cli_http_resp_free(&resp);
         return NULL;
     }
@@ -102,11 +110,14 @@ static char *resolve_name_to_uuid(cli_ctx_t *ctx, const char *name)
     if (!root || !cJSON_IsArray(root))
         return NULL;
 
-    cJSON_ArrayForEach(item, root) {
+    cJSON_ArrayForEach(item, root)
+    {
         const cJSON *name_field = cJSON_GetObjectItemCaseSensitive(item, "name");
         const cJSON *id_field = cJSON_GetObjectItemCaseSensitive(item, "id");
-        if (cJSON_IsString(name_field) && cJSON_IsString(id_field)) {
-            if (strcasecmp(name_field->valuestring, name) == 0) {
+        if (cJSON_IsString(name_field) && cJSON_IsString(id_field))
+        {
+            if (strcasecmp(name_field->valuestring, name) == 0)
+            {
                 uuid = strdup(id_field->valuestring);
                 break;
             }
@@ -127,12 +138,14 @@ static int cmd_list_devices(cli_ctx_t *ctx, const char *config_override)
 
     memset(&resp, 0, sizeof(resp));
     if (cli_http_request(ctx->host, ctx->port, "GET", "/api/v1/devices", NULL,
-                         ctx->timeout, &resp, NULL, 0) < 0) {
+                         ctx->timeout, &resp, NULL, 0) < 0)
+    {
         fprintf(stderr, "error: connection failed\n");
         return 1;
     }
 
-    if (resp.status < 200 || resp.status >= 300) {
+    if (resp.status < 200 || resp.status >= 300)
+    {
         fprintf(stderr, "error: HTTP %d\n", resp.status);
         cli_http_resp_free(&resp);
         return 1;
@@ -141,21 +154,28 @@ static int cmd_list_devices(cli_ctx_t *ctx, const char *config_override)
     root = cJSON_Parse(resp.body);
     cli_http_resp_free(&resp);
 
-    if (!root) {
+    if (!root)
+    {
         fprintf(stderr, "error: failed to parse device list\n");
         return 1;
     }
 
     /* Merge offline config if available. */
-    if (!ctx->raw) {
+    if (!ctx->raw)
+    {
         cJSON *merged = merge_offline_config(root, config_override);
-        if (merged) {
+        if (merged)
+        {
             rc = cli_render_list_devices(merged, 0);
             cJSON_Delete(merged);
-        } else {
+        }
+        else
+        {
             rc = cli_render_list_devices(root, 0);
         }
-    } else {
+    }
+    else
+    {
         rc = cli_render_list_devices(root, 1);
     }
 
@@ -171,12 +191,14 @@ static int cmd_list_drivers(cli_ctx_t *ctx)
 
     memset(&resp, 0, sizeof(resp));
     if (cli_http_request(ctx->host, ctx->port, "GET", "/api/v1/drivers", NULL,
-                         ctx->timeout, &resp, NULL, 0) < 0) {
+                         ctx->timeout, &resp, NULL, 0) < 0)
+    {
         fprintf(stderr, "error: connection failed\n");
         return 1;
     }
 
-    if (resp.status < 200 || resp.status >= 300) {
+    if (resp.status < 200 || resp.status >= 300)
+    {
         fprintf(stderr, "error: HTTP %d\n", resp.status);
         cli_http_resp_free(&resp);
         return 1;
@@ -185,18 +207,24 @@ static int cmd_list_drivers(cli_ctx_t *ctx)
     root = cJSON_Parse(resp.body);
     cli_http_resp_free(&resp);
 
-    if (!root) {
+    if (!root)
+    {
         fprintf(stderr, "error: failed to parse drivers list\n");
         return 1;
     }
 
     {
         const cJSON *drivers = cJSON_GetObjectItemCaseSensitive(root, "drivers");
-        if (cJSON_IsArray(drivers)) {
+        if (cJSON_IsArray(drivers))
+        {
             rc = cli_render_list_drivers(drivers, ctx->raw ? 1 : 0);
-        } else if (cJSON_IsObject(root)) {
+        }
+        else if (cJSON_IsObject(root))
+        {
             rc = cli_render_list_drivers(root, ctx->raw ? 1 : 0);
-        } else {
+        }
+        else
+        {
             rc = cli_render_list_drivers(root, ctx->raw ? 1 : 0);
         }
     }
@@ -212,9 +240,11 @@ static int cmd_query(cli_ctx_t *ctx, const char *id_or_name)
     int rc = 1;
 
     /* Resolve: if it looks like a uuid, use it directly; else name lookup. */
-    if (!cli_is_uuid(id_or_name)) {
+    if (!cli_is_uuid(id_or_name))
+    {
         uuid = resolve_name_to_uuid(ctx, id_or_name);
-        if (!uuid) {
+        if (!uuid)
+        {
             fprintf(stderr, "error: device not found: %s\n", id_or_name);
             return 1;
         }
@@ -231,18 +261,21 @@ static int cmd_query(cli_ctx_t *ctx, const char *id_or_name)
 
     memset(&resp, 0, sizeof(resp));
     if (cli_http_request(ctx->host, ctx->port, "GET", path, NULL,
-                         ctx->timeout, &resp, NULL, 0) < 0) {
+                         ctx->timeout, &resp, NULL, 0) < 0)
+    {
         fprintf(stderr, "error: connection failed\n");
         return 1;
     }
 
-    if (resp.status == 404) {
+    if (resp.status == 404)
+    {
         fprintf(stderr, "error: device not found: %s\n", id_or_name);
         cli_http_resp_free(&resp);
         return 1;
     }
 
-    if (resp.status < 200 || resp.status >= 300) {
+    if (resp.status < 200 || resp.status >= 300)
+    {
         fprintf(stderr, "error: HTTP %d\n", resp.status);
         cli_http_resp_free(&resp);
         return 1;
@@ -252,7 +285,8 @@ static int cmd_query(cli_ctx_t *ctx, const char *id_or_name)
         cJSON *root = cJSON_Parse(resp.body);
         cli_http_resp_free(&resp);
 
-        if (!root) {
+        if (!root)
+        {
             fprintf(stderr, "error: failed to parse device\n");
             return 1;
         }
@@ -272,12 +306,14 @@ static int cmd_status(cli_ctx_t *ctx)
 
     memset(&resp, 0, sizeof(resp));
     if (cli_http_request(ctx->host, ctx->port, "GET", "/api/v1/status", NULL,
-                         ctx->timeout, &resp, NULL, 0) < 0) {
+                         ctx->timeout, &resp, NULL, 0) < 0)
+    {
         fprintf(stderr, "error: connection failed\n");
         return 1;
     }
 
-    if (resp.status < 200 || resp.status >= 300) {
+    if (resp.status < 200 || resp.status >= 300)
+    {
         fprintf(stderr, "error: HTTP %d\n", resp.status);
         cli_http_resp_free(&resp);
         return 1;
@@ -286,7 +322,8 @@ static int cmd_status(cli_ctx_t *ctx)
     root = cJSON_Parse(resp.body);
     cli_http_resp_free(&resp);
 
-    if (!root) {
+    if (!root)
+    {
         fprintf(stderr, "error: failed to parse status\n");
         return 1;
     }
@@ -317,60 +354,90 @@ int main(int argc, char **argv)
     cli_ctx_t ctx;
     int rc;
 
-    for (i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--connect") == 0) {
-            if (i + 1 >= argc) {
+    for (i = 1; i < argc; i++)
+    {
+        if (strcmp(argv[i], "--connect") == 0)
+        {
+            if (i + 1 >= argc)
+            {
                 fprintf(stderr, "error: --connect requires an argument\n");
                 return 2;
             }
             connect_flag = argv[++i];
-        } else if (strcmp(argv[i], "--config") == 0) {
-            if (i + 1 >= argc) {
+        }
+        else if (strcmp(argv[i], "--config") == 0)
+        {
+            if (i + 1 >= argc)
+            {
                 fprintf(stderr, "error: --config requires an argument\n");
                 return 2;
             }
             config_override = argv[++i];
-        } else if (strcmp(argv[i], "--timeout") == 0) {
-            if (i + 1 >= argc) {
+        }
+        else if (strcmp(argv[i], "--timeout") == 0)
+        {
+            if (i + 1 >= argc)
+            {
                 fprintf(stderr, "error: --timeout requires an argument\n");
                 return 2;
             }
             timeout = atof(argv[++i]);
-            if (timeout <= 0) {
+            if (timeout <= 0)
+            {
                 fprintf(stderr, "error: --timeout must be positive\n");
                 return 2;
             }
-        } else if (strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--formatted") == 0) {
+        }
+        else if (strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--formatted") == 0)
+        {
             raw = 0;
-        } else if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--raw") == 0) {
+        }
+        else if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--raw") == 0)
+        {
             raw = 1;
-        } else if (strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--list") == 0) {
+        }
+        else if (strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--list") == 0)
+        {
             do_list = 1;
             cmd_set++;
-            if (i + 1 < argc && argv[i + 1][0] != '-') {
+            if (i + 1 < argc && argv[i + 1][0] != '-')
+            {
                 list_what = argv[++i];
             }
-        } else if (strcmp(argv[i], "-q") == 0 || strcmp(argv[i], "--query") == 0) {
+        }
+        else if (strcmp(argv[i], "-q") == 0 || strcmp(argv[i], "--query") == 0)
+        {
             do_query = 1;
             cmd_set++;
-            if (i + 1 >= argc) {
+            if (i + 1 >= argc)
+            {
                 fprintf(stderr, "error: --query requires an argument\n");
                 return 2;
             }
             query_id = argv[++i];
-        } else if (strcmp(argv[i], "--status") == 0) {
+        }
+        else if (strcmp(argv[i], "--status") == 0)
+        {
             do_status = 1;
             cmd_set++;
-        } else if (strcmp(argv[i], "--mcp") == 0) {
+        }
+        else if (strcmp(argv[i], "--mcp") == 0)
+        {
             do_mcp = 1;
             cmd_set++;
-        } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+        }
+        else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
+        {
             do_help = 1;
             cmd_set++;
-        } else if (strcmp(argv[i], "--version") == 0) {
+        }
+        else if (strcmp(argv[i], "--version") == 0)
+        {
             do_version = 1;
             cmd_set++;
-        } else {
+        }
+        else
+        {
             fprintf(stderr, "error: unknown option: %s\n", argv[i]);
             return 2;
         }
@@ -379,48 +446,59 @@ int main(int argc, char **argv)
     /* --formatted and --raw: last one wins; default is formatted. */
     /* Already handled above in the arg parsing loop. */
 
-    if (do_help) {
+    if (do_help)
+    {
         cli_print_usage(argv[0]);
         return 0;
     }
 
-    if (do_version) {
+    if (do_version)
+    {
         printf("moonflare-cli/0.1.0\n");
         return 0;
     }
 
     /* Must have exactly one command. */
-    if (cmd_set != 1) {
+    if (cmd_set != 1)
+    {
         fprintf(stderr, "error: exactly one command required (-l, -q, --status, --mcp)\n");
         return 2;
     }
 
     /* Resolve daemon address. */
-    if (cli_resolve_addr(connect_flag, config_override, timeout, raw, &ctx) < 0) {
+    if (cli_resolve_addr(connect_flag, config_override, timeout, raw, &ctx) < 0)
+    {
         return 1;
     }
     ctx.raw = raw;
 
-    if (do_mcp) {
+    if (do_mcp)
+    {
         rc = mcp_run(&ctx);
         return rc;
     }
 
-    if (do_list) {
-        if (strcmp(list_what, "drivers") == 0) {
+    if (do_list)
+    {
+        if (strcmp(list_what, "drivers") == 0)
+        {
             rc = cmd_list_drivers(&ctx);
-        } else {
+        }
+        else
+        {
             rc = cmd_list_devices(&ctx, config_override);
         }
         return rc;
     }
 
-    if (do_query) {
+    if (do_query)
+    {
         rc = cmd_query(&ctx, query_id);
         return rc;
     }
 
-    if (do_status) {
+    if (do_status)
+    {
         rc = cmd_status(&ctx);
         return rc;
     }

@@ -83,7 +83,8 @@ typedef struct {
 
 static inline const char *classic_charge_stage_name(uint8_t msb)
 {
-    switch (msb) {
+    switch (msb)
+    {
         case 0:  return "Resting";
         case 3:  return "Absorb";
         case 4:  return "BulkMppt";
@@ -92,7 +93,8 @@ static inline const char *classic_charge_stage_name(uint8_t msb)
         case 7:  return "Equalize";
         case 10: return "HyperVoc";
         case 18: return "EqMppt";
-        default: {
+        default:
+        {
             static char buf[16];
             snprintf(buf, sizeof(buf), "Unknown(%u)", msb);
             return buf;

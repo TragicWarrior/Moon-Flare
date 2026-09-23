@@ -40,7 +40,8 @@ static const mf_plugin_ops_t *find_probe(const char *kind, const char *bus)
     int i;
     if (!reg)
         return NULL;
-    for (i = 0; i < reg->nops; i++) {
+    for (i = 0; i < reg->nops; i++)
+    {
         const mf_plugin_ops_t *ops = reg->ops[i];
         if (!ops || !ops->probe_start)
             continue;
@@ -63,7 +64,8 @@ static const mf_plugin_ops_t *find_probe(const char *kind, const char *bus)
 
 static void snapshot_result(void)
 {
-    if (g_disc.ops && g_disc.ops->probe_result && g_disc.job) {
+    if (g_disc.ops && g_disc.ops->probe_result && g_disc.job)
+    {
         if (g_disc.ops->probe_result(g_disc.job, g_disc.result,
                                      sizeof(g_disc.result)) != 0)
             snprintf(g_disc.result, sizeof(g_disc.result),
@@ -104,7 +106,8 @@ int mf_discover_start(const char *body, size_t body_len, char *err, size_t errsz
 
     if (err && errsz)
         err[0] = '\0';
-    if (g_disc.state == DISC_RUNNING) {
+    if (g_disc.state == DISC_RUNNING)
+    {
         if (err && errsz)
             snprintf(err, errsz, "discover already running");
         return -2;
@@ -115,7 +118,8 @@ int mf_discover_start(const char *body, size_t body_len, char *err, size_t errsz
         root = cJSON_ParseWithLength(body, body_len);
     else
         root = cJSON_Parse("{}");
-    if (!root) {
+    if (!root)
+    {
         if (err && errsz)
             snprintf(err, errsz, "bad request");
         return -1;
@@ -128,7 +132,8 @@ int mf_discover_start(const char *body, size_t body_len, char *err, size_t errsz
         if (cJSON_IsString(b))
             bus = b->valuestring;
     }
-    if (!kind || !kind[0]) {
+    if (!kind || !kind[0])
+    {
         cJSON_Delete(root);
         if (err && errsz)
             snprintf(err, errsz, "kind required");
@@ -136,14 +141,16 @@ int mf_discover_start(const char *body, size_t body_len, char *err, size_t errsz
     }
     if (!cJSON_GetObjectItemCaseSensitive(root, "auto_net"))
         cJSON_AddBoolToObject(root, "auto_net", 1);
-    if (!cJSON_GetObjectItemCaseSensitive(root, "listen")) {
+    if (!cJSON_GetObjectItemCaseSensitive(root, "listen"))
+    {
         const char *ls = mf_rest_listen_spec();
         if (ls && ls[0])
             cJSON_AddStringToObject(root, "listen", ls);
     }
     args = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
-    if (!args) {
+    if (!args)
+    {
         if (err && errsz)
             snprintf(err, errsz, "oom");
         return -1;
@@ -152,11 +159,13 @@ int mf_discover_start(const char *body, size_t body_len, char *err, size_t errsz
     g_disc.ops = find_probe(kind, bus);
     g_disc.t0 = mono_now();
     g_disc.state = DISC_RUNNING;
-    if (g_disc.ops && g_disc.ops->probe_start) {
+    if (g_disc.ops && g_disc.ops->probe_start)
+    {
         openerr[0] = '\0';
         rc = g_disc.ops->probe_start(args, &g_disc.job, openerr, sizeof(openerr));
         free(args);
-        if (rc != MF_OK) {
+        if (rc != MF_OK)
+        {
             snprintf(g_disc.err, sizeof(g_disc.err), "%s",
                      openerr[0] ? openerr : "probe_start failed");
             if (err && errsz)
@@ -181,7 +190,8 @@ int mf_discover_result(char *json, size_t cap)
         return -1;
     if (g_disc.state == DISC_IDLE)
         snprintf(json, cap, "{\"status\":\"done\",\"results\":[]}");
-    else {
+    else
+    {
         snapshot_result();
         snprintf(json, cap, "%s", g_disc.result);
     }
@@ -203,15 +213,18 @@ void mf_discover_step(void)
 
     if (g_disc.state != DISC_RUNNING)
         return;
-    if (g_disc.ops && g_disc.ops->probe_step && g_disc.job) {
+    if (g_disc.ops && g_disc.ops->probe_step && g_disc.job)
+    {
         st = g_disc.ops->probe_step(g_disc.job);
-        if (st == MF_STEP_UPDATED || st == MF_STEP_ERROR) {
+        if (st == MF_STEP_UPDATED || st == MF_STEP_ERROR)
+        {
             g_disc.state = (st == MF_STEP_ERROR) ? DISC_ERROR : DISC_DONE;
             snapshot_result();
         }
         return;
     }
-    if (mono_now() >= g_disc.dummy_until) {
+    if (mono_now() >= g_disc.dummy_until)
+    {
         g_disc.state = DISC_DONE;
         snapshot_result();
     }

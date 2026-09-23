@@ -106,8 +106,10 @@ static void field_caption(const char *key, char *lab, size_t lab_cap,
         hint[0] = '\0';
     if (!key)
         return;
-    for (i = 0; i < sizeof(map) / sizeof(map[0]); i++) {
-        if (strcmp(key, map[i].k) == 0) {
+    for (i = 0; i < sizeof(map) / sizeof(map[0]); i++)
+    {
+        if (strcmp(key, map[i].k) == 0)
+        {
             if (lab && lab_cap)
                 snprintf(lab, lab_cap, "%s", map[i].lab);
             if (hint && hint_cap && map[i].hint[0])
@@ -116,7 +118,8 @@ static void field_caption(const char *key, char *lab, size_t lab_cap,
         }
     }
     suf = strrchr(key, '_');
-    if (suf && hint && hint_cap) {
+    if (suf && hint && hint_cap)
+    {
         if (strcmp(suf, "_s") == 0)
             snprintf(hint, hint_cap, " (Seconds)");
         else if (strcmp(suf, "_v") == 0)
@@ -130,7 +133,8 @@ static void field_caption(const char *key, char *lab, size_t lab_cap,
         return;
     snprintf(tmp, sizeof(tmp), "%s", key);
     tok = tmp;
-    while (*tok) {
+    while (*tok)
+    {
         char word[32];
         char *end;
         int drop = 0;
@@ -151,7 +155,8 @@ static void field_caption(const char *key, char *lab, size_t lab_cap,
         save = tok;
         while (*save == '.' || *save == '_' || *save == ' ')
             save++;
-        if (!*save) {
+        if (!*save)
+        {
             if (strcmp(word, "s") == 0 || strcmp(word, "v") == 0 ||
                 strcmp(word, "a") == 0 || strcmp(word, "c") == 0 ||
                 strcmp(word, "ah") == 0 || strcmp(word, "pct") == 0)
@@ -167,7 +172,8 @@ static void field_caption(const char *key, char *lab, size_t lab_cap,
             snprintf(word, sizeof(word), "IP");
         else if (strcasecmp(word, "id") == 0)
             snprintf(word, sizeof(word), "ID");
-        else {
+        else
+        {
             word[0] = (char)toupper((unsigned char)word[0]);
             for (k = 1; word[k]; k++)
                 word[k] = (char)tolower((unsigned char)word[k]);
@@ -185,16 +191,21 @@ static void style_input(vk_input_t *in, int focused, int readonly)
 {
     if (!in)
         return;
-    if (readonly) {
+    if (readonly)
+    {
         /* A_DIM + black is a darker gray than COLOR_WHITE on 8-color. */
         vk_widget_set_colors(VK_WIDGET(in), COLOR_BLACK, COL_MENU);
         vk_widget_set_attrs(VK_WIDGET(in), A_DIM);
         vk_input_show_cursor(in, false);
-    } else if (focused) {
+    }
+    else if (focused)
+    {
         vk_widget_set_colors(VK_WIDGET(in), COLOR_WHITE, COL_MENU);
         vk_widget_set_attrs(VK_WIDGET(in), A_BOLD);
         vk_input_show_cursor(in, true);
-    } else {
+    }
+    else
+    {
         vk_widget_set_colors(VK_WIDGET(in), COL_TEXT, COL_MENU);
         vk_widget_set_attrs(VK_WIDGET(in), A_NORMAL);
         vk_input_show_cursor(in, false);
@@ -241,14 +252,16 @@ static void highlight_buttons(void)
     int save_hi = (g_focus == g_nedit);
     int exit_hi = (g_focus == g_nedit + 1);
 
-    if (g_btn_save) {
+    if (g_btn_save)
+    {
         vk_widget_set_colors(VK_WIDGET(g_btn_save),
                              save_hi ? COLOR_YELLOW : COL_TEXT, COL_MENU);
         vk_widget_set_attrs(VK_WIDGET(g_btn_save), A_BOLD);
         vk_button_release(g_btn_save);
         vk_button_update(g_btn_save);
     }
-    if (g_btn_exit) {
+    if (g_btn_exit)
+    {
         vk_widget_set_colors(VK_WIDGET(g_btn_exit),
                              exit_hi ? COLOR_YELLOW : COL_TEXT, COL_MENU);
         vk_widget_set_attrs(VK_WIDGET(g_btn_exit), A_BOLD);
@@ -263,7 +276,8 @@ static void set_field_focus(int idx)
 
     g_focus = idx;
     fi = (idx >= 0 && idx < g_nedit) ? g_edit[idx] : -1;
-    for (i = 0; i < g_nfields; i++) {
+    for (i = 0; i < g_nfields; i++)
+    {
         if (!g_in[i])
             continue;
         vk_input_show_cursor(g_in[i], !g_ro[i] && i == fi);
@@ -276,6 +290,7 @@ static vk_button_t *mk_btn(const char *txt, VkWidgetFunc fn)
 
     if (!b)
         return NULL;
+
     vk_button_set_border_style(b, VK_BORDER_SINGLE);
     vk_widget_set_colors(VK_WIDGET(b), COL_TEXT, COL_MENU);
     vk_widget_set_attrs(VK_WIDGET(b), A_BOLD);
@@ -315,24 +330,30 @@ static void destroy_form(void)
     box_vacate(g_form);
     box_vacate(g_bar);
 
-    for (i = 0; i < MAX_FIELDS; i++) {
-        if (g_row[i]) {
+    for (i = 0; i < MAX_FIELDS; i++)
+    {
+        if (g_row[i])
+        {
             vk_grid_destroy(g_row[i]);
             g_row[i] = NULL;
         }
-        if (g_fields[i]) {
+        if (g_fields[i])
+        {
             vk_grid_destroy(g_fields[i]);
             g_fields[i] = NULL;
         }
-        if (g_in[i]) {
+        if (g_in[i])
+        {
             vk_input_destroy(g_in[i]);
             g_in[i] = NULL;
         }
-        if (g_lab[i]) {
+        if (g_lab[i])
+        {
             vk_label_destroy(g_lab[i]);
             g_lab[i] = NULL;
         }
-        if (g_hint[i]) {
+        if (g_hint[i])
+        {
             vk_label_destroy(g_hint[i]);
             g_hint[i] = NULL;
         }
@@ -340,55 +361,68 @@ static void destroy_form(void)
         g_row_h[i] = 0;
         g_shown[i] = 0;
     }
-    if (g_btn_save) {
+    if (g_btn_save)
+    {
         vk_button_destroy(g_btn_save);
         g_btn_save = NULL;
     }
-    if (g_btn_exit) {
+    if (g_btn_exit)
+    {
         vk_button_destroy(g_btn_exit);
         g_btn_exit = NULL;
     }
-    if (g_fill) {
+    if (g_fill)
+    {
         vk_filler_destroy(g_fill);
         g_fill = NULL;
     }
-    if (g_form_fill) {
+    if (g_form_fill)
+    {
         vk_filler_destroy(g_form_fill);
         g_form_fill = NULL;
     }
-    if (g_bar) {
+    if (g_bar)
+    {
         vk_box_destroy(g_bar);
         g_bar = NULL;
     }
-    if (g_form) {
+    if (g_form)
+    {
         vk_box_destroy(g_form);
         g_form = NULL;
     }
-    if (g_inner) {
+    if (g_inner)
+    {
         vk_box_destroy(g_inner);
         g_inner = NULL;
     }
-    if (g_pad_left) {
+    if (g_pad_left)
+    {
         vk_filler_destroy(g_pad_left);
         g_pad_left = NULL;
     }
-    if (g_pad_right) {
+    if (g_pad_right)
+    {
         vk_filler_destroy(g_pad_right);
         g_pad_right = NULL;
     }
-    if (g_mid) {
+    if (g_mid)
+    {
         vk_box_destroy(g_mid);
         g_mid = NULL;
     }
-    if (g_pad_top) {
+    if (g_pad_top)
+    {
         vk_filler_destroy(g_pad_top);
         g_pad_top = NULL;
     }
-    if (g_pad_bot) {
+    if (g_pad_bot)
+    {
         vk_filler_destroy(g_pad_bot);
         g_pad_bot = NULL;
     }
-    if (g_vbox) {
+    if (g_vbox)
+    {
         vk_box_destroy(g_vbox);
         g_vbox = NULL;
     }
@@ -403,7 +437,8 @@ static int key_already(const char *key)
 {
     int i;
 
-    for (i = 0; i < g_nfields; i++) {
+    for (i = 0; i < g_nfields; i++)
+    {
         if (strcmp(g_keys[i], key) == 0)
             return 1;
     }
@@ -438,7 +473,8 @@ static int field_readonly(const char *key)
 
     if (!key)
         return 1;
-    for (i = 0; i < sizeof(ro) / sizeof(ro[0]); i++) {
+    for (i = 0; i < sizeof(ro) / sizeof(ro[0]); i++)
+    {
         if (strcmp(key, ro[i]) == 0)
             return 1;
     }
@@ -485,16 +521,20 @@ static void add_field(const char *key, const char *val, int row_h, int iw)
     vk_label_update(lab);
 
     in = vk_input_create(in_w);
-    if (!in) {
+    if (!in)
+    {
         vk_label_destroy(lab);
         vk_grid_destroy(fields);
         return;
     }
-    if (row_h < 3) {
+    if (row_h < 3)
+    {
         /* 1-row SINGLE relief paints text on row 1 (off-canvas). BASIC is [value]. */
         vk_input_set_border_style(in, VK_BUTTON_BASIC);
         vk_widget_resize(VK_WIDGET(in), in_w, 1);
-    } else {
+    }
+    else
+    {
         vk_input_set_border_style(in, VK_BORDER_SINGLE);
         vk_widget_set_relief_colors(VK_WIDGET(in), COLOR_WHITE, COLOR_BLACK);
     }
@@ -510,7 +550,8 @@ static void add_field(const char *key, const char *val, int row_h, int iw)
 
     /* Outer 2-col grid: fields | hint. Hint is 1-row so the grid vcenters it. */
     row = vk_grid_create(iw, row_h, 2, 1);
-    if (!row) {
+    if (!row)
+    {
         vk_label_destroy(hint);
         vk_input_destroy(in);
         vk_label_destroy(lab);
@@ -582,6 +623,7 @@ static void json_field_text(const char *key, const cJSON *it,
         snprintf(buf, cap, "%.2f", it->valuedouble);
         return;
     }
+
     json_scalar(it, buf, cap);
 }
 
@@ -591,7 +633,8 @@ static int json_key_dup(const cJSON *root, const cJSON *cur)
 
     if (!root || !cur || !cur->string)
         return 0;
-    for (prev = root->child; prev && prev != cur; prev = prev->next) {
+    for (prev = root->child; prev && prev != cur; prev = prev->next)
+    {
         if (prev->string && strcmp(prev->string, cur->string) == 0)
             return 1;
     }
@@ -605,7 +648,8 @@ static void add_json_group(cJSON *root, int want_ro, int row_h, int iw, int n)
 
     if (!root || !cJSON_IsObject(root))
         return;
-    for (it = root->child; it && g_nfields < n; it = it->next) {
+    for (it = root->child; it && g_nfields < n; it = it->next)
+    {
         int ro;
 
         if (!it->string || !it->string[0])
@@ -930,10 +974,12 @@ static void build_form(int iw, int ih, const char *json)
     destroy_form();
     if (json && json[0])
         root = cJSON_Parse(json);
-    if (root && cJSON_IsObject(root)) {
+    if (root && cJSON_IsObject(root))
+    {
         nedit = 0;
         nro = 0;
-        for (it = root->child; it; it = it->next) {
+        for (it = root->child; it; it = it->next)
+        {
             cJSON *prev;
             int dup = 0;
 
@@ -944,7 +990,8 @@ static void build_form(int iw, int ih, const char *json)
             if (strcmp(it->string, "name") == 0 ||
                 strcmp(it->string, "uuid") == 0)
                 continue;
-            for (prev = root->child; prev != it; prev = prev->next) {
+            for (prev = root->child; prev != it; prev = prev->next)
+            {
                 if (prev->string && strcmp(prev->string, it->string) == 0)
                     dup = 1;
             }
@@ -1099,7 +1146,8 @@ void mf_devset_close(void)
     if (g_win)
         vk_window_set_child(g_win, NULL, VK_INHERIT_NONE);
     destroy_form();
-    if (g_win) {
+    if (g_win)
+    {
         vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_win));
         vk_window_destroy(g_win);
         g_win = NULL;
@@ -1109,8 +1157,14 @@ void mf_devset_close(void)
     mf_ui_refresh();
 }
 
-int mf_devset_open(void) { return g_open; }
-int mf_devset_touched(void) { return g_touched; }
+int mf_devset_open(void)
+{
+    return g_open;
+}
+int mf_devset_touched(void)
+{
+    return g_touched;
+}
 
 int mf_devset_has_key(const char *key)
 {
@@ -1118,20 +1172,25 @@ int mf_devset_has_key(const char *key)
 
     if (!key || !key[0])
         return 0;
-    for (i = 0; i < g_nfields; i++) {
+    for (i = 0; i < g_nfields; i++)
+    {
         if (strcmp(g_keys[i], key) == 0)
             return 1;
     }
     return 0;
 }
 
-const char *mf_devset_id(void) { return g_id; }
+const char *mf_devset_id(void)
+{
+    return g_id;
+}
 
 const char *mf_devset_poll_text(void)
 {
     int i;
 
-    for (i = 0; i < g_nfields; i++) {
+    for (i = 0; i < g_nfields; i++)
+    {
         if (strcmp(g_keys[i], "poll_interval_s") == 0 && g_in[i])
             return vk_input_get_text(g_in[i]);
     }
@@ -1141,8 +1200,10 @@ const char *mf_devset_poll_text(void)
 int mf_devset_get_graph_interval(void)
 {
     int i;
-    for (i = 0; i < g_nfields; i++) {
-        if (strcmp(g_keys[i], "graph_interval_min") == 0 && g_in[i]) {
+    for (i = 0; i < g_nfields; i++)
+    {
+        if (strcmp(g_keys[i], "graph_interval_min") == 0 && g_in[i])
+        {
             const char *v = vk_input_get_text(g_in[i]);
             int val = atoi(v);
             if (val < 1)
@@ -1160,8 +1221,10 @@ void mf_devset_set_graph_interval(int minutes)
     if (minutes < 1)
         minutes = 1;
     snprintf(buf, sizeof(buf), "%d", minutes);
-    for (i = 0; i < g_nfields; i++) {
-        if (strcmp(g_keys[i], "graph_interval_min") == 0 && g_in[i]) {
+    for (i = 0; i < g_nfields; i++)
+    {
+        if (strcmp(g_keys[i], "graph_interval_min") == 0 && g_in[i])
+        {
             vk_input_set_text(g_in[i], buf);
             vk_input_update(g_in[i]);
             return;
@@ -1190,7 +1253,8 @@ const char *mf_devset_payload(void)
     g_payload[0] = '{';
     g_payload[1] = '\0';
     off = 1;
-    for (i = 0; i < g_nfields; i++) {
+    for (i = 0; i < g_nfields; i++)
+    {
         const char *v = g_in[i] ? vk_input_get_text(g_in[i]) : "";
         char piece[256];
         int n;
@@ -1217,7 +1281,8 @@ const char *mf_devset_payload(void)
         if (off >= sizeof(g_payload) - 2)
             break;
     }
-    if (off < sizeof(g_payload) - 1) {
+    if (off < sizeof(g_payload) - 1)
+    {
         g_payload[off] = '}';
         g_payload[off + 1] = '\0';
     }
@@ -1233,8 +1298,10 @@ static void paint_dialog(void)
      * widgets (wiping their canvases). Two passes: layout, then paint
      * onto the final sizes.
      */
-    for (pass = 0; pass < 2; pass++) {
-        for (i = 0; i < g_nfields; i++) {
+    for (pass = 0; pass < 2; pass++)
+    {
+        for (i = 0; i < g_nfields; i++)
+        {
             style_caption(g_lab[i], g_ro[i]);
             style_caption(g_hint[i], g_ro[i]);
             style_input(g_in[i],
@@ -1313,18 +1380,21 @@ int mf_devset_key(wint_t c)
     if (!g_open)
         return 0;
     nbtn = g_nedit + 2;
-    if (c == 27 || c == KEY_EXIT || c == KEY_CANCEL) {
+    if (c == 27 || c == KEY_EXIT || c == KEY_CANCEL)
+    {
         mf_devset_close();
         return 1;
     }
-    if (c == '\t') {
+    if (c == '\t')
+    {
         set_field_focus((g_focus + 1) % nbtn);
         scroll_focus_into_view();
         paint_dialog();
         return 1;
     }
 #ifdef KEY_BTAB
-    if (c == KEY_BTAB) {
+    if (c == KEY_BTAB)
+    {
         set_field_focus((g_focus + nbtn - 1) % nbtn);
         scroll_focus_into_view();
         paint_dialog();
@@ -1345,8 +1415,10 @@ int mf_devset_key(wint_t c)
             paint_dialog();
         return 1;
     }
-    if (c == '\n' || c == KEY_ENTER) {
-        if (g_focus == g_nedit + 1) {
+    if (c == '\n' || c == KEY_ENTER)
+    {
+        if (g_focus == g_nedit + 1)
+        {
             mf_devset_close();
             return 1;
         }
@@ -1357,7 +1429,8 @@ int mf_devset_key(wint_t c)
     in = g_in[g_edit[g_focus]];
     if (!in)
         return 1;
-    if (c == KEY_BACKSPACE || c == 127) {
+    if (c == KEY_BACKSPACE || c == 127)
+    {
         g_touched = 1;
         vk_input_backspace(in);
         vk_input_update(in);
@@ -1365,21 +1438,24 @@ int mf_devset_key(wint_t c)
         paint_dialog();
         return 1;
     }
-    if (c == KEY_LEFT) {
+    if (c == KEY_LEFT)
+    {
         vk_input_move_cursor(in, -1);
         vk_input_update(in);
         scroll_focus_into_view();
         paint_dialog();
         return 1;
     }
-    if (c == KEY_RIGHT) {
+    if (c == KEY_RIGHT)
+    {
         vk_input_move_cursor(in, 1);
         vk_input_update(in);
         scroll_focus_into_view();
         paint_dialog();
         return 1;
     }
-    if (c >= 32 && c < 127) {
+    if (c >= 32 && c < 127)
+    {
         g_touched = 1;
         vk_input_insert_char(in, (int)c);
         vk_input_update(in);
@@ -1394,17 +1470,20 @@ void mf_confirm_close(void)
 {
     if (!g_cf_open)
         return;
-    if (g_cf_l1) {
+    if (g_cf_l1)
+    {
         vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_cf_l1));
         vk_label_destroy(g_cf_l1);
         g_cf_l1 = NULL;
     }
-    if (g_cf_l2) {
+    if (g_cf_l2)
+    {
         vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_cf_l2));
         vk_label_destroy(g_cf_l2);
         g_cf_l2 = NULL;
     }
-    if (g_cf_win) {
+    if (g_cf_win)
+    {
         vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_cf_win));
         vk_window_destroy(g_cf_win);
         g_cf_win = NULL;
@@ -1413,8 +1492,14 @@ void mf_confirm_close(void)
     mf_ui_refresh();
 }
 
-int mf_confirm_open(void) { return g_cf_open; }
-const char *mf_confirm_action(void) { return g_cf_key; }
+int mf_confirm_open(void)
+{
+    return g_cf_open;
+}
+const char *mf_confirm_action(void)
+{
+    return g_cf_key;
+}
 
 void mf_confirm_show(const char *name, const char *key)
 {
@@ -1464,7 +1549,8 @@ int mf_confirm_handle(wint_t c)
         return 0;
     if (c == 'y' || c == 'Y')
         return 2;
-    if (c == 'n' || c == 'N' || c == 27 || c == KEY_EXIT) {
+    if (c == 'n' || c == 'N' || c == 27 || c == KEY_EXIT)
+    {
         mf_confirm_close();
         return 1;
     }
@@ -1487,10 +1573,12 @@ mf_confirm_mouse(int x, int y, mmask_t bstate)
     if (x < win_x || y < win_y || x >= win_x + win_w || y >= win_y + win_h)
         return 0;
 
-    if (bstate & LEFT) {
+    if (bstate & LEFT)
+    {
         lx = x - win_x;
         ly = y - win_y;
-        if (ly >= 3 && ly <= 5) {
+        if (ly >= 3 && ly <= 5)
+        {
             int mid = win_w / 2;
             if (lx < mid)
                 return 2;
@@ -1580,13 +1668,15 @@ mf_devset_mouse(int x, int y, mmask_t bstate)
         ox = win_x + vx + mx + ix + bx;
         oy = win_y + vy + my + iy + by;
     }
-    if (hit_btn(g_btn_save, ox, oy, x, y)) {
+    if (hit_btn(g_btn_save, ox, oy, x, y))
+    {
         int rc = vk_button_press(g_btn_save);
         vk_button_update(g_btn_save);
         paint_dialog();
         return rc == 2 ? 2 : 1;
     }
-    if (hit_btn(g_btn_exit, ox, oy, x, y)) {
+    if (hit_btn(g_btn_exit, ox, oy, x, y))
+    {
         vk_button_press(g_btn_exit);
         return 1;
     }
@@ -1596,7 +1686,8 @@ mf_devset_mouse(int x, int y, mmask_t bstate)
     ly = y - win_y;
     cx = 2;
     cy = 2;
-    for (i = 0; i < g_nfields; i++) {
+    for (i = 0; i < g_nfields; i++)
+    {
         int rh;
 
         if (!g_shown[i] || !g_row[i])
@@ -1605,11 +1696,14 @@ mf_devset_mouse(int x, int y, mmask_t bstate)
         if (lx >= cx && lx < win_w - (g_vscroll ? 4 : 2) &&
             ly >= cy && ly < cy + rh)
         {
-            if (!g_ro[i]) {
+            if (!g_ro[i])
+            {
                 int e;
 
-                for (e = 0; e < g_nedit; e++) {
-                    if (g_edit[e] == i) {
+                for (e = 0; e < g_nedit; e++)
+                {
+                    if (g_edit[e] == i)
+                    {
                         set_field_focus(e);
                         paint_dialog();
                         break;

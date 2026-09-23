@@ -99,7 +99,8 @@ static helper_row_t *helper_row(const char *adapter)
 {
     int i, empty = -1;
     const char *ad = adapter && adapter[0] ? adapter : "hci0";
-    for (i = 0; i < HMAX; i++) {
+    for (i = 0; i < HMAX; i++)
+    {
         if (g_help[i].adapter[0] && strcmp(g_help[i].adapter, ad) == 0)
             return &g_help[i];
         if (empty < 0 && !g_help[i].adapter[0])
@@ -128,7 +129,8 @@ static int helper_spawn(jk_ctx_t *c)
     pid_t pid;
     if (!h)
         return -1;
-    if (h->st == H_STARTING) {
+    if (h->st == H_STARTING)
+    {
         if (h->pid > 0 && kill(h->pid, 0) != 0 && errno == ESRCH)
             h->st = H_NONE;
         else
@@ -141,7 +143,8 @@ static int helper_spawn(jk_ctx_t *c)
     pid = fork();
     if (pid < 0)
         return -1;
-    if (pid == 0) {
+    if (pid == 0)
+    {
         execl(bin, bin, "--adapter", h->adapter, (char *)NULL);
         _exit(127);
     }
@@ -299,20 +302,24 @@ static int start_connect(jk_ctx_t *c)
     struct sockaddr_un a;
     socklen_t alen;
     int fd, rc;
-    if (abs_addr(&a, &alen, c->adapter) != 0) {
+    if (abs_addr(&a, &alen, c->adapter) != 0)
+    {
         set_err(c, "bad adapter");
         return -1;
     }
     fd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
-    if (fd < 0) {
+    if (fd < 0)
+    {
         set_err(c, "socket");
         return -1;
     }
     rc = connect(fd, (struct sockaddr *)&a, alen);
-    if (rc != 0 && errno != EINPROGRESS) {
+    if (rc != 0 && errno != EINPROGRESS)
+    {
         int e = errno;
         close(fd);
-        if (helper_needed(e)) {
+        if (helper_needed(e))
+        {
             (void)helper_spawn(c);
             set_err(c, "helper starting");
             return -1;
@@ -362,7 +369,8 @@ static int hex_nibble(int ch)
 static int hex_decode(const char *in, uint8_t *out, size_t cap)
 {
     size_t n = 0;
-    while (in && in[0] && in[1] && n < cap) {
+    while (in && in[0] && in[1] && n < cap)
+    {
         int hi = hex_nibble((unsigned char)in[0]);
         int lo = hex_nibble((unsigned char)in[1]);
         if (hi < 0 || lo < 0)
@@ -379,7 +387,8 @@ static void hex_encode(const uint8_t *in, size_t n, char *out, size_t cap)
     size_t i;
     if (cap < n * 2 + 1)
         n = (cap - 1) / 2;
-    for (i = 0; i < n; i++) {
+    for (i = 0; i < n; i++)
+    {
         out[i * 2] = d[in[i] >> 4];
         out[i * 2 + 1] = d[in[i] & 0xF];
     }
@@ -393,7 +402,8 @@ static void on_line(jk_ctx_t *c, const char *line)
     json_str(line, "type", type, sizeof(type));
     json_str(line, "cmd", cmd, sizeof(cmd));
     json_str(line, "hex", hex, sizeof(hex));
-    if (strcmp(type, "ok") == 0 && strcmp(cmd, "connect") == 0) {
+    if (strcmp(type, "ok") == 0 && strcmp(cmd, "connect") == 0)
+    {
         if (!c->handshake_ok)
             helper_up(c);
         c->handshake_ok = 1;
@@ -402,44 +412,55 @@ static void on_line(jk_ctx_t *c, const char *line)
         c->err[0] = '\0';
         return;
     }
-    if (strcmp(type, "error") == 0) {
+    if (strcmp(type, "error") == 0)
+    {
         json_str(line, "message", c->err, sizeof(c->err));
         if (ble_drop_msg(c->err))
             mark_dropped(c);
         return;
     }
-    if (strcmp(type, "notify") == 0 && c->handshake_ok && hex[0]) {
+    if (strcmp(type, "notify") == 0 && c->handshake_ok && hex[0])
+    {
         uint8_t raw[JK_FRAME_SIZE];
         int n = hex_decode(hex, raw, sizeof(raw));
         static unsigned nlog;
-        if (nlog < 8) {
+        if (nlog < 8)
+        {
             fprintf(stderr, "jk: notify n=%d handshake=%d\n", n,
                     c->handshake_ok);
             nlog++;
         }
-        if (n > 0) {
+        if (n > 0)
+        {
             const uint8_t *p = raw;
             size_t left = (size_t)n;
             int got;
-            do {
+            do
+            {
                 got = jk_assembler_feed(&c->asm, p, left, c->frame, 1);
                 p = (const uint8_t *)"";
                 left = 0;
                 if (got <= 0)
                     break;
-                if (c->frame[4] == JK_FRAME_CELL_INFO) {
+                if (c->frame[4] == JK_FRAME_CELL_INFO)
+                {
                     int rc = jk_decode_cell_info(c->frame, JK_FRAME_SIZE,
-                                                 JK_PROTO_JK02_32S, 0,
-                                                 &c->cell);
-                    if (rc == JK_OK) {
+                                                  JK_PROTO_JK02_32S, 0,
+                                                  &c->cell);
+                    if (rc == JK_OK)
+                    {
                         c->have_data = 1;
                         c->last_cell_mono = mono_now();
-                    } else {
+                    }
+                    else
+                    {
                         fprintf(stderr, "jk: decode cell-info %d\n", rc);
                     }
-                } else if (c->frame[4] == JK_FRAME_SETTINGS) {
+                } else if (c->frame[4] == JK_FRAME_SETTINGS)
+                {
                     if (jk_decode_settings(c->frame, JK_FRAME_SIZE,
-                                           &c->settings) == JK_OK) {
+                                            &c->settings) == JK_OK)
+                    {
                         c->have_settings = 1;
                         c->want_settings = 0;
                         c->bal_want = -1;
@@ -464,20 +485,23 @@ static void on_line(jk_ctx_t *c, const char *line)
 
 static void drain_in(jk_ctx_t *c)
 {
-    for (;;) {
+    for (;;)
+    {
         ssize_t n;
         char *nl;
         if (c->in_len + 1 >= sizeof(c->in))
             c->in_len = 0;
         n = read(c->fd, c->in + c->in_len, sizeof(c->in) - 1 - c->in_len);
-        if (n < 0) {
+        if (n < 0)
+        {
             if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
                 return;
             sock_close(c);
             set_err(c, "read");
             return;
         }
-        if (n == 0) {
+        if (n == 0)
+        {
             if (c->handshake_ok)
                 helper_dead(c);
             sock_close(c);
@@ -486,7 +510,8 @@ static void drain_in(jk_ctx_t *c)
         }
         c->in_len += (size_t)n;
         c->in[c->in_len] = '\0';
-        while ((nl = memchr(c->in, '\n', c->in_len)) != NULL) {
+        while ((nl = memchr(c->in, '\n', c->in_len)) != NULL)
+        {
             size_t ln = (size_t)(nl - c->in);
             c->in[ln] = '\0';
             if (ln && c->in[ln - 1] == '\r')
@@ -501,9 +526,11 @@ static void drain_in(jk_ctx_t *c)
 
 static void flush_out(jk_ctx_t *c)
 {
-    while (c->out_off < c->out_len) {
+    while (c->out_off < c->out_len)
+    {
         ssize_t n = write(c->fd, c->out + c->out_off, c->out_len - c->out_off);
-        if (n < 0) {
+        if (n < 0)
+        {
             if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
                 return;
             sock_close(c);
@@ -517,7 +544,8 @@ static void flush_out(jk_ctx_t *c)
 static mf_step_t pump(jk_ctx_t *c)
 {
     double now = mono_now();
-    if (c->state == ST_IDLE) {
+    if (c->state == ST_IDLE)
+    {
         if (now < c->next_try)
             return MF_STEP_IDLE;
         if (start_connect(c) != 0)
@@ -525,18 +553,21 @@ static mf_step_t pump(jk_ctx_t *c)
         if (c->state == ST_HANDSHAKE)
             send_connect(c);
     }
-    if (c->state == ST_CONNECTING) {
+    if (c->state == ST_CONNECTING)
+    {
         struct pollfd p;
         int err = 0;
         socklen_t el = (socklen_t)sizeof(err);
         p.fd = c->fd;
         p.events = POLLOUT;
         p.revents = 0;
-        if (poll(&p, 1, 0) <= 0 || !(p.revents & POLLOUT)) {
+        if (poll(&p, 1, 0) <= 0 || !(p.revents & POLLOUT))
+        {
             c->select_mask = MF_IO_WANT_WRITE;
             return MF_STEP_IDLE;
         }
-        if (getsockopt(c->fd, SOL_SOCKET, SO_ERROR, &err, &el) != 0 || err) {
+        if (getsockopt(c->fd, SOL_SOCKET, SO_ERROR, &err, &el) != 0 || err)
+        {
             int e = err ? err : errno;
             sock_close(c);
             if (helper_needed(e))
@@ -549,37 +580,45 @@ static mf_step_t pump(jk_ctx_t *c)
     }
     if (c->fd >= 0)
         drain_in(c);
-    if (c->handshake_ok && c->fd >= 0) {
-        if (c->wq_i < c->wq_n && now >= c->wq_next) {
+    if (c->handshake_ok && c->fd >= 0)
+    {
+        if (c->wq_i < c->wq_n && now >= c->wq_next)
+        {
             const uint8_t *wcmd;
 
             wcmd = jk_build_register_cmd(c->wq_reg[c->wq_i], c->wq_val[c->wq_i]);
             (void)queue_hex_write(c, wcmd);
             c->wq_i++;
             c->wq_next = now + 0.35;
-            if (c->wq_i >= c->wq_n) {
+            if (c->wq_i >= c->wq_n)
+            {
                 c->wq_n = c->wq_i = 0;
                 c->want_settings = 1;
                 c->last_settings_req = now;
             }
-        } else if (c->wq_n > 0) {
+        } else if (c->wq_n > 0)
+        {
             /* wait for the next paced register write */
-        } else if (c->need_cell_req) {
+        } else if (c->need_cell_req)
+        {
             queue_hex_write(c, jk_build_command(JK_CMD_DEVICE_INFO, NULL, 0, 0));
             queue_hex_write(c, jk_build_command(JK_CMD_CELL_INFO, NULL, 0, 0));
             c->need_cell_req = 0;
             c->last_cell_req = now;
             c->last_settings_req = now;
         } else if ((!c->have_settings || c->want_settings) &&
-                   now - c->last_settings_req > 1.5) {
+                   now - c->last_settings_req > 1.5)
+        {
             queue_hex_write(c, jk_build_command(JK_CMD_CELL_INFO, NULL, 0, 0));
             c->last_settings_req = now;
-        } else if (now - c->last_cell_req > CELL_RETRY_S) {
+        } else if (now - c->last_cell_req > CELL_RETRY_S)
+        {
             queue_hex_write(c, jk_build_command(JK_CMD_CELL_INFO, NULL, 0, 0));
             c->last_cell_req = now;
         }
         if (c->have_data && c->last_cell_mono > 0.0 &&
-            now - c->last_cell_mono > CELL_STALE_S) {
+            now - c->last_cell_mono > CELL_STALE_S)
+        {
             c->have_data = 0;
             set_err(c, "stale");
         }
@@ -604,7 +643,8 @@ static void *jk_open(const char *spec_json, char *err, size_t errsz)
     jk_ctx_t *c = calloc(1, sizeof(*c));
     const char *ble;
     double iv;
-    if (!c) {
+    if (!c)
+    {
         if (err && errsz)
             snprintf(err, errsz, "oom");
         return NULL;
@@ -627,18 +667,21 @@ static void *jk_open(const char *spec_json, char *err, size_t errsz)
     if (c->poll_interval_s < POLL_MIN)
         c->poll_interval_s = POLL_MIN;
     jk_assembler_init(&c->asm);
-    if (!c->mac[0]) {
+    if (!c->mac[0])
+    {
         set_err(c, "ble.address required");
         if (err && errsz)
             snprintf(err, errsz, "%s", c->err);
         /* still return ctx; step will ERROR */
         return c;
     }
-    if (start_connect(c) != 0) {
+    if (start_connect(c) != 0)
+    {
         if (err && errsz)
             snprintf(err, errsz, "%s", c->err);
         c->next_try = mono_now() + 0.2;
-    } else if (c->state == ST_HANDSHAKE) {
+    } else if (c->state == ST_HANDSHAKE)
+    {
         send_connect(c);
     }
     return c;
@@ -651,7 +694,8 @@ static void jk_close(void *v)
     if (!c)
         return;
     h = helper_row(c->adapter);
-    if (c->fd >= 0 && c->handshake_ok) {
+    if (c->fd >= 0 && c->handshake_ok)
+    {
         if (h && h->refcnt <= 1)
             queue_str(c, "{\"cmd\":\"quit\"}");
         else
@@ -708,7 +752,8 @@ static int js_append(char *buf, size_t cap, size_t *off, const char *fmt, ...)
     va_end(ap);
     if (n < 0)
         return -1;
-    if ((size_t)n >= cap - *off) {
+    if ((size_t)n >= cap - *off)
+    {
         *off = cap - 1;
         buf[cap - 1] = '\0';
         return -1;
@@ -725,7 +770,8 @@ static int jk_get_reading(void *v, char *json, size_t cap)
     int i;
     if (!c || !json || cap == 0)
         return -1;
-    if (!c->have_data) {
+    if (!c->have_data)
+    {
         json[0] = '\0';
         return -1;
     }
@@ -766,27 +812,33 @@ static int jk_get_reading(void *v, char *json, size_t cap)
         struct { const char *lab; float t; } ts[6];
         int nt = 0;
 
-        if (r->mosfet_temp_c > (float)JK_TEMP_ABSENT * 0.5f) {
+        if (r->mosfet_temp_c > (float)JK_TEMP_ABSENT * 0.5f)
+        {
             ts[nt].lab = "MOS";
             ts[nt++].t = r->mosfet_temp_c;
         }
-        if (r->temp1_c > (float)JK_TEMP_ABSENT * 0.5f) {
+        if (r->temp1_c > (float)JK_TEMP_ABSENT * 0.5f)
+        {
             ts[nt].lab = "T1";
             ts[nt++].t = r->temp1_c;
         }
-        if (r->temp2_c > (float)JK_TEMP_ABSENT * 0.5f) {
+        if (r->temp2_c > (float)JK_TEMP_ABSENT * 0.5f)
+        {
             ts[nt].lab = "T2";
             ts[nt++].t = r->temp2_c;
         }
-        if (r->temp3_c > (float)JK_TEMP_ABSENT * 0.5f) {
+        if (r->temp3_c > (float)JK_TEMP_ABSENT * 0.5f)
+        {
             ts[nt].lab = "T3";
             ts[nt++].t = r->temp3_c;
         }
-        if (r->temp4_c > (float)JK_TEMP_ABSENT * 0.5f) {
+        if (r->temp4_c > (float)JK_TEMP_ABSENT * 0.5f)
+        {
             ts[nt].lab = "T4";
             ts[nt++].t = r->temp4_c;
         }
-        if (r->temp5_c > (float)JK_TEMP_ABSENT * 0.5f) {
+        if (r->temp5_c > (float)JK_TEMP_ABSENT * 0.5f)
+        {
             ts[nt].lab = "T5";
             ts[nt++].t = r->temp5_c;
         }
@@ -823,16 +875,19 @@ static int jk_get_settings(void *v, char *json, size_t cap)
              "{\"ble.address\":\"%s\",\"ble.adapter\":\"%s\","
              "\"poll_interval_s\":%.1f",
              c->mac, c->adapter, c->poll_interval_s);
-    if (c->have_trigger) {
+    if (c->have_trigger)
+    {
         size_t n = strlen(json);
         snprintf(json + n, cap - n, ",\"balance_trigger_v\":%.3f", c->trigger_v);
     }
-    if (c->have_start) {
+    if (c->have_start)
+    {
         size_t n = strlen(json);
         snprintf(json + n, cap - n, ",\"start_balance_v\":%.3f", c->start_v);
     }
     /* Live BMS settings frame only — never a file-backed default. */
-    if (c->have_settings) {
+    if (c->have_settings)
+    {
         size_t n = strlen(json);
         snprintf(json + n, cap - n,
                  ",\"cell_ovp_v\":%.3f,\"cell_ovpr_v\":%.3f,"
@@ -843,7 +898,8 @@ static int jk_get_settings(void *v, char *json, size_t cap)
     }
     {
         size_t n = strlen(json);
-        if (n + 2 <= cap) {
+        if (n + 2 <= cap)
+        {
             json[n] = '}';
             json[n + 1] = '\0';
         }
@@ -860,8 +916,10 @@ static int jk_put_settings(void *v, const char *json, char *err, size_t errsz)
     if (!c)
         return MF_ERR_INVAL;
     iv = json_double(json ? json : "", "poll_interval_s", -1.0);
-    if (iv >= 0.0) {
-        if (iv < POLL_MIN) {
+    if (iv >= 0.0)
+    {
+        if (iv < POLL_MIN)
+        {
             if (err && errsz)
                 snprintf(err, errsz, "poll_interval_s below %.1f", POLL_MIN);
             return MF_ERR_INVAL;
@@ -873,7 +931,8 @@ static int jk_put_settings(void *v, const char *json, char *err, size_t errsz)
         double rcv;
         double ovp;
 
-        if (!c->handshake_ok) {
+        if (!c->handshake_ok)
+        {
             if (err && errsz)
                 snprintf(err, errsz, "offline");
             return MF_ERR_OFFLINE;
@@ -899,10 +958,12 @@ static int jk_put_settings(void *v, const char *json, char *err, size_t errsz)
         c->have_settings = 1;
     }
     if (json && (json_find_key(json, "cell_ovp_v") ||
-                 json_find_key(json, "cell_ovpr_v"))) {
+                 json_find_key(json, "cell_ovpr_v")))
+    {
         double ovp, ovpr;
 
-        if (!c->handshake_ok) {
+        if (!c->handshake_ok)
+        {
             if (err && errsz)
                 snprintf(err, errsz, "offline");
             return MF_ERR_OFFLINE;
@@ -923,7 +984,8 @@ static int jk_put_settings(void *v, const char *json, char *err, size_t errsz)
             ovpr = ovp - JK_OVPR_GAP_V;
         ovpr = jk_clamp_ovpr_v(ovpr, ovp);
         /* JK rejects Cell OVP below Request Charge Voltage. */
-        if (c->have_settings && (double)c->settings.cell_rcv_v >= ovp - 0.001) {
+        if (c->have_settings && (double)c->settings.cell_rcv_v >= ovp - 0.001)
+        {
             double rcv = ovp - 0.05;
 
             if (rcv < 3.40)
@@ -970,17 +1032,21 @@ static int jk_action(void *v, const char *action, const char *json,
         err[0] = '\0';
     if (!c || !action)
         return MF_ERR_INVAL;
-    if (!c->handshake_ok) {
+    if (!c->handshake_ok)
+    {
         if (err && errsz)
             snprintf(err, errsz, "offline");
         return MF_ERR_OFFLINE;
     }
-    if (strcmp(action, "refresh") == 0) {
+    if (strcmp(action, "refresh") == 0)
+    {
         cmd = jk_build_command(JK_CMD_CELL_INFO, NULL, 0, 0);
         return queue_hex_write(c, cmd);
     }
-    if (strcmp(action, "set_balance_trigger") == 0) {
-        if (!json || !json_find_key(json, "volts")) {
+    if (strcmp(action, "set_balance_trigger") == 0)
+    {
+        if (!json || !json_find_key(json, "volts"))
+        {
             if (err && errsz)
                 snprintf(err, errsz, "volts required");
             return MF_ERR_INVAL;
@@ -992,8 +1058,10 @@ static int jk_action(void *v, const char *action, const char *json,
         cmd = jk_build_register_cmd(JK_REG_BALANCE_TRIGGER, mv);
         return queue_hex_write(c, cmd);
     }
-    if (strcmp(action, "set_start_balance") == 0) {
-        if (!json || !json_find_key(json, "volts")) {
+    if (strcmp(action, "set_start_balance") == 0)
+    {
+        if (!json || !json_find_key(json, "volts"))
+        {
             if (err && errsz)
                 snprintf(err, errsz, "volts required");
             return MF_ERR_INVAL;
@@ -1005,7 +1073,8 @@ static int jk_action(void *v, const char *action, const char *json,
         cmd = jk_build_register_cmd(JK_REG_START_BALANCE_JK02_32S, mv);
         return queue_hex_write(c, cmd);
     }
-    if (strcmp(action, "set_switch") != 0) {
+    if (strcmp(action, "set_switch") != 0)
+    {
         if (err && errsz)
             snprintf(err, errsz, "unsupported");
         return MF_ERR_UNSUPPORTED;

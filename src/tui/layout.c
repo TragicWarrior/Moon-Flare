@@ -24,10 +24,13 @@ double mf_tui_display_soc(double bms_soc, double rem_ah, double full_ah,
         vsoc = pt[0][1];
     else if (avg_cell_v >= pt[n - 1][0])
         vsoc = pt[n - 1][1];
-    else {
+    else
+    {
         vsoc = 100;
-        for (i = 1; i < n; i++) {
-            if (avg_cell_v <= pt[i][0]) {
+        for (i = 1; i < n; i++)
+        {
+            if (avg_cell_v <= pt[i][0])
+            {
                 double span = pt[i][0] - pt[i - 1][0];
                 double t = span > 0 ? (avg_cell_v - pt[i - 1][0]) / span : 0;
                 vsoc = pt[i - 1][1] + t * (pt[i][1] - pt[i - 1][1]);
@@ -78,7 +81,8 @@ void mf_tui_settings_geom(int cols, int rows, int *x, int *y, int *w, int *h)
 static void fill_blank(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1])
 {
     int r, c;
-    for (r = 0; r < MF_TUI_ROWS; r++) {
+    for (r = 0; r < MF_TUI_ROWS; r++)
+    {
         for (c = 0; c < MF_TUI_COLS; c++)
             grid[r][c] = ' ';
         grid[r][MF_TUI_COLS] = '\0';
@@ -102,12 +106,14 @@ static void draw_box(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
     char cap[32];
     if (w < 3 || h < 2)
         return;
-    for (c = 0; c < w && x + c < MF_TUI_COLS; c++) {
+    for (c = 0; c < w && x + c < MF_TUI_COLS; c++)
+    {
         grid[y][x + c] = (c == 0) ? '+' : (c == w - 1) ? '+' : '-';
         if (y + h - 1 < MF_TUI_ROWS)
             grid[y + h - 1][x + c] = (c == 0) ? '+' : (c == w - 1) ? '+' : '-';
     }
-    for (r = 1; r < h - 1 && y + r < MF_TUI_ROWS; r++) {
+    for (r = 1; r < h - 1 && y + r < MF_TUI_ROWS; r++)
+    {
         grid[y + r][x] = '|';
         if (x + w - 1 < MF_TUI_COLS)
             grid[y + r][x + w - 1] = '|';
@@ -123,7 +129,8 @@ static void fill_card(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
     draw_box(grid, MF_CARD_Y, x, MF_CARD_W, MF_CARD_H, title);
     if (n <= 0)
         put_str(grid, MF_CARD_Y + 1, x + 2, "not connected");
-    else {
+    else
+    {
         for (i = 0; i < n && i < MF_CARD_H - 2; i++)
             put_str(grid, MF_CARD_Y + 1 + i, x + 2, lines[i]);
     }
@@ -216,8 +223,10 @@ void mf_tui_paint_pack(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1], int has_switch)
     else
         put_str(grid, 7, 2, "--");
     draw_box(grid, 9, 0, 80, 7, "Cells");
-    for (r = 0; r < 4; r++) {
-        for (c = 0; c < 4; c++) {
+    for (r = 0; r < 4; r++)
+    {
+        for (c = 0; c < 4; c++)
+        {
             i = r * 4 + c + 1;
             snprintf(cell, sizeof(cell), "%02d 3.32", i);
             put_str(grid, 10 + r, 2 + c * 19, cell);

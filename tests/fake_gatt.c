@@ -190,7 +190,8 @@ static int hex_nibble(int c)
 static int hex_decode(const char *in, uint8_t *out, size_t cap)
 {
     size_t n = 0;
-    while (in && in[0] && in[1] && n < cap) {
+    while (in && in[0] && in[1] && n < cap)
+    {
         int hi = hex_nibble((unsigned char)in[0]);
         int lo = hex_nibble((unsigned char)in[1]);
         if (hi < 0 || lo < 0)
@@ -207,7 +208,8 @@ static void hex_encode(const uint8_t *in, size_t n, char *out, size_t cap)
     size_t i;
     if (cap < n * 2 + 1)
         n = (cap - 1) / 2;
-    for (i = 0; i < n; i++) {
+    for (i = 0; i < n; i++)
+    {
         out[i * 2] = d[in[i] >> 4];
         out[i * 2 + 1] = d[in[i] & 0xF];
     }
@@ -245,7 +247,8 @@ static void queue_err(cli_t *c, const char *msg)
 static int mac_taken(const char *mac, int self)
 {
     int i;
-    for (i = 0; i < MAX_CLI; i++) {
+    for (i = 0; i < MAX_CLI; i++)
+    {
         if (i == self || g_cli[i].fd < 0 || !g_cli[i].bound)
             continue;
         if (mac_eq(g_cli[i].mac, mac))
@@ -314,15 +317,18 @@ static void handle_line(cli_t *c, int idx, const char *line)
     (void)json_str(line, "hex", hex, sizeof(hex));
     if (strcmp(cmd, "quit") == 0)
         exit(0);
-    if (strcmp(cmd, "drop") == 0) {
+    if (strcmp(cmd, "drop") == 0)
+    {
         const char *mac = addr[0] ? addr : c->mac;
         int j;
 
-        if (!mac[0]) {
+        if (!mac[0])
+        {
             queue_err(c, "missing address");
             return;
         }
-        for (j = 0; j < MAX_CLI; j++) {
+        for (j = 0; j < MAX_CLI; j++)
+        {
             if (g_cli[j].fd < 0 || !g_cli[j].bound)
                 continue;
             if (!mac_eq(g_cli[j].mac, mac))
@@ -334,12 +340,15 @@ static void handle_line(cli_t *c, int idx, const char *line)
         queue_ok(c, "drop");
         return;
     }
-    if (strcmp(cmd, "connect") == 0) {
-        if (!addr[0]) {
+    if (strcmp(cmd, "connect") == 0)
+    {
+        if (!addr[0])
+        {
             queue_err(c, "missing address");
             return;
         }
-        if (mac_taken(addr, idx)) {
+        if (mac_taken(addr, idx))
+        {
             queue_err(c, "mac in use");
             return;
         }
@@ -352,14 +361,17 @@ static void handle_line(cli_t *c, int idx, const char *line)
         c->tick_wait = 2; /* flush ACK before the first notify */
         return;
     }
-    if (!c->acked) {
+    if (!c->acked)
+    {
         queue_err(c, "handshake required");
         return;
     }
-    if (strcmp(cmd, "write") == 0) {
+    if (strcmp(cmd, "write") == 0)
+    {
         uint8_t raw[64];
         int n;
-        if (!mac_eq(addr, c->mac)) {
+        if (!mac_eq(addr, c->mac))
+        {
             queue_err(c, "address mismatch");
             return;
         }
@@ -378,8 +390,10 @@ static void handle_line(cli_t *c, int idx, const char *line)
             build_frame(c);
         return;
     }
-    if (strcmp(cmd, "disconnect") == 0) {
-        if (addr[0] && !mac_eq(addr, c->mac)) {
+    if (strcmp(cmd, "disconnect") == 0)
+    {
+        if (addr[0] && !mac_eq(addr, c->mac))
+        {
             queue_err(c, "address mismatch");
             return;
         }
@@ -389,7 +403,8 @@ static void handle_line(cli_t *c, int idx, const char *line)
         c->mac[0] = '\0';
         return;
     }
-    if (strcmp(cmd, "scan") == 0) {
+    if (strcmp(cmd, "scan") == 0)
+    {
         queue_line(c,
                    "{\"type\":\"scan\",\"results\":["
                    "{\"address\":\"" MAC_A "\",\"name\":\"JK_BD6A24S8P\",\"rssi\":-67},"
@@ -406,11 +421,13 @@ static void queue_notify_chunk(cli_t *c)
     size_t n = CHUNK;
     if (!c->acked)
         return;
-    if (c->tick_wait) {
+    if (c->tick_wait)
+    {
         c->tick_wait--;
         return;
     }
-    if (c->frame_off >= JK_FRAME_SIZE) {
+    if (c->frame_off >= JK_FRAME_SIZE)
+    {
         build_frame(c);
         c->tick_wait = 4;
         return;
@@ -435,9 +452,11 @@ static void cli_close(cli_t *c)
 
 static void cli_flush(cli_t *c)
 {
-    while (c->out_off < c->out_len) {
+    while (c->out_off < c->out_len)
+    {
         ssize_t n = write(c->fd, c->out + c->out_off, c->out_len - c->out_off);
-        if (n < 0) {
+        if (n < 0)
+        {
             if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
                 return;
             cli_close(c);
@@ -450,25 +469,29 @@ static void cli_flush(cli_t *c)
 
 static void cli_read(cli_t *c, int idx)
 {
-    for (;;) {
+    for (;;)
+    {
         ssize_t n;
         char *nl;
         if (c->in_len + 1 >= sizeof(c->in))
             c->in_len = 0;
         n = read(c->fd, c->in + c->in_len, sizeof(c->in) - 1 - c->in_len);
-        if (n < 0) {
+        if (n < 0)
+        {
             if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
                 break;
             cli_close(c);
             return;
         }
-        if (n == 0) {
+        if (n == 0)
+        {
             cli_close(c);
             return;
         }
         c->in_len += (size_t)n;
         c->in[c->in_len] = '\0';
-        while ((nl = memchr(c->in, '\n', c->in_len)) != NULL) {
+        while ((nl = memchr(c->in, '\n', c->in_len)) != NULL)
+        {
             size_t ln = (size_t)(nl - c->in);
             c->in[ln] = '\0';
             if (ln && c->in[ln - 1] == '\r')
@@ -493,12 +516,14 @@ static int bind_abs(const char *adapter)
     a.sun_family = AF_UNIX;
     a.sun_path[0] = '\0';
     n = snprintf(a.sun_path + 1, sizeof(a.sun_path) - 1, "mf-gatt/%s", adapter);
-    if (n < 0 || (size_t)n >= sizeof(a.sun_path) - 1) {
+    if (n < 0 || (size_t)n >= sizeof(a.sun_path) - 1)
+    {
         close(fd);
         return -1;
     }
     alen = (socklen_t)(offsetof(struct sockaddr_un, sun_path) + 1 + (size_t)n);
-    if (bind(fd, (struct sockaddr *)&a, alen) != 0 || listen(fd, 8) != 0) {
+    if (bind(fd, (struct sockaddr *)&a, alen) != 0 || listen(fd, 8) != 0)
+    {
         close(fd);
         return -1;
     }
@@ -508,7 +533,8 @@ static int bind_abs(const char *adapter)
 int main(int argc, char **argv)
 {
     int i, lfd;
-    for (i = 1; i < argc; i++) {
+    for (i = 1; i < argc; i++)
+    {
         if (!strcmp(argv[i], "--adapter") && i + 1 < argc)
             g_adapter = argv[++i];
         else if (!strncmp(argv[i], "--adapter=", 10))
@@ -517,19 +543,22 @@ int main(int argc, char **argv)
     for (i = 0; i < MAX_CLI; i++)
         g_cli[i].fd = -1;
     lfd = bind_abs(g_adapter);
-    if (lfd < 0) {
+    if (lfd < 0)
+    {
         fprintf(stderr, "fake_gatt: bind @mf-gatt/%s: %s\n",
                 g_adapter, strerror(errno));
         return 1;
     }
     printf("fake_gatt: listening on @mf-gatt/%s\n", g_adapter);
     fflush(stdout);
-    for (;;) {
+    for (;;)
+    {
         struct pollfd p[MAX_CLI + 1];
         int np = 1;
         p[0].fd = lfd;
         p[0].events = POLLIN;
-        for (i = 0; i < MAX_CLI; i++) {
+        for (i = 0; i < MAX_CLI; i++)
+        {
             if (g_cli[i].fd < 0)
                 continue;
             p[np].fd = g_cli[i].fd;
@@ -538,30 +567,37 @@ int main(int argc, char **argv)
                 p[np].events = (short)(p[np].events | POLLOUT);
             np++;
         }
-        if (poll(p, (nfds_t)np, 20) < 0) {
+        if (poll(p, (nfds_t)np, 20) < 0)
+        {
             if (errno == EINTR)
                 continue;
             break;
         }
-        if (p[0].revents & POLLIN) {
+        if (p[0].revents & POLLIN)
+        {
             int fd = accept4(lfd, NULL, NULL, SOCK_NONBLOCK | SOCK_CLOEXEC);
-            if (fd >= 0) {
+            if (fd >= 0)
+            {
                 int slot = -1;
-                for (i = 0; i < MAX_CLI; i++) {
-                    if (g_cli[i].fd < 0) {
+                for (i = 0; i < MAX_CLI; i++)
+                {
+                    if (g_cli[i].fd < 0)
+                    {
                         slot = i;
                         break;
                     }
                 }
                 if (slot < 0)
                     close(fd);
-                else {
+                else
+                {
                     memset(&g_cli[slot], 0, sizeof(g_cli[slot]));
                     g_cli[slot].fd = fd;
                 }
             }
         }
-        for (i = 0; i < MAX_CLI; i++) {
+        for (i = 0; i < MAX_CLI; i++)
+        {
             if (g_cli[i].fd < 0)
                 continue;
             cli_read(&g_cli[i], i);

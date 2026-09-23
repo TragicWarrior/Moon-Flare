@@ -172,7 +172,8 @@ static void build_unit_list(classic_ctx_t *c)
 {
     int seen10 = 0, seen1 = 0;
     c->ntry = 0;
-    if (c->unit_cfg > 0) {
+    if (c->unit_cfg > 0)
+    {
         c->unit_try[c->ntry++] = c->unit_cfg;
         if (c->unit_cfg == 10)
             seen10 = 1;
@@ -201,7 +202,8 @@ static int start_connect(classic_ctx_t *c)
 
     sock_close(c);
     fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
-    if (fd < 0) {
+    if (fd < 0)
+    {
         snprintf(c->err, sizeof(c->err), "socket: %s", strerror(errno));
         return -1;
     }
@@ -210,13 +212,15 @@ static int start_connect(classic_ctx_t *c)
     memset(&a, 0, sizeof(a));
     a.sin_family = AF_INET;
     a.sin_port = htons((uint16_t)c->port);
-    if (inet_pton(AF_INET, c->ip, &a.sin_addr) != 1) {
+    if (inet_pton(AF_INET, c->ip, &a.sin_addr) != 1)
+    {
         snprintf(c->err, sizeof(c->err), "bad ip %s", c->ip);
         close(fd);
         return -1;
     }
     if (connect(fd, (struct sockaddr *)&a, sizeof(a)) < 0 &&
-        errno != EINPROGRESS) {
+        errno != EINPROGRESS)
+    {
         snprintf(c->err, sizeof(c->err), "connect: %s", strerror(errno));
         close(fd);
         return -1;
@@ -281,7 +285,8 @@ static int parse_fc3(classic_ctx_t *c)
     input.regs = c->regs;
     input.reg_count = REG_IMAGE;
     rc = classic_decode(&input, &c->data);
-    if (rc != CLASSIC_OK) {
+    if (rc != CLASSIC_OK)
+    {
         snprintf(c->err, sizeof(c->err), "decode %d", (int)rc);
         return -1;
     }
@@ -298,7 +303,8 @@ static void next_unit_or_reconnect(classic_ctx_t *c)
 {
     sock_close(c);
     c->itry++;
-    if (c->itry >= c->ntry) {
+    if (c->itry >= c->ntry)
+    {
         c->itry = 0;
         snprintf(c->err, sizeof(c->err), "no unit id answered");
         return;
@@ -317,7 +323,8 @@ static int connect_ready(classic_ctx_t *c)
     p.revents = 0;
     if (poll(&p, 1, 0) <= 0 || !(p.revents & POLLOUT))
         return 0;
-    if (getsockopt(c->fd, SOL_SOCKET, SO_ERROR, &err, &elen) != 0 || err != 0) {
+    if (getsockopt(c->fd, SOL_SOCKET, SO_ERROR, &err, &elen) != 0 || err != 0)
+    {
         snprintf(c->err, sizeof(c->err), "connect: %s",
                  err ? strerror(err) : "failed");
         return -1;
@@ -330,8 +337,10 @@ static void prefer_unit_ok(classic_ctx_t *c)
     int i;
     if (!c->unit_ok)
         return;
-    for (i = 0; i < c->ntry; i++) {
-        if (c->unit_try[i] == c->unit_ok) {
+    for (i = 0; i < c->ntry; i++)
+    {
+        if (c->unit_try[i] == c->unit_ok)
+        {
             c->itry = i;
             return;
         }
@@ -342,10 +351,12 @@ static mf_step_t pump(classic_ctx_t *c)
 {
     double now = mono_now();
 
-    if (c->state == ST_HOLD) {
+    if (c->state == ST_HOLD)
+    {
         if (now < c->next_poll)
             return MF_STEP_IDLE;
-        if ((now - c->last_ok) >= RECONNECT_S) {
+        if ((now - c->last_ok) >= RECONNECT_S)
+        {
             sock_close(c);
             c->itry = 0;
             if (start_connect(c) != 0)
@@ -356,24 +367,28 @@ static mf_step_t pump(classic_ctx_t *c)
         build_fc3(c);
     }
 
-    if (c->state == ST_DISCONNECTED) {
+    if (c->state == ST_DISCONNECTED)
+    {
         c->itry = 0;
         if (start_connect(c) != 0)
             return MF_STEP_ERROR;
         return MF_STEP_IDLE;
     }
 
-    if (c->state != ST_HOLD && now > c->io_deadline) {
+    if (c->state != ST_HOLD && now > c->io_deadline)
+    {
         snprintf(c->err, sizeof(c->err), "io timeout unit %d", current_unit(c));
         next_unit_or_reconnect(c);
         return MF_STEP_ERROR;
     }
 
-    if (c->state == ST_CONNECTING) {
+    if (c->state == ST_CONNECTING)
+    {
         int cr = connect_ready(c);
         if (cr == 0)
             return MF_STEP_IDLE;
-        if (cr < 0) {
+        if (cr < 0)
+        {
             next_unit_or_reconnect(c);
             return MF_STEP_ERROR;
         }
@@ -381,18 +396,22 @@ static mf_step_t pump(classic_ctx_t *c)
         build_fc3(c);
     }
 
-    if (c->state == ST_SEND) {
-        while (c->tx_off < c->tx_len) {
+    if (c->state == ST_SEND)
+    {
+        while (c->tx_off < c->tx_len)
+        {
             ssize_t n = send(c->fd, c->tx + c->tx_off, c->tx_len - c->tx_off,
                              MSG_NOSIGNAL);
-            if (n < 0) {
+            if (n < 0)
+            {
                 if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
                     return MF_STEP_IDLE;
                 snprintf(c->err, sizeof(c->err), "send: %s", strerror(errno));
                 next_unit_or_reconnect(c);
                 return MF_STEP_ERROR;
             }
-            if (n == 0) {
+            if (n == 0)
+            {
                 next_unit_or_reconnect(c);
                 return MF_STEP_ERROR;
             }
@@ -404,23 +423,28 @@ static mf_step_t pump(classic_ctx_t *c)
         c->io_deadline = now + IO_TIMEOUT_S;
     }
 
-    if (c->state == ST_RECV) {
-        for (;;) {
+    if (c->state == ST_RECV)
+    {
+        for (;;)
+        {
             ssize_t n;
             int pr;
-            if (c->rx_len >= sizeof(c->rx)) {
+            if (c->rx_len >= sizeof(c->rx))
+            {
                 next_unit_or_reconnect(c);
                 return MF_STEP_ERROR;
             }
             n = recv(c->fd, c->rx + c->rx_len, sizeof(c->rx) - c->rx_len, 0);
-            if (n < 0) {
+            if (n < 0)
+            {
                 if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
                     return MF_STEP_IDLE;
                 snprintf(c->err, sizeof(c->err), "recv: %s", strerror(errno));
                 next_unit_or_reconnect(c);
                 return MF_STEP_ERROR;
             }
-            if (n == 0) {
+            if (n == 0)
+            {
                 next_unit_or_reconnect(c);
                 return MF_STEP_ERROR;
             }
@@ -428,7 +452,8 @@ static mf_step_t pump(classic_ctx_t *c)
             pr = parse_fc3(c);
             if (pr == 0)
                 continue;
-            if (pr < 0) {
+            if (pr < 0)
+            {
                 if (pr == -2)
                     snprintf(c->err, sizeof(c->err), "modbus exception");
                 next_unit_or_reconnect(c);
@@ -450,7 +475,8 @@ static void *classic_open(const char *spec_json, char *err, size_t errsz)
 {
     classic_ctx_t *c = calloc(1, sizeof(*c));
     double iv;
-    if (!c) {
+    if (!c)
+    {
         if (err && errsz)
             snprintf(err, errsz, "oom");
         return NULL;
@@ -475,7 +501,8 @@ static void *classic_open(const char *spec_json, char *err, size_t errsz)
         c->poll_interval_s = POLL_MIN;
     build_unit_list(c);
     c->next_poll = 0; /* poll immediately */
-    if (start_connect(c) != 0) {
+    if (start_connect(c) != 0)
+    {
         if (err && errsz)
             snprintf(err, errsz, "%s", c->err);
         /* still return ctx: step will retry */
@@ -530,7 +557,8 @@ static int classic_get_reading(void *v, char *json, size_t cap)
     const classic_data_t *d;
     if (!c || !json || cap == 0)
         return -1;
-    if (!c->have_data) {
+    if (!c->have_data)
+    {
         snprintf(json, cap, "{}");
         return 0;
     }

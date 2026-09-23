@@ -45,7 +45,8 @@ classic_result_t classic_decode(const classic_registers_t *input,
     const char *stage_str = classic_charge_stage_name(out->charge_stage_msb);
     strncpy(out->charge_stage_name, stage_str, sizeof(out->charge_stage_name) - 1);
     out->charge_stage_name[sizeof(out->charge_stage_name) - 1] = '\0';
-    switch (out->charge_stage_msb) {
+    switch (out->charge_stage_msb)
+    {
         case 0:  out->charge_stage = CLASSIC_STAGE_RESTING;      break;
         case 3:  out->charge_stage = CLASSIC_STAGE_ABSORB;       break;
         case 4:  out->charge_stage = CLASSIC_STAGE_BULK_MPPT;    break;

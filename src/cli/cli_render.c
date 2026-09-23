@@ -20,9 +20,11 @@ int cli_render_list_devices(const cJSON *devices, int raw)
 {
     cJSON *item;
 
-    if (raw) {
+    if (raw)
+    {
         char *s = cJSON_PrintUnformatted(devices);
-        if (s) {
+        if (s)
+        {
             printf("%s\n", s);
             free(s);
         }
@@ -34,7 +36,8 @@ int cli_render_list_devices(const cJSON *devices, int raw)
 
     printf("%-38s %-10s %-8s %-10s %s\n", "ID", "NAME", "KIND", "DRIVER", "ONLINE");
 
-    cJSON_ArrayForEach(item, devices) {
+    cJSON_ArrayForEach(item, devices)
+    {
         const cJSON *id, *name, *kind, *driver, *online;
         id = cJSON_GetObjectItemCaseSensitive(item, "id");
         name = cJSON_GetObjectItemCaseSensitive(item, "name");
@@ -62,9 +65,11 @@ int cli_render_list_drivers(const cJSON *drivers, int raw)
     cJSON *item, *cap;
     cJSON *caps;
 
-    if (raw) {
+    if (raw)
+    {
         char *s = cJSON_PrintUnformatted(drivers);
-        if (s) {
+        if (s)
+        {
             printf("%s\n", s);
             free(s);
         }
@@ -76,7 +81,8 @@ int cli_render_list_drivers(const cJSON *drivers, int raw)
 
     printf("%-20s %-20s %s\n", "KIND", "DRIVER", "CAPABILITIES");
 
-    cJSON_ArrayForEach(item, drivers) {
+    cJSON_ArrayForEach(item, drivers)
+    {
         const cJSON *kind, *driver;
         char capbuf[2048];
         memset(capbuf, 0, sizeof(capbuf));
@@ -85,12 +91,15 @@ int cli_render_list_drivers(const cJSON *drivers, int raw)
         caps = cJSON_GetObjectItemCaseSensitive(item, "caps");
         if (!cJSON_IsString(kind) || !cJSON_IsString(driver))
             continue;
-        if (cJSON_IsArray(caps)) {
+        if (cJSON_IsArray(caps))
+        {
             int first = 1;
-            cJSON_ArrayForEach(cap, caps) {
+            cJSON_ArrayForEach(cap, caps)
+            {
                 if (!cJSON_IsString(cap))
                     continue;
-                if (!first) {
+                if (!first)
+                {
                     size_t len = strlen(capbuf);
                     if (len + 3 < sizeof(capbuf))
                         strcat(capbuf, ", ");
@@ -117,9 +126,11 @@ int cli_render_query_device(const cJSON *dev, int raw)
     char *s;
     const cJSON *name, *kind, *driver, *state, *data, *online;
 
-    if (raw) {
+    if (raw)
+    {
         s = cJSON_Print(dev);
-        if (s) {
+        if (s)
+        {
             printf("%s\n", s);
             free(s);
         }
@@ -151,7 +162,8 @@ int cli_render_query_device(const cJSON *dev, int raw)
             online->valueint ? state_str : "offline");
     }
 
-    if (strcmp(kind->valuestring, "battery") == 0 && cJSON_IsObject(data)) {
+    if (strcmp(kind->valuestring, "battery") == 0 && cJSON_IsObject(data))
+    {
         {
             const cJSON *pv, *cv, *soc, *soh;
             pv = cJSON_GetObjectItemCaseSensitive(data, "pack_voltage_v");
@@ -173,7 +185,8 @@ int cli_render_query_device(const cJSON *dev, int raw)
             const cJSON *full, *rem;
             full = cJSON_GetObjectItemCaseSensitive(data, "full_capacity_ah");
             rem = cJSON_GetObjectItemCaseSensitive(data, "remaining_capacity_ah");
-            if (cJSON_IsNumber(full) || cJSON_IsNumber(rem)) {
+            if (cJSON_IsNumber(full) || cJSON_IsNumber(rem))
+            {
                 printf("  Capacity");
                 if (cJSON_IsNumber(rem))
                     printf("   %.1f", rem->valuedouble);
@@ -187,7 +200,8 @@ int cli_render_query_device(const cJSON *dev, int raw)
             cmos = cJSON_GetObjectItemCaseSensitive(data, "charge_mosfet_on");
             dmos = cJSON_GetObjectItemCaseSensitive(data, "discharge_mosfet_on");
             bswitch = cJSON_GetObjectItemCaseSensitive(data, "balancer_switch");
-            if (cJSON_IsBool(cmos) || cJSON_IsBool(dmos) || cJSON_IsBool(bswitch)) {
+            if (cJSON_IsBool(cmos) || cJSON_IsBool(dmos) || cJSON_IsBool(bswitch))
+            {
                 printf("  MOSFET");
                 if (cJSON_IsBool(cmos))
                     printf("   %s", cmos->valueint ? "charge on" : "charge off");
@@ -203,12 +217,15 @@ int cli_render_query_device(const cJSON *dev, int raw)
             int n, i;
             temps = cJSON_GetObjectItemCaseSensitive(data, "temperatures_c");
             labels = cJSON_GetObjectItemCaseSensitive(data, "temp_labels");
-            if (cJSON_IsArray(temps) && cJSON_IsArray(labels)) {
+            if (cJSON_IsArray(temps) && cJSON_IsArray(labels))
+            {
                 n = cJSON_GetArraySize(temps);
-                if (n > 0) {
+                if (n > 0)
+                {
                     int first = 1;
                     printf("  Temps  ");
-                    for (i = 0; i < n; i++) {
+                    for (i = 0; i < n; i++)
+                    {
                         cJSON *t = cJSON_GetArrayItem(temps, i);
                         const cJSON *lb = cJSON_GetArrayItem(labels, i);
                         if (!cJSON_IsNumber(t))
@@ -232,9 +249,11 @@ int cli_render_query_device(const cJSON *dev, int raw)
             int min_idx = 0, max_idx = 0;
             int cell_count = 0;
             cells = cJSON_GetObjectItemCaseSensitive(data, "cells");
-            if (cJSON_IsArray(cells)) {
+            if (cJSON_IsArray(cells))
+            {
                 n = cJSON_GetArraySize(cells);
-                for (i = 0; i < n; i++) {
+                for (i = 0; i < n; i++)
+                {
                     cJSON *cell = cJSON_GetArrayItem(cells, i);
                     const cJSON *cv, *ci;
                     double v;
@@ -247,17 +266,27 @@ int cli_render_query_device(const cJSON *dev, int raw)
                         continue;
                     idx = (int)ci->valuedouble;
                     v = cv->valuedouble;
-                    if (v < min_v) { min_v = v; min_idx = idx; }
-                    if (v > max_v) { max_v = v; max_idx = idx; }
+                    if (v < min_v)
+                    {
+                        min_v = v;
+                        min_idx = idx;
+                    }
+                    if (v > max_v)
+                    {
+                        max_v = v;
+                        max_idx = idx;
+                    }
                     cell_count++;
                 }
-                if (cell_count > 0) {
+                if (cell_count > 0)
+                {
                     double delta_mv = (max_v - min_v) * 1000.0;
                     printf("  Cells (%d)  min %.3f (#%d)   max %.3f (#%d)   \xc2\x94 %.0f mV\n",
                         cell_count, min_v, min_idx, max_v, max_idx, delta_mv);
                     {
                         int line = 0;
-                        for (i = 0; i < n; i++) {
+                        for (i = 0; i < n; i++)
+                        {
                             cJSON *cell = cJSON_GetArrayItem(cells, i);
                             const cJSON *cv2, *ci2;
                             double v;
@@ -280,7 +309,9 @@ int cli_render_query_device(const cJSON *dev, int raw)
                 }
             }
         }
-    } else if (strcmp(kind->valuestring, "charger") == 0 && cJSON_IsObject(data)) {
+    }
+    else if (strcmp(kind->valuestring, "charger") == 0 && cJSON_IsObject(data))
+    {
         const cJSON *bv, *cw, *ks, *st;
         bv = cJSON_GetObjectItemCaseSensitive(data, "battery_voltage_v");
         cw = cJSON_GetObjectItemCaseSensitive(data, "charging_watts");
@@ -296,7 +327,9 @@ int cli_render_query_device(const cJSON *dev, int raw)
         if (cJSON_IsString(st) && st->valuestring)
             printf("   stage: %s", st->valuestring);
         printf("\n");
-    } else {
+    }
+    else
+    {
         printf("  (%s device)\n", kind->valuestring);
     }
 
@@ -325,9 +358,11 @@ int cli_render_status(const cJSON *status, int raw)
     cJSON *item;
     const cJSON *server;
 
-    if (raw) {
+    if (raw)
+    {
         char *s = cJSON_PrintUnformatted(status);
-        if (s) {
+        if (s)
+        {
             printf("%s\n", s);
             free(s);
         }
@@ -342,10 +377,12 @@ int cli_render_status(const cJSON *status, int raw)
         printf("%s\n", server->valuestring);
 
     batteries = cJSON_GetObjectItemCaseSensitive(status, "batteries");
-    if (cJSON_IsArray(batteries) && cJSON_GetArraySize(batteries) > 0) {
+    if (cJSON_IsArray(batteries) && cJSON_GetArraySize(batteries) > 0)
+    {
         const cJSON *pv, *cv, *soc;
         printf("\nBatteries:\n");
-        cJSON_ArrayForEach(item, batteries) {
+        cJSON_ArrayForEach(item, batteries)
+        {
             print_device_line("", item);
             pv = cJSON_GetObjectItemCaseSensitive(item, "pack_voltage_v");
             cv = cJSON_GetObjectItemCaseSensitive(item, "current_a");
@@ -361,10 +398,12 @@ int cli_render_status(const cJSON *status, int raw)
     }
 
     chargers = cJSON_GetObjectItemCaseSensitive(status, "chargers");
-    if (cJSON_IsArray(chargers) && cJSON_GetArraySize(chargers) > 0) {
+    if (cJSON_IsArray(chargers) && cJSON_GetArraySize(chargers) > 0)
+    {
         const cJSON *bv, *cw, *ks, *st;
         printf("\nChargers:\n");
-        cJSON_ArrayForEach(item, chargers) {
+        cJSON_ArrayForEach(item, chargers)
+        {
             print_device_line("", item);
             bv = cJSON_GetObjectItemCaseSensitive(item, "battery_voltage_v");
             cw = cJSON_GetObjectItemCaseSensitive(item, "charging_watts");
@@ -383,18 +422,22 @@ int cli_render_status(const cJSON *status, int raw)
     }
 
     inverters = cJSON_GetObjectItemCaseSensitive(status, "inverters");
-    if (cJSON_IsArray(inverters) && cJSON_GetArraySize(inverters) > 0) {
+    if (cJSON_IsArray(inverters) && cJSON_GetArraySize(inverters) > 0)
+    {
         printf("\nInverters:\n");
-        cJSON_ArrayForEach(item, inverters) {
+        cJSON_ArrayForEach(item, inverters)
+        {
             print_device_line("", item);
             printf("\n");
         }
     }
 
     phantoms = cJSON_GetObjectItemCaseSensitive(status, "phantoms");
-    if (cJSON_IsArray(phantoms) && cJSON_GetArraySize(phantoms) > 0) {
+    if (cJSON_IsArray(phantoms) && cJSON_GetArraySize(phantoms) > 0)
+    {
         printf("\nPhantoms:\n");
-        cJSON_ArrayForEach(item, phantoms) {
+        cJSON_ArrayForEach(item, phantoms)
+        {
             print_device_line("", item);
             printf("\n");
         }
@@ -411,9 +454,11 @@ int cli_render_history(const cJSON *history, int raw)
     const cJSON *ts, *values, *column;
     int n, i;
 
-    if (raw) {
+    if (raw)
+    {
         s = cJSON_PrintUnformatted(history);
-        if (s) {
+        if (s)
+        {
             printf("%s\n", s);
             free(s);
         }
@@ -441,7 +486,8 @@ int cli_render_history(const cJSON *history, int raw)
 
     {
         int start = n > 20 ? n - 20 : 0;
-        for (i = start; i < n; i++) {
+        for (i = start; i < n; i++)
+        {
             cJSON *tv = cJSON_GetArrayItem(ts, i);
             cJSON *vv = cJSON_GetArrayItem(values, i);
             if (!cJSON_IsNumber(tv) || !cJSON_IsNumber(vv))
@@ -464,9 +510,11 @@ int cli_render_history(const cJSON *history, int raw)
         double min_val = 999999, max_val = -999999;
         int j;
         int *bars;
-        for (j = 0; j < n; j++) {
+        for (j = 0; j < n; j++)
+        {
             cJSON *vv = cJSON_GetArrayItem(values, j);
-            if (cJSON_IsNumber(vv)) {
+            if (cJSON_IsNumber(vv))
+            {
                 if (vv->valuedouble < min_val)
                     min_val = vv->valuedouble;
                 if (vv->valuedouble > max_val)
@@ -474,11 +522,13 @@ int cli_render_history(const cJSON *history, int raw)
             }
         }
         bars = (int *)calloc((size_t)spark_len, sizeof(int));
-        if (bars) {
+        if (bars)
+        {
             double range = max_val - min_val;
             if (range == 0)
                 range = 1.0;
-            for (j = 0; j < n; j++) {
+            for (j = 0; j < n; j++)
+            {
                 cJSON *vv = cJSON_GetArrayItem(values, j);
                 int pos;
                 if (!cJSON_IsNumber(vv))
@@ -491,7 +541,8 @@ int cli_render_history(const cJSON *history, int raw)
                 bars[pos]++;
             }
             printf("  [");
-            for (j = 0; j < spark_len; j++) {
+            for (j = 0; j < spark_len; j++)
+            {
                 if (bars[j] > 0)
                     printf("#");
                 else

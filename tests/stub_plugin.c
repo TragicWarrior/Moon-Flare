@@ -12,16 +12,35 @@ static void *stub_open(const char *spec_json, char *err, size_t errsz)
     return (void *)0x1;
 }
 
-static void stub_close(void *ctx) { (void)ctx; }
-static int stub_fd(void *ctx) { (void)ctx; return -1; }
-static unsigned stub_mask(void *ctx) { (void)ctx; return 0; }
-static mf_step_t stub_step(void *ctx) { (void)ctx; return MF_STEP_IDLE; }
+static void stub_close(void *ctx)
+{
+    (void)ctx;
+}
+static int stub_fd(void *ctx)
+{
+    (void)ctx;
+    return -1;
+}
+static unsigned stub_mask(void *ctx)
+{
+    (void)ctx;
+    return 0;
+}
+static mf_step_t stub_step(void *ctx)
+{
+    (void)ctx;
+    return MF_STEP_IDLE;
+}
 static unsigned stub_caps(void *ctx)
 {
     (void)ctx;
     return MF_CAP_READ;
 }
-static const char *stub_err(void *ctx) { (void)ctx; return ""; }
+static const char *stub_err(void *ctx)
+{
+    (void)ctx;
+    return "";
+}
 static int stub_reading(void *ctx, char *json, size_t cap)
 {
     (void)ctx;
@@ -63,8 +82,16 @@ static int stub_probe_start(const char *args, void **job, char *err, size_t errs
         err[0] = '\0';
     return MF_ERR_UNSUPPORTED;
 }
-static mf_step_t stub_probe_step(void *job) { (void)job; return MF_STEP_IDLE; }
-static unsigned stub_probe_mask(void *job) { (void)job; return 0; }
+static mf_step_t stub_probe_step(void *job)
+{
+    (void)job;
+    return MF_STEP_IDLE;
+}
+static unsigned stub_probe_mask(void *job)
+{
+    (void)job;
+    return 0;
+}
 static int stub_probe_result(void *job, char *json, size_t cap)
 {
     (void)job;
@@ -72,7 +99,10 @@ static int stub_probe_result(void *job, char *json, size_t cap)
         json[0] = '\0';
     return MF_ERR_UNSUPPORTED;
 }
-static void stub_probe_close(void *job) { (void)job; }
+static void stub_probe_close(void *job)
+{
+    (void)job;
+}
 
 static const mf_plugin_ops_t g_ops[2] = {
     {

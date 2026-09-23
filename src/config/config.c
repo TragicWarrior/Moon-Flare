@@ -73,7 +73,8 @@ static char *resolve_in_dir(const char *dir, const char *filename)
     struct stat st;
     if (snprintf(path, sizeof(path), "%s/%s", dir, filename) >= (int)sizeof(path))
         return NULL;   /* combined path too long to be a valid file */
-    if (stat(path, &st) == 0 && S_ISREG(st.st_mode)) {
+    if (stat(path, &st) == 0 && S_ISREG(st.st_mode))
+    {
         char *copy = strdup(path);
         if (!copy)
             return NULL;
@@ -85,9 +86,11 @@ static char *resolve_in_dir(const char *dir, const char *filename)
 char *mf_config_resolve_path(const char *override_path, const char *filename)
 {
     /* 1. --config override (must exist). */
-    if (override_path) {
+    if (override_path)
+    {
         struct stat st;
-        if (stat(override_path, &st) == 0 && S_ISREG(st.st_mode)) {
+        if (stat(override_path, &st) == 0 && S_ISREG(st.st_mode))
+        {
             return strdup(override_path);
         }
         return NULL; /* override given but missing — caller treats as "not found". */
@@ -96,7 +99,8 @@ char *mf_config_resolve_path(const char *override_path, const char *filename)
     /* 2. $HOME/.config/moonflare/ */
     {
         const char *home = getenv("HOME");
-        if (home) {
+        if (home)
+        {
             char dir[PATH_MAX];
             snprintf(dir, sizeof(dir), "%s/.config/moonflare", home);
             char *p = resolve_in_dir(dir, filename);
@@ -121,15 +125,30 @@ static int load_file(const char *path, char **out_buf, size_t *out_len)
     if (!f)
         return -1;
 
-    if (fseek(f, 0, SEEK_END) < 0) { fclose(f); return -1; }
+    if (fseek(f, 0, SEEK_END) < 0)
+    {
+        fclose(f);
+        return -1;
+    }
     long sz = ftell(f);
-    if (sz < 0) { fclose(f); return -1; }
+    if (sz < 0)
+    {
+        fclose(f);
+        return -1;
+    }
     fseek(f, 0, SEEK_SET);
 
     char *buf = malloc((size_t)sz + 1);
-    if (!buf) { fclose(f); return -1; }
-    if ((size_t)fread(buf, 1, (size_t)sz, f) != (size_t)sz) {
-        free(buf); fclose(f); return -1;
+    if (!buf)
+    {
+        fclose(f);
+        return -1;
+    }
+    if ((size_t)fread(buf, 1, (size_t)sz, f) != (size_t)sz)
+    {
+        free(buf);
+        fclose(f);
+        return -1;
     }
     buf[(size_t)sz] = '\0';
     fclose(f);
@@ -145,9 +164,11 @@ int mf_config_load(const char *config_path_override, mf_daemon_config_t *cfg)
     mf_config_defaults(cfg);
 
     /* If explicit path given but missing → error (design: --config PATH must exist). */
-    if (config_path_override) {
+    if (config_path_override)
+    {
         struct stat st;
-        if (stat(config_path_override, &st) < 0 || !S_ISREG(st.st_mode)) {
+        if (stat(config_path_override, &st) < 0 || !S_ISREG(st.st_mode))
+        {
             return -1;
         }
     }
@@ -158,7 +179,8 @@ int mf_config_load(const char *config_path_override, mf_daemon_config_t *cfg)
         return 0; /* no config found → defaults already set */
 
     char *raw = NULL;
-    if (load_file(path, &raw, NULL) < 0) {
+    if (load_file(path, &raw, NULL) < 0)
+    {
         free(path);
         return -1;
     }
@@ -184,7 +206,8 @@ int mf_tui_config_load(const char *config_path_override, mf_tui_config_t *cfg)
         return 0;
 
     char *raw = NULL;
-    if (load_file(path, &raw, NULL) < 0) {
+    if (load_file(path, &raw, NULL) < 0)
+    {
         free(path);
         return -1;
     }
@@ -274,7 +297,8 @@ static int apply_device(mf_config_device_t *dev, const cJSON *obj)
 
     /* UUID required for device entries. */
     cJSON *uuid = cJSON_GetObjectItem(obj, "uuid");
-    if (!uuid || uuid->type != cJSON_String || !uuid->valuestring[0]) {
+    if (!uuid || uuid->type != cJSON_String || !uuid->valuestring[0])
+    {
         fprintf(stderr, "config: device missing required 'uuid' field\n");
         return -1;
     }
@@ -333,10 +357,12 @@ void mf_config_apply_json(mf_daemon_config_t *cfg, const cJSON *root)
 
     /* devices array — unknown keys at root level are silently ignored. */
     if ((v = cJSON_GetObjectItem(root, "devices")) &&
-        v->type == cJSON_Array) {
+        v->type == cJSON_Array)
+    {
         int n = cJSON_GetArraySize(v);
         cfg->n_devices = 0;
-        for (int i = 0; i < n && cfg->n_devices < MF_MAX_DEVICES; i++) {
+        for (int i = 0; i < n && cfg->n_devices < MF_MAX_DEVICES; i++)
+        {
             cJSON *d = cJSON_GetArrayItem(v, i);
             if (apply_device(&cfg->devices[cfg->n_devices], d) == 0)
                 cfg->n_devices++;
@@ -354,10 +380,12 @@ void mf_tui_config_apply_json(mf_tui_config_t *cfg, const cJSON *root)
     cJSON *name_v, *host_v, *port_v;
 
     if ((profiles_arr = cJSON_GetObjectItem(root, "profiles")) &&
-        profiles_arr->type == cJSON_Array) {
+        profiles_arr->type == cJSON_Array)
+    {
         n = cJSON_GetArraySize(profiles_arr);
         cfg->n_profiles = 0;
-        for (i = 0; i < n && cfg->n_profiles < MF_MAX_PROFILES; i++) {
+        for (i = 0; i < n && cfg->n_profiles < MF_MAX_PROFILES; i++)
+        {
             prof_obj = cJSON_GetArrayItem(profiles_arr, i);
             if (!prof_obj || prof_obj->type != cJSON_Object)
                 continue;
@@ -411,19 +439,23 @@ void mf_config_device_endpoint(const mf_config_device_t *d, char *buf, size_t ca
     buf[0] = '\0';
     if (!d)
         return;
-    if (d->usb.path[0]) {
+    if (d->usb.path[0])
+    {
         snprintf(buf, cap, "usb:%s", d->usb.path);
         return;
     }
-    if (d->usb.serial_id[0]) {
+    if (d->usb.serial_id[0])
+    {
         snprintf(buf, cap, "usb-id:%s", d->usb.serial_id);
         return;
     }
-    if (d->ble.address[0]) {
+    if (d->ble.address[0])
+    {
         snprintf(buf, cap, "ble:%s", d->ble.address);
         return;
     }
-    if (d->modbus.ip[0]) {
+    if (d->modbus.ip[0])
+    {
         int port = d->modbus.port > 0 ? d->modbus.port : 502;
         snprintf(buf, cap, "tcp:%s:%d", d->modbus.ip, port);
     }
@@ -512,7 +544,8 @@ char *mf_config_serialize(const mf_daemon_config_t *cfg)
     /* devices */
     {
         cJSON *arr = cJSON_CreateArray();
-        for (int i = 0; i < cfg->n_devices; i++) {
+        for (int i = 0; i < cfg->n_devices; i++)
+        {
             cJSON *dev = device_to_json(&cfg->devices[i]);
             if (dev)
                 cJSON_AddItemToArray(arr, dev);
@@ -531,7 +564,8 @@ char *mf_tui_config_serialize(const mf_tui_config_t *cfg)
     if (!root)
         return NULL;
     cJSON *arr = cJSON_CreateArray();
-    for (int i = 0; i < cfg->n_profiles; i++) {
+    for (int i = 0; i < cfg->n_profiles; i++)
+    {
         cJSON *obj = cJSON_CreateObject();
         if (!obj)
             continue;
@@ -560,19 +594,27 @@ int mf_tui_config_endpoint(const mf_tui_config_t *cfg, const char *name,
     if (cfg->n_profiles <= 0)
         return -1;
 
-    if (name && name[0]) {
-        for (int i = 0; i < cfg->n_profiles; i++) {
-            if (strcmp(cfg->profiles[i].name, name) == 0) {
+    if (name && name[0])
+    {
+        for (int i = 0; i < cfg->n_profiles; i++)
+        {
+            if (strcmp(cfg->profiles[i].name, name) == 0)
+            {
                 p = &cfg->profiles[i];
                 break;
             }
         }
         if (!p)
             return -1;
-    } else {
-        if (cfg->default_profile[0]) {
-            for (int i = 0; i < cfg->n_profiles; i++) {
-                if (strcmp(cfg->profiles[i].name, cfg->default_profile) == 0) {
+    }
+    else
+    {
+        if (cfg->default_profile[0])
+        {
+            for (int i = 0; i < cfg->n_profiles; i++)
+            {
+                if (strcmp(cfg->profiles[i].name, cfg->default_profile) == 0)
+                {
                     p = &cfg->profiles[i];
                     break;
                 }
@@ -613,13 +655,15 @@ static int write_atomic(const char *path, const char *json)
     if (fd < 0)
         return -1;
     len = strlen(json);
-    if (write(fd, json, len) != (ssize_t)len) {
+    if (write(fd, json, len) != (ssize_t)len)
+    {
         close(fd);
         unlink(tmp);
         return -1;
     }
     close(fd);
-    if (rename(tmp, path) < 0) {
+    if (rename(tmp, path) < 0)
+    {
         unlink(tmp);
         return -1;
     }
@@ -642,7 +686,8 @@ int mf_config_save(const mf_daemon_config_t *cfg, const char *path)
 
 void mf_config_redact(mf_daemon_config_t *cfg)
 {
-    for (int i = 0; i < cfg->n_devices; i++) {
+    for (int i = 0; i < cfg->n_devices; i++)
+    {
         memset(cfg->devices[i].ble.password, 0,
                sizeof(cfg->devices[i].ble.password));
     }
@@ -662,7 +707,8 @@ static int find_device_by_uuid(const mf_daemon_config_t *cfg, const char *uuid)
 void mf_config_overlay_merge(mf_daemon_config_t *base_cfg,
                              const mf_daemon_config_t *overlay_cfg)
 {
-    for (int i = 0; i < overlay_cfg->n_devices; i++) {
+    for (int i = 0; i < overlay_cfg->n_devices; i++)
+    {
         const mf_config_device_t *ov = &overlay_cfg->devices[i];
         int idx = find_device_by_uuid(base_cfg, ov->uuid);
         if (idx < 0)
@@ -747,12 +793,14 @@ int mf_config_save_overlay(const mf_daemon_config_t *cfg)
         return -1;
     root = cJSON_CreateObject();
     arr = cJSON_CreateArray();
-    if (!root || !arr) {
+    if (!root || !arr)
+    {
         cJSON_Delete(root);
         return -1;
     }
     cJSON_AddItemToObject(root, "devices", arr);
-    for (i = 0; i < cfg->n_devices; i++) {
+    for (i = 0; i < cfg->n_devices; i++)
+    {
         const mf_config_device_t *d = &cfg->devices[i];
         cJSON *o;
 
@@ -791,7 +839,9 @@ int mf_config_load_overlay(mf_daemon_config_t *cfg)
     if (stat(path, &st) < 0 || !S_ISREG(st.st_mode))
         return 0;
     if (load_file(path, &raw, NULL) < 0)
+    {
         return -1;
+    }
     root = cJSON_Parse(raw);
     free(raw);
     if (!root)

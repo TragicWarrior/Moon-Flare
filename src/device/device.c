@@ -68,10 +68,12 @@ double mf_poll_interval_min(const char *driver);
 static int uuid_generate(char *buf, size_t bufsz)
 {
     FILE *f = fopen("/proc/sys/kernel/random/uuid", "r");
-    if (f) {
+    if (f)
+    {
         size_t n = fread(buf, 1, 36, f);
         fclose(f);
-        if (n >= 36) {
+        if (n >= 36)
+        {
             buf[36] = '\0';
             return 0;
         }
@@ -100,7 +102,8 @@ static void fill_info(const mf_device_t *d, mf_devinfo_t *out)
 static int name_taken(const char *name, int skip)
 {
     int i;
-    for (i = 0; i < MF_DEVICE_SLOTS; i++) {
+    for (i = 0; i < MF_DEVICE_SLOTS; i++)
+    {
         if (i == skip)
             continue;
         if (g_dev[i].in_use && strcmp(g_dev[i].name, name) == 0)
@@ -125,7 +128,8 @@ static void refresh_reading(mf_device_t *d)
         return;
     tmp[0] = '\0';
     rc = d->ops->get_reading(d->ctx, tmp, sizeof(tmp));
-    if (rc != 0) {
+    if (rc != 0)
+    {
         d->online = false;
         if (d->ops->last_error && d->ops->last_error(d->ctx))
             snprintf(d->last_error, sizeof(d->last_error), "%s",
@@ -141,7 +145,8 @@ static void refresh_reading(mf_device_t *d)
     if (d->ops->caps)
         d->caps = d->ops->caps(d->ctx);
 
-    if (mf_history_db()) {
+    if (mf_history_db())
+    {
         mf_sample_t s;
         cJSON *r;
         struct timespec now;
@@ -161,42 +166,53 @@ static void refresh_reading(mf_device_t *d)
                 memcpy(s.extra_json, "{}", 3);
         }
         r = cJSON_Parse(d->reading_json);
-        if (r) {
+        if (r)
+        {
             cJSON *it;
 
-            if (strcmp(d->kind, "charger") == 0) {
+            if (strcmp(d->kind, "charger") == 0)
+            {
                 it = cJSON_GetObjectItemCaseSensitive(r, "battery_voltage_v");
-                if (cJSON_IsNumber(it)) {
+                if (cJSON_IsNumber(it))
+                {
                     s.pack_v = it->valuedouble;
                     s.has_pack_v = 1;
                 }
                 it = cJSON_GetObjectItemCaseSensitive(r, "battery_current_a");
-                if (cJSON_IsNumber(it)) {
+                if (cJSON_IsNumber(it))
+                {
                     s.current_a = it->valuedouble;
                     s.has_current_a = 1;
                 }
                 it = cJSON_GetObjectItemCaseSensitive(r, "charging_watts");
-                if (cJSON_IsNumber(it)) {
+                if (cJSON_IsNumber(it))
+                {
                     s.power_w = it->valuedouble;
                     s.has_power_w = 1;
                 }
-            } else {
+            }
+            else
+            {
                 it = cJSON_GetObjectItemCaseSensitive(r, "pack_voltage_v");
-                if (cJSON_IsNumber(it)) {
+                if (cJSON_IsNumber(it))
+                {
                     s.pack_v = it->valuedouble;
                     s.has_pack_v = 1;
                 }
                 it = cJSON_GetObjectItemCaseSensitive(r, "current_a");
-                if (cJSON_IsNumber(it)) {
+                if (cJSON_IsNumber(it))
+                {
                     s.current_a = it->valuedouble;
                     s.has_current_a = 1;
                 }
                 it = cJSON_GetObjectItemCaseSensitive(r, "soc_pct");
-                if (cJSON_IsNumber(it)) {
+                if (cJSON_IsNumber(it))
+                {
                     s.soc = it->valuedouble;
                     s.has_soc = 1;
                 }
-                if (s.has_pack_v && s.has_current_a) {
+                if (s.has_pack_v && s.has_current_a)
+                {
                     s.power_w = s.pack_v * s.current_a;
                     s.has_power_w = 1;
                 }
@@ -213,23 +229,29 @@ static pt_t device_pt(env_t e_)
     mf_device_t *d = &g_dev[env->idx];
 
     pt_resume(env);
-    while ((!g_quit || !*g_quit) && d->in_use && !d->stop) {
+    while ((!g_quit || !*g_quit) && d->in_use && !d->stop)
+    {
         pt_wait(env, g_chan_tick);
         if ((g_quit && *g_quit) || !d->in_use || d->stop)
             break;
-        if (d->ops && d->ops->step && d->ctx) {
+        if (d->ops && d->ops->step && d->ctx)
+        {
             mf_step_t st = d->ops->step(d->ctx);
-            if (st == MF_STEP_ERROR) {
+            if (st == MF_STEP_ERROR)
+            {
                 d->online = false;
                 if (d->ops->last_error && d->ops->last_error(d->ctx))
                     snprintf(d->last_error, sizeof(d->last_error), "%s",
                              d->ops->last_error(d->ctx));
-            } else {
+            }
+            else
+            {
                 refresh_reading(d);
             }
         }
     }
-    if (d->ops && d->ops->close && d->ctx) {
+    if (d->ops && d->ops->close && d->ctx)
+    {
         d->ops->close(d->ctx);
         d->ctx = NULL;
     }
@@ -258,7 +280,8 @@ const mf_plugin_registry_t *mf_devices_registry(void)
 int mf_devices_visit_live(int (*fn)(const mf_devinfo_t *, void *), void *arg)
 {
     int i, n = 0;
-    for (i = 0; i < MF_DEVICE_SLOTS; i++) {
+    for (i = 0; i < MF_DEVICE_SLOTS; i++)
+    {
         mf_devinfo_t info;
         int rc;
         if (!g_dev[i].in_use || g_dev[i].stop)
@@ -277,10 +300,12 @@ int mf_devices_find_live(const char *uuid, mf_devinfo_t *out)
     int i;
     if (!uuid || !out)
         return -1;
-    for (i = 0; i < MF_DEVICE_SLOTS; i++) {
+    for (i = 0; i < MF_DEVICE_SLOTS; i++)
+    {
         if (!g_dev[i].in_use || g_dev[i].stop)
             continue;
-        if (strcmp(g_dev[i].uuid, uuid) == 0) {
+        if (strcmp(g_dev[i].uuid, uuid) == 0)
+        {
             fill_info(&g_dev[i], out);
             return 0;
         }
@@ -310,8 +335,10 @@ static void identity_from_spec(const char *spec_json, char *bus, size_t buscap,
     usb = cJSON_GetObjectItemCaseSensitive(root, "usb");
     ble = cJSON_GetObjectItemCaseSensitive(root, "ble");
     mb = cJSON_GetObjectItemCaseSensitive(root, "modbus");
-    if (ep && epcap) {
-        if (cJSON_IsObject(usb)) {
+    if (ep && epcap)
+    {
+        if (cJSON_IsObject(usb))
+        {
             cJSON *p = cJSON_GetObjectItemCaseSensitive(usb, "path");
             cJSON *s = cJSON_GetObjectItemCaseSensitive(usb, "serial_id");
             if (cJSON_IsString(p) && p->valuestring && p->valuestring[0])
@@ -319,12 +346,14 @@ static void identity_from_spec(const char *spec_json, char *bus, size_t buscap,
             else if (cJSON_IsString(s) && s->valuestring && s->valuestring[0])
                 snprintf(ep, epcap, "usb-id:%s", s->valuestring);
         }
-        if (!ep[0] && cJSON_IsObject(ble)) {
+        if (!ep[0] && cJSON_IsObject(ble))
+        {
             cJSON *a = cJSON_GetObjectItemCaseSensitive(ble, "address");
             if (cJSON_IsString(a) && a->valuestring && a->valuestring[0])
                 snprintf(ep, epcap, "ble:%s", a->valuestring);
         }
-        if (!ep[0] && cJSON_IsObject(mb)) {
+        if (!ep[0] && cJSON_IsObject(mb))
+        {
             cJSON *ip = cJSON_GetObjectItemCaseSensitive(mb, "ip");
             cJSON *port = cJSON_GetObjectItemCaseSensitive(mb, "port");
             int pn = 502;
@@ -342,7 +371,8 @@ static int uuid_in_use(const char *uuid)
     int i;
     if (!uuid || !uuid[0])
         return 0;
-    for (i = 0; i < MF_DEVICE_SLOTS; i++) {
+    for (i = 0; i < MF_DEVICE_SLOTS; i++)
+    {
         if (g_dev[i].in_use && strcmp(g_dev[i].uuid, uuid) == 0)
             return 1;
     }
@@ -363,41 +393,50 @@ int mf_devices_add(const char *name, const char *kind, const char *driver,
 
     if (err && errsz)
         err[0] = '\0';
-    if (!name || !name[0] || !kind || !kind[0] || !driver || !driver[0]) {
+    if (!name || !name[0] || !kind || !kind[0] || !driver || !driver[0])
+    {
         if (err && errsz)
             snprintf(err, errsz, "name, kind, and driver are required");
         return -1;
     }
-    if (strlen(name) >= sizeof(g_dev[0].name)) {
+    if (strlen(name) >= sizeof(g_dev[0].name))
+    {
         if (err && errsz)
             snprintf(err, errsz, "name too long");
         return -1;
     }
-    if (name_taken(name, -1)) {
+    if (name_taken(name, -1))
+    {
         if (err && errsz)
             snprintf(err, errsz, "name in use");
         return -3;
     }
-    if (uuid_in && uuid_in[0] && uuid_in_use(uuid_in)) {
+    if (uuid_in && uuid_in[0] && uuid_in_use(uuid_in))
+    {
         if (err && errsz)
             snprintf(err, errsz, "uuid in use");
         return -3;
     }
-    if (g_reg && g_reg->nops > 0) {
+    if (g_reg && g_reg->nops > 0)
+    {
         ops = mf_plugins_find(g_reg, kind, driver);
-        if (!ops) {
+        if (!ops)
+        {
             if (err && errsz)
                 snprintf(err, errsz, "unknown kind/driver");
             return -2;
         }
     }
-    for (i = 0; i < MF_DEVICE_SLOTS; i++) {
-        if (!g_dev[i].in_use) {
+    for (i = 0; i < MF_DEVICE_SLOTS; i++)
+    {
+        if (!g_dev[i].in_use)
+        {
             slot = i;
             break;
         }
     }
-    if (slot < 0) {
+    if (slot < 0)
+    {
         if (err && errsz)
             snprintf(err, errsz, "device limit reached");
         return -4;
@@ -436,10 +475,12 @@ int mf_devices_add(const char *name, const char *kind, const char *driver,
     }
     snprintf(d->reading_json, sizeof(d->reading_json), "{}");
 
-    if (ops && ops->open) {
+    if (ops && ops->open)
+    {
         openerr[0] = '\0';
         d->ctx = ops->open(spec_json ? spec_json : "{}", openerr, sizeof(openerr));
-        if (!d->ctx) {
+        if (!d->ctx)
+        {
             if (err && errsz)
                 snprintf(err, errsz, "%s", openerr[0] ? openerr : "open failed");
             memset(d, 0, sizeof(*d));
@@ -453,7 +494,8 @@ int mf_devices_add(const char *name, const char *kind, const char *driver,
     d->in_use = true;
     d->stop = false;
     d->env.idx = slot;
-    if (mf_history_db()) {
+    if (mf_history_db())
+    {
         struct timespec now;
 
         clock_gettime(CLOCK_REALTIME, &now);
@@ -485,7 +527,8 @@ static mf_device_t *find_live_mut(const char *uuid)
     int i;
     if (!uuid || !uuid[0])
         return NULL;
-    for (i = 0; i < MF_DEVICE_SLOTS; i++) {
+    for (i = 0; i < MF_DEVICE_SLOTS; i++)
+    {
         if (!g_dev[i].in_use || g_dev[i].stop)
             continue;
         if (strcmp(g_dev[i].uuid, uuid) == 0)
@@ -503,6 +546,7 @@ int mf_devices_get_settings(const char *uuid, char *json, size_t cap)
 
     if (!d || !json || cap == 0)
         return 404;
+
     plug[0] = '\0';
     if (d->ops && d->ops->get_settings && d->ctx)
         (void)d->ops->get_settings(d->ctx, plug, sizeof(plug));
@@ -515,8 +559,10 @@ int mf_devices_get_settings(const char *uuid, char *json, size_t cap)
     cJSON_AddNumberToObject(out, "capture_interval_s", d->capture_interval_s);
     if (plug[0] == '{')
         plug_root = cJSON_Parse(plug);
-    if (plug_root && cJSON_IsObject(plug_root)) {
-        for (it = plug_root->child; it; it = it->next) {
+    if (plug_root && cJSON_IsObject(plug_root))
+    {
+        for (it = plug_root->child; it; it = it->next)
+        {
             cJSON *copy;
 
             if (!it->string || !it->string[0])
@@ -537,7 +583,8 @@ int mf_devices_get_settings(const char *uuid, char *json, size_t cap)
 
     printed = cJSON_PrintUnformatted(out);
     cJSON_Delete(out);
-    if (!printed) {
+    if (!printed)
+    {
         snprintf(json, cap, "{\"poll_interval_s\":%.3f}", d->poll_interval_s);
         json[cap - 1] = '\0';
         return 200;
@@ -565,22 +612,27 @@ int mf_devices_put_settings(const char *uuid, const char *json,
         json = "{}";
     slot = (int)(d - g_dev);
     root = cJSON_Parse(json);
-    if (root && cJSON_IsObject(root)) {
+    if (root && cJSON_IsObject(root))
+    {
         it = cJSON_GetObjectItemCaseSensitive(root, "name");
-        if (cJSON_IsString(it) && it->valuestring) {
-            if (!it->valuestring[0]) {
+        if (cJSON_IsString(it) && it->valuestring)
+        {
+            if (!it->valuestring[0])
+            {
                 if (err && errsz)
                     snprintf(err, errsz, "name required");
                 cJSON_Delete(root);
                 return 400;
             }
-            if (strlen(it->valuestring) >= sizeof(d->name)) {
+            if (strlen(it->valuestring) >= sizeof(d->name))
+            {
                 if (err && errsz)
                     snprintf(err, errsz, "name too long");
                 cJSON_Delete(root);
                 return 400;
             }
-            if (name_taken(it->valuestring, slot)) {
+            if (name_taken(it->valuestring, slot))
+            {
                 if (err && errsz)
                     snprintf(err, errsz, "name in use");
                 cJSON_Delete(root);
@@ -590,12 +642,14 @@ int mf_devices_put_settings(const char *uuid, const char *json,
         }
         it = cJSON_GetObjectItemCaseSensitive(root, "poll_interval_s");
         if (cJSON_IsNumber(it) ||
-            (cJSON_IsString(it) && it->valuestring)) {
+            (cJSON_IsString(it) && it->valuestring))
+        {
             double iv = cJSON_IsNumber(it) ? it->valuedouble
                                            : atof(it->valuestring);
             double mn = mf_poll_interval_min(d->driver);
 
-            if (iv < mn) {
+            if (iv < mn)
+            {
                 if (err && errsz)
                     snprintf(err, errsz, "poll_interval_s below %.1f", mn);
                 cJSON_Delete(root);
@@ -605,10 +659,12 @@ int mf_devices_put_settings(const char *uuid, const char *json,
         }
         it = cJSON_GetObjectItemCaseSensitive(root, "capture_interval_s");
         if (cJSON_IsNumber(it) ||
-            (cJSON_IsString(it) && it->valuestring)) {
+            (cJSON_IsString(it) && it->valuestring))
+        {
             double iv = cJSON_IsNumber(it) ? it->valuedouble
                                            : atof(it->valuestring);
-            if (iv < 0.0 || (iv > 0.0 && iv < 1.0)) {
+            if (iv < 0.0 || (iv > 0.0 && iv < 1.0))
+            {
                 if (err && errsz)
                     snprintf(err, errsz,
                              "capture_interval_s must be 0 (off) or >= 1.0");
@@ -617,7 +673,8 @@ int mf_devices_put_settings(const char *uuid, const char *json,
             }
             d->capture_interval_s = iv;
         }
-        for (it = root->child; it; it = it->next) {
+        for (it = root->child; it; it = it->next)
+        {
             if (!it->string || !it->string[0])
                 continue;
             if (strcmp(it->string, "name") == 0 ||
@@ -630,7 +687,8 @@ int mf_devices_put_settings(const char *uuid, const char *json,
     }
     if (root)
         cJSON_Delete(root);
-    if (d->ops && d->ops->put_settings && d->ctx && have_other) {
+    if (d->ops && d->ops->put_settings && d->ctx && have_other)
+    {
         rc = d->ops->put_settings(d->ctx, json, err, errsz);
         if (rc == MF_ERR_UNSUPPORTED || rc == MF_ERR_INVAL)
             return 400;
@@ -654,13 +712,15 @@ int mf_devices_action(const char *uuid, const char *action, const char *json,
         return 404;
     if (!action || !action[0])
         return 400;
-    if (!d->ops || !d->ops->action || !d->ctx) {
+    if (!d->ops || !d->ops->action || !d->ctx)
+    {
         if (err && errsz)
             snprintf(err, errsz, "unsupported");
         return 400;
     }
     rc = d->ops->action(d->ctx, action, json ? json : "{}", err, errsz);
-    if (rc == MF_OK || rc == 0) {
+    if (rc == MF_OK || rc == 0)
+    {
         refresh_reading(d);
         return 200;
     }
@@ -672,7 +732,8 @@ int mf_devices_action(const char *uuid, const char *action, const char *json,
 int mf_devices_any_dying(void)
 {
     int i;
-    for (i = 0; i < MF_DEVICE_SLOTS; i++) {
+    for (i = 0; i < MF_DEVICE_SLOTS; i++)
+    {
         if (g_dev[i].in_use && g_dev[i].stop)
             return 1;
     }
@@ -684,7 +745,8 @@ static void pending_cancel(const char *uuid)
     int i;
     if (!uuid || !uuid[0])
         return;
-    for (i = 0; i < MF_DEVICE_SLOTS; i++) {
+    for (i = 0; i < MF_DEVICE_SLOTS; i++)
+    {
         if (g_pending[i].used && strcmp(g_pending[i].dev.uuid, uuid) == 0)
             g_pending[i].used = false;
     }
@@ -693,9 +755,11 @@ static void pending_cancel(const char *uuid)
 static void pending_queue(const mf_config_device_t *dev)
 {
     int i, slot = -1;
-    for (i = 0; i < MF_DEVICE_SLOTS; i++) {
+    for (i = 0; i < MF_DEVICE_SLOTS; i++)
+    {
         if (g_pending[i].used &&
-            strcmp(g_pending[i].dev.uuid, dev->uuid) == 0) {
+            strcmp(g_pending[i].dev.uuid, dev->uuid) == 0)
+        {
             g_pending[i].dev = *dev;
             return;
         }
@@ -713,7 +777,8 @@ static int find_slot_uuid(const char *uuid)
     int i;
     if (!uuid || !uuid[0])
         return -1;
-    for (i = 0; i < MF_DEVICE_SLOTS; i++) {
+    for (i = 0; i < MF_DEVICE_SLOTS; i++)
+    {
         if (g_dev[i].in_use && strcmp(g_dev[i].uuid, uuid) == 0)
             return i;
     }
@@ -725,7 +790,8 @@ static int uuid_in_cfg(const mf_config_device_t *devs, int n, const char *uuid)
     int i;
     if (!uuid || !uuid[0])
         return 0;
-    for (i = 0; i < n; i++) {
+    for (i = 0; i < n; i++)
+    {
         if (strcmp(devs[i].uuid, uuid) == 0)
             return 1;
     }
@@ -771,30 +837,37 @@ static int validate_apply(const mf_config_device_t *devs, int n,
 {
     int i, j, s;
 
-    for (i = 0; i < n; i++) {
-        if (!devs[i].uuid[0]) {
+    for (i = 0; i < n; i++)
+    {
+        if (!devs[i].uuid[0])
+        {
             if (err && errsz)
                 snprintf(err, errsz, "device missing uuid");
             return -1;
         }
         if (devs[i].enabled &&
-            (!devs[i].name[0] || !devs[i].kind[0] || !devs[i].driver[0])) {
+            (!devs[i].name[0] || !devs[i].kind[0] || !devs[i].driver[0]))
+        {
             if (err && errsz)
                 snprintf(err, errsz, "name, kind, and driver are required");
             return -1;
         }
-        if (devs[i].name[0] && strlen(devs[i].name) >= sizeof(g_dev[0].name)) {
+        if (devs[i].name[0] && strlen(devs[i].name) >= sizeof(g_dev[0].name))
+        {
             if (err && errsz)
                 snprintf(err, errsz, "name too long");
             return -1;
         }
-        for (j = i + 1; j < n; j++) {
-            if (strcmp(devs[i].uuid, devs[j].uuid) == 0) {
+        for (j = i + 1; j < n; j++)
+        {
+            if (strcmp(devs[i].uuid, devs[j].uuid) == 0)
+            {
                 if (err && errsz)
                     snprintf(err, errsz, "duplicate uuid");
                 return -1;
             }
-            if (devs[i].name[0] && strcmp(devs[i].name, devs[j].name) == 0) {
+            if (devs[i].name[0] && strcmp(devs[i].name, devs[j].name) == 0)
+            {
                 if (err && errsz)
                     snprintf(err, errsz, "duplicate name");
                 return -1;
@@ -803,30 +876,36 @@ static int validate_apply(const mf_config_device_t *devs, int n,
                 char a[160], b[160];
                 mf_config_device_endpoint(&devs[i], a, sizeof(a));
                 mf_config_device_endpoint(&devs[j], b, sizeof(b));
-                if (a[0] && b[0] && strcmp(a, b) == 0) {
+                if (a[0] && b[0] && strcmp(a, b) == 0)
+                {
                     if (err && errsz)
                         snprintf(err, errsz, "duplicate endpoint");
                     return -1;
                 }
             }
         }
-        if (devs[i].enabled && g_reg && g_reg->nops > 0) {
-            if (!mf_plugins_find(g_reg, devs[i].kind, devs[i].driver)) {
+        if (devs[i].enabled && g_reg && g_reg->nops > 0)
+        {
+            if (!mf_plugins_find(g_reg, devs[i].kind, devs[i].driver))
+            {
                 if (err && errsz)
                     snprintf(err, errsz, "unknown kind/driver");
                 return -1;
             }
         }
-        if (devs[i].poll_interval_s > 0.0) {
+        if (devs[i].poll_interval_s > 0.0)
+        {
             double mn = mf_poll_interval_min(devs[i].driver);
-            if (devs[i].poll_interval_s < mn) {
+            if (devs[i].poll_interval_s < mn)
+            {
                 if (err && errsz)
                     snprintf(err, errsz, "poll_interval_s below %.1f", mn);
                 return -1;
             }
         }
         if (devs[i].capture_interval_s != 0.0 &&
-            devs[i].capture_interval_s < 1.0) {
+            devs[i].capture_interval_s < 1.0)
+        {
             if (err && errsz)
                 snprintf(err, errsz,
                          "capture_interval_s must be 0 (off) or >= 1.0");
@@ -834,12 +913,14 @@ static int validate_apply(const mf_config_device_t *devs, int n,
         }
     }
 
-    for (i = 0; i < n; i++) {
+    for (i = 0; i < n; i++)
+    {
         char ep[160];
         if (!devs[i].enabled)
             continue;
         mf_config_device_endpoint(&devs[i], ep, sizeof(ep));
-        for (s = 0; s < MF_DEVICE_SLOTS; s++) {
+        for (s = 0; s < MF_DEVICE_SLOTS; s++)
+        {
             mf_device_t *d = &g_dev[s];
             int name_hit, ep_hit;
             if (!d->in_use)
@@ -867,7 +948,8 @@ int mf_devices_validate_config(const mf_config_device_t *devs, int n,
         err[0] = '\0';
     if (n < 0)
         n = 0;
-    if (n > 0 && !devs) {
+    if (n > 0 && !devs)
+    {
         if (err && errsz)
             snprintf(err, errsz, "bad request");
         return -1;
@@ -884,23 +966,28 @@ int mf_devices_apply_config(const mf_config_device_t *devs, int n,
         return -1;
 
     /* Patch identity-same; stop REMOVE and identity changes. */
-    for (s = 0; s < MF_DEVICE_SLOTS; s++) {
+    for (s = 0; s < MF_DEVICE_SLOTS; s++)
+    {
         mf_device_t *d = &g_dev[s];
         const mf_config_device_t *want = NULL;
         if (!d->in_use)
             continue;
-        for (i = 0; i < n; i++) {
-            if (strcmp(devs[i].uuid, d->uuid) == 0) {
+        for (i = 0; i < n; i++)
+        {
+            if (strcmp(devs[i].uuid, d->uuid) == 0)
+            {
                 want = &devs[i];
                 break;
             }
         }
-        if (!want || !want->enabled) {
+        if (!want || !want->enabled)
+        {
             pending_cancel(d->uuid);
             stop_slot(d);
             continue;
         }
-        if (identity_changed(d, want)) {
+        if (identity_changed(d, want))
+        {
             pending_queue(want);
             stop_slot(d);
             continue;
@@ -908,7 +995,8 @@ int mf_devices_apply_config(const mf_config_device_t *devs, int n,
         snprintf(d->name, sizeof(d->name), "%.*s",
                  (int)sizeof(d->name) - 1, want->name);
         d->enabled = want->enabled;
-        if (want->poll_interval_s > 0.0) {
+        if (want->poll_interval_s > 0.0)
+        {
             double mn = mf_poll_interval_min(d->driver);
             d->poll_interval_s = want->poll_interval_s < mn ? mn
                                                             : want->poll_interval_s;
@@ -919,24 +1007,29 @@ int mf_devices_apply_config(const mf_config_device_t *devs, int n,
     }
 
     /* ADD new enabled UUIDs. */
-    for (i = 0; i < n; i++) {
+    for (i = 0; i < n; i++)
+    {
         char openerr[96];
         int rc;
         if (!devs[i].enabled)
             continue;
         if (find_slot_uuid(devs[i].uuid) >= 0)
             continue;
-        if (uuid_in_use(devs[i].uuid)) {
+        if (uuid_in_use(devs[i].uuid))
+        {
             pending_queue(&devs[i]);
             continue;
         }
         openerr[0] = '\0';
         rc = add_from_cfg(&devs[i], openerr, sizeof(openerr));
-        if (rc == -3) {
+        if (rc == -3)
+        {
             /* Name still held by a dying other uuid — validate should have
              * caught this; queue if same uuid is dying. */
             pending_queue(&devs[i]);
-        } else if (rc != 0) {
+        }
+        else if (rc != 0)
+        {
             LOG_W("config apply open %s: %s",
                   devs[i].name[0] ? devs[i].name : devs[i].uuid,
                   openerr[0] ? openerr : "failed");
@@ -945,7 +1038,8 @@ int mf_devices_apply_config(const mf_config_device_t *devs, int n,
 
     if (mf_devices_any_dying())
         pending = 1;
-    for (i = 0; i < MF_DEVICE_SLOTS; i++) {
+    for (i = 0; i < MF_DEVICE_SLOTS; i++)
+    {
         if (g_pending[i].used)
             pending = 1;
     }
@@ -955,7 +1049,8 @@ int mf_devices_apply_config(const mf_config_device_t *devs, int n,
 void mf_devices_apply_pending(void)
 {
     int i;
-    for (i = 0; i < MF_DEVICE_SLOTS; i++) {
+    for (i = 0; i < MF_DEVICE_SLOTS; i++)
+    {
         char openerr[96];
         int rc;
         if (!g_pending[i].used)
@@ -964,7 +1059,8 @@ void mf_devices_apply_pending(void)
             continue;
         openerr[0] = '\0';
         rc = add_from_cfg(&g_pending[i].dev, openerr, sizeof(openerr));
-        if (rc == 0) {
+        if (rc == 0)
+        {
             g_pending[i].used = false;
             continue;
         }
@@ -984,14 +1080,16 @@ int mf_devices_delete(const char *uuid)
     if (!uuid || !uuid[0])
         return 404;
     pending_cancel(uuid);
-    for (i = 0; i < MF_DEVICE_SLOTS; i++) {
+    for (i = 0; i < MF_DEVICE_SLOTS; i++)
+    {
         mf_device_t *d = &g_dev[i];
         if (!d->in_use)
             continue;
         if (strcmp(d->uuid, uuid) != 0)
             continue;
         d->stop = true;
-        if (!g_pts) {
+        if (!g_pts)
+        {
             /* Route-unit tests: no protothread, free immediately. */
             slot_clear(d);
         }
@@ -1004,13 +1102,15 @@ int mf_devices_delete(const char *uuid)
 void mf_devices_prepare_fds(fd_set *rset, fd_set *wset, int *maxfd)
 {
     int i;
-    for (i = 0; i < MF_DEVICE_SLOTS; i++) {
+    for (i = 0; i < MF_DEVICE_SLOTS; i++)
+    {
         mf_device_t *d = &g_dev[i];
         int fd;
         unsigned mask;
         if (!d->in_use || d->stop || !d->ops || !d->ctx)
             continue;
-        if (d->ops->prepare_fds) {
+        if (d->ops->prepare_fds)
+        {
             d->ops->prepare_fds(d->ctx, rset, wset, maxfd);
             continue;
         }
@@ -1032,7 +1132,8 @@ void mf_devices_prepare_fds(fd_set *rset, fd_set *wset, int *maxfd)
 void mf_devices_request_stop_all(void)
 {
     int i;
-    for (i = 0; i < MF_DEVICE_SLOTS; i++) {
+    for (i = 0; i < MF_DEVICE_SLOTS; i++)
+    {
         if (g_dev[i].in_use)
             g_dev[i].stop = true;
     }

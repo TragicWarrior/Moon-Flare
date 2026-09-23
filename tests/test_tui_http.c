@@ -50,7 +50,8 @@ static void spawn_slow_http(int delay_ms)
     if (pipe(sp) != 0)
         exit(1);
     g_child = fork();
-    if (g_child == 0) {
+    if (g_child == 0)
+    {
         int srv, one = 1;
         struct sockaddr_in a;
         socklen_t al = sizeof(a);
@@ -69,7 +70,8 @@ static void spawn_slow_http(int delay_ms)
         printf("tui_http: listening on 127.0.0.1:%u\n",
                (unsigned)ntohs(a.sin_port));
         fflush(stdout);
-        for (;;) {
+        for (;;)
+        {
             int cfd = accept(srv, NULL, NULL);
             char buf[1024];
             ssize_t n;
@@ -107,7 +109,8 @@ static void spawn_slow_http(int delay_ms)
 static void drive(mf_http_cli_t *c, int ms)
 {
     double t0 = now();
-    while ((now() - t0) * 1000.0 < (double)ms) {
+    while ((now() - t0) * 1000.0 < (double)ms)
+    {
         fd_set r, w;
         int maxfd = -1;
         struct timeval tv = { 0, 20000 };
@@ -157,7 +160,8 @@ int main(void)
           "reconnect FSM after peer gone");
 
     mf_http_cli_close(&cli);
-    if (g_fail) {
+    if (g_fail)
+    {
         fprintf(stderr, "%d check(s) failed\n", g_fail);
         return 1;
     }
