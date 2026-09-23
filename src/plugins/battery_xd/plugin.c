@@ -179,12 +179,14 @@ static uint8_t cmd_for_phase(int phase)
 static int try_open_fd(xd_ctx_t *c)
 {
     int fd;
-    if (!c->path[0]) {
+    if (!c->path[0])
+    {
         set_err(c, "usb.path required");
         return -1;
     }
     fd = bms_serial_open_nonblock(c->path, c->baud);
-    if (fd < 0) {
+    if (fd < 0)
+    {
         snprintf(c->err, sizeof(c->err), "open failed: %s", strerror(errno));
         return -1;
     }
@@ -206,15 +208,18 @@ static int apply_usb_policy(xd_ctx_t *c, int opened)
     w.auto_port = c->auto_port;
     w.path_ok = opened ? 1 : 0;
     rc = mf_usb_resolve(c->uuid, &w, &got);
-    if (rc == MF_USB_LEARN || rc == MF_USB_USE) {
+    if (rc == MF_USB_LEARN || rc == MF_USB_USE)
+    {
         if (got.serial_id[0])
             snprintf(c->serial_id, sizeof(c->serial_id), "%s", got.serial_id);
         if (got.by_id[0])
             snprintf(c->by_id, sizeof(c->by_id), "%s", got.by_id);
         return 0;
     }
-    if (rc == MF_USB_RELOCATE) {
-        if (c->fd >= 0) {
+    if (rc == MF_USB_RELOCATE)
+    {
+        if (c->fd >= 0)
+        {
             close(c->fd);
             c->fd = -1;
             c->io_active = 0;
@@ -226,7 +231,8 @@ static int apply_usb_policy(xd_ctx_t *c, int opened)
             snprintf(c->by_id, sizeof(c->by_id), "%s", got.by_id);
         return try_open_fd(c);
     }
-    if (opened && c->fd >= 0 && (c->serial_id[0] || c->by_id[0])) {
+    if (opened && c->fd >= 0 && (c->serial_id[0] || c->by_id[0]))
+    {
         close(c->fd);
         c->fd = -1;
         c->io_active = 0;
@@ -249,7 +255,8 @@ static void *xd_open(const char *spec_json, char *err, size_t errsz)
     xd_ctx_t *c = calloc(1, sizeof(*c));
     const char *usb;
     double iv;
-    if (!c) {
+    if (!c)
+    {
         if (err && errsz)
             snprintf(err, errsz, "oom");
         return NULL;
@@ -278,17 +285,23 @@ static void *xd_open(const char *spec_json, char *err, size_t errsz)
         c->poll_interval_s = POLL_MIN;
     c->next_poll = 0;
     c->cmd_phase = CMD_FW;
-    if (try_open_fd(c) == 0) {
-        if (apply_usb_policy(c, 1) != 0) {
+    if (try_open_fd(c) == 0)
+    {
+        if (apply_usb_policy(c, 1) != 0)
+        {
             if (err && errsz)
                 snprintf(err, errsz, "%s", c->err);
             c->reopen_at = mono_now() + c->poll_interval_s;
-        } else {
+        }
+        else
+        {
             start_cmd(c, CMD_FW);
         }
-    } else if (apply_usb_policy(c, 0) == 0 && c->fd >= 0) {
+    } else if (apply_usb_policy(c, 0) == 0 && c->fd >= 0)
+    {
         start_cmd(c, CMD_FW);
-    } else {
+    } else
+    {
         if (err && errsz)
             snprintf(err, errsz, "%s", c->err);
         c->reopen_at = mono_now() + c->poll_interval_s;
@@ -327,39 +340,48 @@ static mf_step_t xd_step(void *v)
         return MF_STEP_ERROR;
     now = mono_now();
     c->select_mask = 0;
-    if (c->fd < 0) {
+    if (c->fd < 0)
+    {
         if (now < c->reopen_at)
             return MF_STEP_IDLE;
-        if (try_open_fd(c) == 0) {
-            if (apply_usb_policy(c, 1) != 0) {
+        if (try_open_fd(c) == 0)
+        {
+            if (apply_usb_policy(c, 1) != 0)
+            {
                 c->reopen_at = now + c->poll_interval_s;
                 return MF_STEP_ERROR;
             }
-        } else if (apply_usb_policy(c, 0) != 0 || c->fd < 0) {
+        } else if (apply_usb_policy(c, 0) != 0 || c->fd < 0)
+        {
             c->reopen_at = now + c->poll_interval_s;
             return MF_STEP_ERROR;
         }
         start_cmd(c, CMD_FW);
     }
-    if (!c->io_active) {
+    if (!c->io_active)
+    {
         if (now < c->next_poll)
             return MF_STEP_IDLE;
         start_cmd(c, c->cmd_phase);
     }
     s = bms_txrx_step(&c->io);
-    if (s == BMS_IO_NEED_READ) {
+    if (s == BMS_IO_NEED_READ)
+    {
         c->select_mask = MF_IO_WANT_READ;
         return MF_STEP_IDLE;
     }
-    if (s == BMS_IO_NEED_WRITE) {
+    if (s == BMS_IO_NEED_WRITE)
+    {
         c->select_mask = MF_IO_WANT_WRITE;
         return MF_STEP_IDLE;
     }
     if (s == BMS_IO_NEED_TIME)
         return MF_STEP_IDLE;
     c->io_active = 0;
-    if (s == BMS_IO_DONE) {
-        if (c->cmd_phase == CMD_FW) {
+    if (s == BMS_IO_DONE)
+    {
+        if (c->cmd_phase == CMD_FW)
+        {
             copy_ascii(c->firmware, sizeof(c->firmware),
                        c->io.body, c->io.body_len);
             c->cmd_phase = CMD_BARCODE;
@@ -367,7 +389,8 @@ static mf_step_t xd_step(void *v)
             c->err[0] = '\0';
             return MF_STEP_IDLE;
         }
-        if (c->cmd_phase == CMD_BARCODE) {
+        if (c->cmd_phase == CMD_BARCODE)
+        {
             copy_ascii(c->barcode, sizeof(c->barcode),
                        c->io.body, c->io.body_len);
             c->cmd_phase = CMD_POLL;
@@ -375,7 +398,8 @@ static mf_step_t xd_step(void *v)
             c->err[0] = '\0';
             return MF_STEP_IDLE;
         }
-        if (bms_parse_realtime(c->io.body, (size_t)c->io.body_len, &c->rt) != 0) {
+        if (bms_parse_realtime(c->io.body, (size_t)c->io.body_len, &c->rt) != 0)
+        {
             set_err(c, "parse failed");
             c->next_poll = now + c->poll_interval_s;
             return MF_STEP_ERROR;
@@ -418,7 +442,8 @@ static int js_append(char *buf, size_t cap, size_t *off, const char *fmt, ...)
     va_end(ap);
     if (n < 0)
         return -1;
-    if ((size_t)n >= cap - *off) {
+    if ((size_t)n >= cap - *off)
+    {
         *off = cap - 1;
         buf[cap - 1] = '\0';
         return -1;
@@ -435,7 +460,8 @@ static int xd_get_reading(void *v, char *json, size_t cap)
     int i;
     if (!c || !json || cap == 0)
         return -1;
-    if (!c->have_data) {
+    if (!c->have_data)
+    {
         snprintf(json, cap, "{}");
         return 0;
     }
@@ -465,7 +491,8 @@ static int xd_get_reading(void *v, char *json, size_t cap)
     for (i = 0; i < (int)r->temp_count; i++)
         js_append(json, cap, &off, "%s%.1f", i ? "," : "", r->temperatures_c[i]);
     js_append(json, cap, &off, "],\"temp_labels\":[");
-    for (i = 0; i < (int)r->temp_count; i++) {
+    for (i = 0; i < (int)r->temp_count; i++)
+    {
         if (i == 0)
             js_append(json, cap, &off, "\"MOS\"");
         else
@@ -503,8 +530,10 @@ static int xd_put_settings(void *v, const char *json, char *err, size_t errsz)
         json = "{}";
     usb = json_usb_scope(json);
     iv = json_double(json, "poll_interval_s", -1.0);
-    if (iv >= 0.0) {
-        if (iv < POLL_MIN) {
+    if (iv >= 0.0)
+    {
+        if (iv < POLL_MIN)
+        {
             if (err && errsz)
                 snprintf(err, errsz, "poll_interval_s below %.1f", POLL_MIN);
             return MF_ERR_INVAL;
@@ -517,7 +546,8 @@ static int xd_put_settings(void *v, const char *json, char *err, size_t errsz)
     addr = json_int(usb, "addr", -1);
     if (json_find_key(usb, "addr") && addr > 0 && addr <= 255)
         c->addr = addr;
-    if (json_find_key(usb, "auto_port")) {
+    if (json_find_key(usb, "auto_port"))
+    {
         ap = json_bool(usb, "auto_port", c->auto_port);
         c->auto_port = ap;
     }

@@ -23,7 +23,11 @@ static void mkdtemp_copy(const char *src, char *dst, size_t dstsz)
 {
     /* copy file; caller ensures dst dir exists */
     FILE *f = fopen(src, "rb");
-    if (!f) { perror(src); exit(1); }
+    if (!f)
+    {
+        perror(src);
+        exit(1);
+    }
     fseek(f, 0, SEEK_END);
     long sz = ftell(f);
     fseek(f, 0, SEEK_SET);
@@ -42,14 +46,19 @@ static void mkdtemp_copy(const char *src, char *dst, size_t dstsz)
 static void write_text(const char *path, const char *content)
 {
     FILE *f = fopen(path, "w");
-    if (!f) { perror(path); exit(1); }
+    if (!f)
+    {
+        perror(path);
+        exit(1);
+    }
     fputs(content, f);
     fclose(f);
 }
 
 static void assert_int_eq(int expected, int actual, const char *msg)
 {
-    if (expected != actual) {
+    if (expected != actual)
+    {
         fprintf(stderr, "FAIL: %s: expected %d, got %d\n", msg, expected, actual);
         exit(1);
     }
@@ -57,7 +66,8 @@ static void assert_int_eq(int expected, int actual, const char *msg)
 
 static void assert_str_eq(const char *expected, const char *actual, const char *msg)
 {
-    if (strcmp(expected, actual) != 0) {
+    if (strcmp(expected, actual) != 0)
+    {
         fprintf(stderr, "FAIL: %s: expected '%s', got '%s'\n", msg, expected, actual);
         exit(1);
     }
@@ -65,7 +75,8 @@ static void assert_str_eq(const char *expected, const char *actual, const char *
 
 static void assert_true(int cond, const char *msg)
 {
-    if (!cond) {
+    if (!cond)
+    {
         fprintf(stderr, "FAIL: %s\n", msg);
         exit(1);
     }
@@ -191,7 +202,8 @@ static const mf_config_device_t *find_dev(const mf_daemon_config_t *cfg,
                                           const char *uuid)
 {
     int i;
-    for (i = 0; i < cfg->n_devices; i++) {
+    for (i = 0; i < cfg->n_devices; i++)
+    {
         if (strcmp(cfg->devices[i].uuid, uuid) == 0)
             return &cfg->devices[i];
     }

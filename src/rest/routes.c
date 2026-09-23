@@ -37,7 +37,8 @@ const char *mf_rest_listen_spec(void)
 
 static mf_daemon_config_t *live_cfg(void)
 {
-    if (!g_live) {
+    if (!g_live)
+    {
         mf_config_defaults(&g_cfg_local);
         g_live = &g_cfg_local;
     }
@@ -50,7 +51,8 @@ static void cfg_remove_uuid(const char *uuid)
     int i;
     if (!uuid || !uuid[0])
         return;
-    for (i = 0; i < cfg->n_devices; i++) {
+    for (i = 0; i < cfg->n_devices; i++)
+    {
         if (strcmp(cfg->devices[i].uuid, uuid) != 0)
             continue;
         if (i + 1 < cfg->n_devices)
@@ -69,7 +71,8 @@ static void cfg_patch_name_poll(const char *uuid, const char *name, double poll)
 
     if (!uuid || !uuid[0] || !cfg)
         return;
-    for (i = 0; i < cfg->n_devices; i++) {
+    for (i = 0; i < cfg->n_devices; i++)
+    {
         if (strcmp(cfg->devices[i].uuid, uuid) != 0)
             continue;
         if (name && name[0])
@@ -89,13 +92,16 @@ static void cfg_upsert_from_json(const char *uuid, const cJSON *root)
     int i;
     if (!uuid || !uuid[0] || !root)
         return;
-    for (i = 0; i < cfg->n_devices; i++) {
-        if (strcmp(cfg->devices[i].uuid, uuid) == 0) {
+    for (i = 0; i < cfg->n_devices; i++)
+    {
+        if (strcmp(cfg->devices[i].uuid, uuid) == 0)
+        {
             d = &cfg->devices[i];
             break;
         }
     }
-    if (!d) {
+    if (!d)
+    {
         if (cfg->n_devices >= MF_MAX_DEVICES)
             return;
         d = &cfg->devices[cfg->n_devices++];
@@ -124,7 +130,8 @@ static void set_error(mf_rest_response_t *resp, int status, const char *msg)
     resp->etag[0] = '\0';
     resp->body[0] = '\0';
     resp->body_len = 0;
-    if (s) {
+    if (s)
+    {
         size_t n = strlen(s);
         if (n >= sizeof(resp->body))
             n = sizeof(resp->body) - 1;
@@ -146,7 +153,8 @@ static void set_json(mf_rest_response_t *resp, int status, cJSON *root,
     resp->location[0] = '\0';
     resp->body[0] = '\0';
     resp->body_len = 0;
-    if (s) {
+    if (s)
+    {
         size_t n = strlen(s);
         if (n >= sizeof(resp->body))
             n = sizeof(resp->body) - 1;
@@ -155,7 +163,8 @@ static void set_json(mf_rest_response_t *resp, int status, cJSON *root,
         resp->body_len = n;
         free(s);
     }
-    if (location && location[0]) {
+    if (location && location[0])
+    {
         size_t n = strlen(location);
         if (n >= sizeof(resp->location))
             n = sizeof(resp->location) - 1;
@@ -201,7 +210,8 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
     cJSON_AddBoolToObject(row, "online", d->online);
     cJSON_AddNumberToObject(row, "seq", (double)d->seq);
 
-    if (strcmp(d->kind, "charger") == 0) {
+    if (strcmp(d->kind, "charger") == 0)
+    {
         cJSON *v = num_or_null(data, "battery_voltage_v");
         cJSON *w = num_or_null(data, "charging_watts");
         cJSON *k = num_or_null(data, "kwh_today");
@@ -215,11 +225,15 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
         if (st)
             cJSON_AddStringToObject(row, "charge_stage", st->valuestring);
         cJSON_AddItemToArray(chargers, row);
-    } else if (strcmp(d->kind, "inverter") == 0) {
+    } else if (strcmp(d->kind, "inverter") == 0)
+    {
         cJSON_AddItemToArray(inverters, row);
-    } else if (strcmp(d->kind, "phantom") == 0) {
+    } else if (strcmp(d->kind, "phantom") == 0)
+    {
         cJSON_AddItemToArray(phantoms, row);
-    } else {
+    }
+    else
+    {
         cJSON *v = num_or_null(data, "pack_voltage_v");
         cJSON *c = num_or_null(data, "current_a");
         cJSON *s = num_or_null(data, "soc_pct");
@@ -285,8 +299,10 @@ static int handle_drivers(mf_rest_response_t *resp)
     const mf_plugin_registry_t *reg = mf_devices_registry();
     int i;
 
-    if (reg && reg->nops > 0) {
-        for (i = 0; i < reg->nops; i++) {
+    if (reg && reg->nops > 0)
+    {
+        for (i = 0; i < reg->nops; i++)
+        {
             cJSON *o = cJSON_CreateObject();
             const mf_plugin_ops_t *ops = reg->ops[i];
             cJSON_AddStringToObject(o, "kind", ops->kind ? ops->kind : "");
@@ -301,7 +317,9 @@ static int handle_drivers(mf_rest_response_t *resp)
             }
             cJSON_AddItemToArray(arr, o);
         }
-    } else {
+    }
+    else
+    {
         cJSON *b = cJSON_CreateObject();
         cJSON *c = cJSON_CreateObject();
         cJSON_AddStringToObject(b, "kind", "battery");
@@ -349,19 +367,22 @@ static int handle_devices_create(const mf_rest_request_t *req, mf_rest_response_
     cJSON *reply;
     int rc;
 
-    if (!req->body || req->body_len == 0) {
+    if (!req->body || req->body_len == 0)
+    {
         set_error(resp, 400, "bad request");
         return 0;
     }
     root = cJSON_ParseWithLength(req->body, req->body_len);
-    if (!root) {
+    if (!root)
+    {
         set_error(resp, 400, "bad request");
         return 0;
     }
     name = json_str(root, "name");
     kind = json_str(root, "kind");
     driver = json_str(root, "driver");
-    if (!name || !kind || !driver) {
+    if (!name || !kind || !driver)
+    {
         set_error(resp, 400, "bad request");
         cJSON_Delete(root);
         return 0;
@@ -376,19 +397,23 @@ static int handle_devices_create(const mf_rest_request_t *req, mf_rest_response_
         cfg_upsert_from_json(uuid, root);
     free(spec);
     cJSON_Delete(root);
-    if (rc == -2) {
+    if (rc == -2)
+    {
         set_error(resp, 400, "unknown kind/driver");
         return 0;
     }
-    if (rc == -3) {
+    if (rc == -3)
+    {
         set_error(resp, 400, "name in use");
         return 0;
     }
-    if (rc == -4) {
+    if (rc == -4)
+    {
         set_error(resp, 409, "device limit reached");
         return 0;
     }
-    if (rc != 0) {
+    if (rc != 0)
+    {
         set_error(resp, 400, err[0] ? err : "bad request");
         return 0;
     }
@@ -416,7 +441,8 @@ static int handle_device_get(const char *id, mf_rest_response_t *resp)
     cJSON *obj;
     cJSON *data;
 
-    if (mf_devices_find_live(id, &info) != 0) {
+    if (mf_devices_find_live(id, &info) != 0)
+    {
         set_error(resp, 404, "not found");
         return 0;
     }
@@ -447,7 +473,8 @@ static int handle_device_get(const char *id, mf_rest_response_t *resp)
 static int handle_device_delete(const char *id, mf_rest_response_t *resp)
 {
     int st = mf_devices_delete(id);
-    if (st == 202) {
+    if (st == 202)
+    {
         cJSON *o = cJSON_CreateObject();
         cfg_remove_uuid(id);
         cJSON_AddStringToObject(o, "status", "stopping");
@@ -468,7 +495,8 @@ static int handle_device_history(const char *id, mf_rest_response_t *resp)
     /* Pick column by device kind; fall back to power_w. */
     {
         mf_devinfo_t info;
-        if (mf_devices_find_live(id, &info) == 0) {
+        if (mf_devices_find_live(id, &info) == 0)
+        {
             if (strcmp(info.kind, "battery") == 0)
                 column = "soc";
         }
@@ -476,13 +504,15 @@ static int handle_device_history(const char *id, mf_rest_response_t *resp)
 
     /* 60 s bins × 800 rows ≈ 13 h, still fits HTTP 64k. */
     n = mf_history_query_ts_step(id, column, 60, ts, values,
-                                 (int)(sizeof(values) / sizeof(values[0])));
-    if (n < 0) {
+                                  (int)(sizeof(values) / sizeof(values[0])));
+    if (n < 0)
+    {
         set_error(resp, 404, "no history");
         return 0;
     }
     root = cJSON_CreateObject();
-    if (!root) {
+    if (!root)
+    {
         set_error(resp, 500, "error");
         return 0;
     }
@@ -501,7 +531,8 @@ static int handle_settings_get(const char *id, mf_rest_response_t *resp)
 {
     char json[4096];
     int st = mf_devices_get_settings(id, json, sizeof(json));
-    if (st != 200) {
+    if (st != 200)
+    {
         set_error(resp, st, st == 404 ? "not found" : "error");
         return 0;
     }
@@ -534,7 +565,8 @@ static int handle_settings_put(const char *id, const mf_rest_request_t *req,
     int st;
     copy_body(req, body, sizeof(body));
     st = mf_devices_put_settings(id, body, err, sizeof(err));
-    if (st != 200) {
+    if (st != 200)
+    {
         set_error(resp, st, err[0] ? err : (st == 404 ? "not found" : "bad request"));
         return 0;
     }
@@ -543,7 +575,8 @@ static int handle_settings_put(const char *id, const mf_rest_request_t *req,
         const char *nm = NULL;
         double poll = -1.0;
 
-        if (b) {
+        if (b)
+        {
             cJSON *n = cJSON_GetObjectItemCaseSensitive(b, "name");
             cJSON *p = cJSON_GetObjectItemCaseSensitive(b, "poll_interval_s");
 
@@ -577,7 +610,8 @@ static int handle_action(const char *id, const char *action,
            action ? action : "?", id ? id : "?",
            req->peer && req->peer[0] ? req->peer : "-");
     st = mf_devices_action(id, action, body, err, sizeof(err));
-    if (st == 200) {
+    if (st == 200)
+    {
         cJSON *o = cJSON_CreateObject();
         cJSON_AddStringToObject(o, "status", "ok");
         set_json(resp, 200, o, NULL);
@@ -599,16 +633,19 @@ static int gen_matches(const mf_rest_request_t *req, const cJSON *body,
     uint64_t got = 0;
     int have = 0;
 
-    if (req->if_match && req->if_match[0]) {
+    if (req->if_match && req->if_match[0])
+    {
         const char *p = req->if_match;
         while (*p == ' ' || *p == '"')
             p++;
         got = (uint64_t)strtoull(p, NULL, 10);
         have = 1;
     }
-    if (body) {
+    if (body)
+    {
         cJSON *g = cJSON_GetObjectItemCaseSensitive(body, "config_gen");
-        if (cJSON_IsNumber(g)) {
+        if (cJSON_IsNumber(g))
+        {
             got = (uint64_t)g->valuedouble;
             have = 1;
         }
@@ -646,16 +683,19 @@ static int handle_config_put(const mf_rest_request_t *req, mf_rest_response_t *r
     int rc;
     int listen_changed;
 
-    if (!req->body || req->body_len == 0) {
+    if (!req->body || req->body_len == 0)
+    {
         set_error(resp, 400, "bad request");
         return 0;
     }
     root = cJSON_ParseWithLength(req->body, req->body_len);
-    if (!root) {
+    if (!root)
+    {
         set_error(resp, 400, "bad request");
         return 0;
     }
-    if (!gen_matches(req, root, live->config_gen)) {
+    if (!gen_matches(req, root, live->config_gen))
+    {
         cJSON_Delete(root);
         set_error(resp, 409, "config_gen mismatch");
         return 0;
@@ -664,24 +704,28 @@ static int handle_config_put(const mf_rest_request_t *req, mf_rest_response_t *r
     mf_config_apply_json(&next, root);
     cJSON_Delete(root);
     if (mf_devices_validate_config(next.devices, next.n_devices,
-                                   err, sizeof(err)) != 0) {
+                                   err, sizeof(err)) != 0)
+    {
         set_error(resp, 400, err[0] ? err : "bad request");
         return 0;
     }
     listen_changed = strcmp(next.listen, live->listen) != 0;
-    if (listen_changed && mf_http_rebind_listen(next.listen) != 0) {
+    if (listen_changed && mf_http_rebind_listen(next.listen) != 0)
+    {
         set_error(resp, 500, "listen bind failed");
         return 0;
     }
     rc = mf_devices_apply_config(next.devices, next.n_devices,
-                                 err, sizeof(err));
-    if (rc < 0) {
+                                  err, sizeof(err));
+    if (rc < 0)
+    {
         set_error(resp, 400, err[0] ? err : "bad request");
         return 0;
     }
     next.config_gen = live->config_gen + 1;
     *live = next;
-    if (rc == 1 || mf_devices_any_dying()) {
+    if (rc == 1 || mf_devices_any_dying())
+    {
         cJSON *o = cJSON_CreateObject();
         cJSON_AddNumberToObject(o, "config_gen", (double)live->config_gen);
         cJSON_AddBoolToObject(o, "pending_apply", 1);
@@ -695,11 +739,13 @@ static int handle_config_put(const mf_rest_request_t *req, mf_rest_response_t *r
 static int handle_config_save(const mf_rest_request_t *req, mf_rest_response_t *resp)
 {
     mf_daemon_config_t *live = live_cfg();
-    if (!gen_matches(req, NULL, live->config_gen)) {
+    if (!gen_matches(req, NULL, live->config_gen))
+    {
         set_error(resp, 409, "config_gen mismatch");
         return 0;
     }
-    if (!g_cfg_path[0] || mf_config_save(live, g_cfg_path) != 0) {
+    if (!g_cfg_path[0] || mf_config_save(live, g_cfg_path) != 0)
+    {
         set_error(resp, 403, "not writable");
         return 0;
     }
@@ -720,35 +766,41 @@ static int handle_config_load(mf_rest_response_t *resp)
     int rc;
     int listen_changed;
 
-    if (!g_cfg_path[0]) {
+    if (!g_cfg_path[0])
+    {
         set_error(resp, 404, "not found");
         return 0;
     }
     mf_config_defaults(&next);
-    if (mf_config_load(g_cfg_path, &next) != 0) {
+    if (mf_config_load(g_cfg_path, &next) != 0)
+    {
         set_error(resp, 404, "not found");
         return 0;
     }
     (void)mf_config_load_overlay(&next);
     if (mf_devices_validate_config(next.devices, next.n_devices,
-                                   err, sizeof(err)) != 0) {
+                                   err, sizeof(err)) != 0)
+    {
         set_error(resp, 400, err[0] ? err : "bad request");
         return 0;
     }
     listen_changed = strcmp(next.listen, live->listen) != 0;
-    if (listen_changed && mf_http_rebind_listen(next.listen) != 0) {
+    if (listen_changed && mf_http_rebind_listen(next.listen) != 0)
+    {
         set_error(resp, 500, "listen bind failed");
         return 0;
     }
     rc = mf_devices_apply_config(next.devices, next.n_devices,
-                                 err, sizeof(err));
-    if (rc < 0) {
+                                  err, sizeof(err));
+    if (rc < 0)
+    {
         set_error(resp, 400, err[0] ? err : "bad request");
         return 0;
     }
     next.config_gen = live->config_gen + 1;
     *live = next;
-    if (rc == 1 || mf_devices_any_dying()) {
+    if (rc == 1 || mf_devices_any_dying())
+    {
         cJSON *o = cJSON_CreateObject();
         cJSON_AddNumberToObject(o, "config_gen", (double)live->config_gen);
         cJSON_AddBoolToObject(o, "pending_apply", 1);
@@ -763,11 +815,13 @@ static int handle_discover_post(const mf_rest_request_t *req, mf_rest_response_t
 {
     char err[96];
     int rc = mf_discover_start(req->body, req->body_len, err, sizeof(err));
-    if (rc == -2) {
+    if (rc == -2)
+    {
         set_error(resp, 409, err[0] ? err : "discover already running");
         return 0;
     }
-    if (rc != 0) {
+    if (rc != 0)
+    {
         set_error(resp, 400, err[0] ? err : "bad request");
         return 0;
     }
@@ -805,29 +859,36 @@ int mf_rest_dispatch(const mf_rest_request_t *req, mf_rest_response_t *resp)
         return -1;
     memset(resp, 0, sizeof(*resp));
 
-    if (strncmp(req->path, "/api/v1/", 8) != 0) {
+    if (strncmp(req->path, "/api/v1/", 8) != 0)
+    {
         set_error(resp, 404, "not found");
         return 0;
     }
     p = req->path + 8;
     slash = strchr(p, '/');
 
-    if (!slash) {
-        if (strcmp(p, "status") == 0) {
-            if (!method_is(req, "GET")) {
+    if (!slash)
+    {
+        if (strcmp(p, "status") == 0)
+        {
+            if (!method_is(req, "GET"))
+            {
                 set_error(resp, 405, "method not allowed");
                 return 0;
             }
             return handle_status(resp);
         }
-        if (strcmp(p, "drivers") == 0) {
-            if (!method_is(req, "GET")) {
+        if (strcmp(p, "drivers") == 0)
+        {
+            if (!method_is(req, "GET"))
+            {
                 set_error(resp, 405, "method not allowed");
                 return 0;
             }
             return handle_drivers(resp);
         }
-        if (strcmp(p, "devices") == 0) {
+        if (strcmp(p, "devices") == 0)
+        {
             if (method_is(req, "GET"))
                 return handle_devices_list(resp);
             if (method_is(req, "POST"))
@@ -835,9 +896,11 @@ int mf_rest_dispatch(const mf_rest_request_t *req, mf_rest_response_t *resp)
             set_error(resp, 405, "method not allowed");
             return 0;
         }
-        if (strcmp(p, "health") == 0) {
+        if (strcmp(p, "health") == 0)
+        {
             cJSON *root;
-            if (!method_is(req, "GET")) {
+            if (!method_is(req, "GET"))
+            {
                 set_error(resp, 405, "method not allowed");
                 return 0;
             }
@@ -847,7 +910,8 @@ int mf_rest_dispatch(const mf_rest_request_t *req, mf_rest_response_t *resp)
             set_json(resp, 200, root, NULL);
             return 0;
         }
-        if (strcmp(p, "config") == 0) {
+        if (strcmp(p, "config") == 0)
+        {
             if (method_is(req, "GET"))
                 return handle_config_get(resp);
             if (method_is(req, "PUT"))
@@ -855,7 +919,8 @@ int mf_rest_dispatch(const mf_rest_request_t *req, mf_rest_response_t *resp)
             set_error(resp, 405, "method not allowed");
             return 0;
         }
-        if (strcmp(p, "discover") == 0) {
+        if (strcmp(p, "discover") == 0)
+        {
             if (method_is(req, "GET"))
                 return handle_discover_get(resp);
             if (method_is(req, "POST"))
@@ -867,23 +932,27 @@ int mf_rest_dispatch(const mf_rest_request_t *req, mf_rest_response_t *resp)
         return 0;
     }
 
-    if (strncmp(p, "devices/", 8) == 0) {
+    if (strncmp(p, "devices/", 8) == 0)
+    {
         const char *id = p + 8;
         const char *slash2;
         char idbuf[MF_UUID_LEN];
-        if (id[0] == '\0') {
+        if (id[0] == '\0')
+        {
             set_error(resp, 404, "not found");
             return 0;
         }
         slash2 = strchr(id, '/');
-        if (slash2) {
+        if (slash2)
+        {
             size_t n = (size_t)(slash2 - id);
             const char *rest = slash2 + 1;
             if (n >= sizeof(idbuf))
                 n = sizeof(idbuf) - 1;
             memcpy(idbuf, id, n);
             idbuf[n] = '\0';
-            if (strcmp(rest, "settings") == 0) {
+            if (strcmp(rest, "settings") == 0)
+            {
                 if (method_is(req, "GET"))
                     return handle_settings_get(idbuf, resp);
                 if (method_is(req, "PUT"))
@@ -891,19 +960,23 @@ int mf_rest_dispatch(const mf_rest_request_t *req, mf_rest_response_t *resp)
                 set_error(resp, 405, "method not allowed");
                 return 0;
             }
-            if (strcmp(rest, "history") == 0) {
+            if (strcmp(rest, "history") == 0)
+            {
                 if (method_is(req, "GET"))
                     return handle_device_history(idbuf, resp);
                 set_error(resp, 405, "method not allowed");
                 return 0;
             }
-            if (strncmp(rest, "actions/", 8) == 0) {
+            if (strncmp(rest, "actions/", 8) == 0)
+            {
                 const char *action = rest + 8;
-                if (!method_is(req, "POST")) {
+                if (!method_is(req, "POST"))
+                {
                     set_error(resp, 405, "method not allowed");
                     return 0;
                 }
-                if (!action[0]) {
+                if (!action[0])
+                {
                     set_error(resp, 404, "not found");
                     return 0;
                 }
@@ -921,17 +994,22 @@ int mf_rest_dispatch(const mf_rest_request_t *req, mf_rest_response_t *resp)
         return 0;
     }
 
-    if (strncmp(p, "config/", 7) == 0) {
+    if (strncmp(p, "config/", 7) == 0)
+    {
         const char *rest = p + 7;
-        if (strcmp(rest, "save") == 0) {
-            if (!method_is(req, "POST")) {
+        if (strcmp(rest, "save") == 0)
+        {
+            if (!method_is(req, "POST"))
+            {
                 set_error(resp, 405, "method not allowed");
                 return 0;
             }
             return handle_config_save(req, resp);
         }
-        if (strcmp(rest, "load") == 0) {
-            if (!method_is(req, "POST")) {
+        if (strcmp(rest, "load") == 0)
+        {
+            if (!method_is(req, "POST"))
+            {
                 set_error(resp, 405, "method not allowed");
                 return 0;
             }

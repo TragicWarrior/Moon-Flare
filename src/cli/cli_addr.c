@@ -34,7 +34,8 @@ int cli_split_host_port(const char *input, char *host_str, size_t host_cap,
     copy[sizeof(copy) - 1] = '\0';
     colon = strrchr(copy, ':');
 
-    if (!colon) {
+    if (!colon)
+    {
         /* No colon: whole string is host, default port. */
         snprintf(host_str, host_cap, "%s", copy);
         *port_out = 5250;
@@ -46,7 +47,8 @@ int cli_split_host_port(const char *input, char *host_str, size_t host_cap,
     *colon = '\0';
     {
         long p = strtol(colon + 1, NULL, 10);
-        if (p <= 0 || p > 65535) {
+        if (p <= 0 || p > 65535)
+        {
             return -1;
         }
         *port_out = (int)p;
@@ -75,10 +77,12 @@ int cli_resolve_addr(const char *connect_flag, const char *config_override,
     ctx->raw = raw;
 
     /* 1. --connect flag. */
-    if (connect_flag && connect_flag[0]) {
+    if (connect_flag && connect_flag[0])
+    {
         rc = cli_split_host_port(connect_flag, ctx->host, sizeof(ctx->host),
-                                 &ctx->port);
-        if (rc < 0) {
+                                  &ctx->port);
+        if (rc < 0)
+        {
             fprintf(stderr, "error: invalid --connect value: %s\n", connect_flag);
             return -1;
         }
@@ -87,10 +91,12 @@ int cli_resolve_addr(const char *connect_flag, const char *config_override,
 
     /* 2. $MOONFLARE_CONNECT env. */
     env_val = getenv("MOONFLARE_CONNECT");
-    if (env_val && env_val[0]) {
+    if (env_val && env_val[0])
+    {
         rc = cli_split_host_port(env_val, ctx->host, sizeof(ctx->host),
-                                 &ctx->port);
-        if (rc < 0) {
+                                  &ctx->port);
+        if (rc < 0)
+        {
             fprintf(stderr, "error: invalid $MOONFLARE_CONNECT value: %s\n",
                     env_val);
             return -1;
@@ -104,10 +110,12 @@ int cli_resolve_addr(const char *connect_flag, const char *config_override,
         char ep[160];
         rc = mf_tui_config_load(config_override, &tui_cfg);
         if (rc == 0 &&
-            mf_tui_config_endpoint(&tui_cfg, NULL, ep, sizeof(ep)) == 0) {
+            mf_tui_config_endpoint(&tui_cfg, NULL, ep, sizeof(ep)) == 0)
+        {
             rc = cli_split_host_port(ep, ctx->host, sizeof(ctx->host),
                                      &ctx->port);
-            if (rc < 0) {
+            if (rc < 0)
+            {
                 fprintf(stderr,
                         "error: invalid endpoint from default profile\n");
                 return -1;

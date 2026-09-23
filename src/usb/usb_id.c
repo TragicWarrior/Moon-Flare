@@ -48,7 +48,8 @@ int mf_endpoint_drain(mf_endpoint_event_t *out, int max)
     int n = 0;
     if (!out || max <= 0)
         return 0;
-    while (n < max && g_rcnt > 0) {
+    while (n < max && g_rcnt > 0)
+    {
         out[n] = g_ring[g_rhead];
         g_rhead = (g_rhead + 1) % RING_CAP;
         g_rcnt--;
@@ -72,7 +73,8 @@ static void trim_nl(char *s)
         return;
     n = strlen(s);
     while (n > 0 && (s[n - 1] == '\n' || s[n - 1] == '\r' ||
-                     s[n - 1] == ' ' || s[n - 1] == '\t')) {
+                     s[n - 1] == ' ' || s[n - 1] == '\t'))
+    {
         s[n - 1] = '\0';
         n--;
     }
@@ -87,7 +89,8 @@ static int read_text(const char *path, char *buf, size_t cap)
     f = fopen(path, "r");
     if (!f)
         return -1;
-    if (!fgets(buf, (int)cap, f)) {
+    if (!fgets(buf, (int)cap, f))
+    {
         fclose(f);
         return -1;
     }
@@ -173,7 +176,8 @@ static int byid_for_tty(const char *tty, char *by_id, size_t cap)
     d = opendir(dirp);
     if (!d)
         return -1;
-    while ((de = readdir(d)) != NULL) {
+    while ((de = readdir(d)) != NULL)
+    {
         ssize_t n;
         const char *base;
         if (de->d_name[0] == '.')
@@ -209,7 +213,8 @@ int mf_usb_identify(const char *dev_path, mf_usb_id_t *out)
     if (!out->serial_id[0] && out->by_id[0])
         (void)serial_from_byid(out->by_id, out->serial_id,
                                sizeof(out->serial_id));
-    if (!out->serial_id[0] && out->vid_pid[0]) {
+    if (!out->serial_id[0] && out->vid_pid[0])
+    {
         /* CH340-style: no serial node. Weak auto-port key. */
         snprintf(out->serial_id, sizeof(out->serial_id), "usb-%s",
                  out->vid_pid);
@@ -235,7 +240,8 @@ int mf_usb_find_by_serial(const char *serial_id, const char *by_id_hint,
     d = opendir(dirp);
     if (!d)
         return -1;
-    while ((de = readdir(d)) != NULL && nhit < 8) {
+    while ((de = readdir(d)) != NULL && nhit < 8)
+    {
         ssize_t n;
         const char *base;
         mf_usb_id_t id;
@@ -263,12 +269,14 @@ int mf_usb_find_by_serial(const char *serial_id, const char *by_id_hint,
     closedir(d);
     if (nhit == 0)
         return -1;
-    if (nhit == 1) {
+    if (nhit == 1)
+    {
         *out = hits[0];
         return 0;
     }
     /* Duplicate ID_SERIAL_SHORT (CP2102N "0001"): require full by-id. */
-    if (hinted >= 0) {
+    if (hinted >= 0)
+    {
         *out = hits[hinted];
         return 0;
     }
@@ -311,12 +319,15 @@ int mf_usb_resolve(const char *uuid, const mf_usb_want_t *want,
     memset(got, 0, sizeof(*got));
 
     have_id = 0;
-    if (want->path[0] && want->path_ok) {
+    if (want->path[0] && want->path_ok)
+    {
         if (mf_usb_identify(want->path, &id) == 0)
             have_id = 1;
-        if (!want->serial_id[0] && !want->by_id[0]) {
+        if (!want->serial_id[0] && !want->by_id[0])
+        {
             /* First run: learn without scanning by-id. */
-            if (have_id) {
+            if (have_id)
+            {
                 *got = id;
                 snprintf(got->path, sizeof(got->path), "%s", want->path);
                 publish(uuid, got);
@@ -325,7 +336,8 @@ int mf_usb_resolve(const char *uuid, const mf_usb_want_t *want,
             snprintf(got->path, sizeof(got->path), "%s", want->path);
             return MF_USB_USE;
         }
-        if (have_id && serial_matches(&id, want)) {
+        if (have_id && serial_matches(&id, want))
+        {
             *got = id;
             snprintf(got->path, sizeof(got->path), "%s", want->path);
             return MF_USB_USE;

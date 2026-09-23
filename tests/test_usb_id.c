@@ -23,8 +23,10 @@ static int mkdir_p(const char *path)
     char tmp[512];
     char *p;
     snprintf(tmp, sizeof(tmp), "%s", path);
-    for (p = tmp + 1; *p; p++) {
-        if (*p == '/') {
+    for (p = tmp + 1; *p; p++)
+    {
+        if (*p == '/')
+        {
             *p = '\0';
             if (mkdir(tmp, 0755) < 0 && access(tmp, F_OK) != 0)
                 return -1;
@@ -43,7 +45,8 @@ static int write_file(const char *path, const char *data)
     char *slash;
     snprintf(dir, sizeof(dir), "%s", path);
     slash = strrchr(dir, '/');
-    if (slash) {
+    if (slash)
+    {
         *slash = '\0';
         if (mkdir_p(dir) != 0)
             return -1;
@@ -127,7 +130,8 @@ int main(void)
         "usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_0001-if00-port1";
 
     root = mkdtemp(tmpl);
-    if (!root) {
+    if (!root)
+    {
         perror("mkdtemp");
         return 1;
     }
@@ -136,7 +140,8 @@ int main(void)
     mf_endpoint_reset();
 
     if (add_tty("ttyUSB0", "0001\n", "10c4\n", "ea60\n", by0) != 0 ||
-        add_tty("ttyUSB1", "0002\n", "10c4\n", "ea60\n", by1) != 0) {
+        add_tty("ttyUSB1", "0002\n", "10c4\n", "ea60\n", by1) != 0)
+    {
         fprintf(stderr, "FAIL: build fake sysfs\n");
         nftw(g_root, rm_cb, 16, FTW_DEPTH | FTW_PHYS);
         return 1;
@@ -214,10 +219,13 @@ int main(void)
     CHECK(strcmp(ev[0].serial_id, "0002") == 0, "event serial");
 
     /* Duplicate short serial: refuse without by_id hint. */
-    if (add_tty("ttyUSB2", "0001\n", "10c4\n", "ea60\n", by1b) != 0) {
+    if (add_tty("ttyUSB2", "0001\n", "10c4\n", "ea60\n", by1b) != 0)
+    {
         fprintf(stderr, "FAIL: second 0001 node\n");
         g_fail++;
-    } else {
+    }
+    else
+    {
         CHECK(mf_usb_find_by_serial("0001", NULL, &id) == -2,
               "duplicate 0001 without by_id → ambiguous");
         CHECK(mf_usb_find_by_serial("0001", by0, &id) == 0,
@@ -227,7 +235,8 @@ int main(void)
 
     mf_usb_set_root(NULL);
     nftw(g_root, rm_cb, 16, FTW_DEPTH | FTW_PHYS);
-    if (g_fail) {
+    if (g_fail)
+    {
         fprintf(stderr, "%d check(s) failed\n", g_fail);
         return 1;
     }

@@ -19,7 +19,8 @@ static int js_append(char *buf, size_t cap, size_t *off, const char *fmt, ...)
     va_end(ap);
     if (n < 0)
         return -1;
-    if ((size_t)n >= cap - *off) {
+    if ((size_t)n >= cap - *off)
+    {
         *off = cap - 1;
         buf[cap - 1] = '\0';
         return -1;
@@ -58,7 +59,8 @@ static const char *charge_stage_name(int s)
 static void *battery_open(const char *spec_json, char *err, size_t errsz)
 {
     battery_ctx *ctx = (battery_ctx *)calloc(1, sizeof(*ctx));
-    if (!ctx) {
+    if (!ctx)
+    {
         if (err && errsz) snprintf(err, errsz, "oom");
         return NULL;
     }
@@ -67,19 +69,25 @@ static void *battery_open(const char *spec_json, char *err, size_t errsz)
 
     /* Parse seed */
     const char *p = strstr(spec_json, "\"seed\"");
-    if (p) {
+    if (p)
+    {
         p = strchr(p, ':');
         if (p) ctx->seed = atoi(p + 1);
     }
 
     /* Parse name */
     p = strstr(spec_json, "\"name\"");
-    if (p) {
+    if (p)
+    {
         p = strchr(p, ':');
-        if (p) {
-            while (*++p == ' ' || *p == '"') {}
+        if (p)
+        {
+            while (*++p == ' ' || *p == '"')
+            {
+            }
             const char *q = strchr(p, '"');
-            if (q) {
+            if (q)
+            {
                 size_t n = (size_t)(q - p);
                 if (n >= 127) n = 126;
                 memcpy(ctx->name, p, n);
@@ -90,12 +98,17 @@ static void *battery_open(const char *spec_json, char *err, size_t errsz)
 
     /* Parse uuid */
     p = strstr(spec_json, "\"uuid\"");
-    if (p) {
+    if (p)
+    {
         p = strchr(p, ':');
-        if (p) {
-            while (*++p == ' ' || *p == '"') {}
+        if (p)
+        {
+            while (*++p == ' ' || *p == '"')
+            {
+            }
             const char *q = strchr(p, '"');
-            if (q) {
+            if (q)
+            {
                 size_t n = (size_t)(q - p);
                 if (n >= 63) n = 62;
                 memcpy(ctx->uuid, p, n);
@@ -158,7 +171,8 @@ static int battery_get_reading(void *v, char *json, size_t cap)
 
     if (!ctx || !json || cap == 0)
         return -1;
-    for (i = 0; i < NCELL; i++) {
+    for (i = 0; i < NCELL; i++)
+    {
         double wobble = 0.008 * sin(t / 8.0 + (double)i * 0.4);
         double bias = (i == 2) ? 0.012 : (i == 10) ? -0.010 : 0.0;
         ctx->cell_v[i] = 3.320 + wobble + bias + (soc - 50.0) * 0.0012
@@ -178,7 +192,8 @@ static int battery_get_reading(void *v, char *json, size_t cap)
               ctx->charge_on ? "true" : "false",
               ctx->discharge_on ? "true" : "false",
               ctx->balance_on ? "true" : "false");
-    for (i = 0; i < NCELL; i++) {
+    for (i = 0; i < NCELL; i++)
+    {
         js_append(json, cap, &off,
                   "%s{\"index\":%d,\"voltage_v\":%.4f}",
                   i ? "," : "", i + 1, ctx->cell_v[i]);
@@ -209,11 +224,13 @@ static int battery_action(void *v, const char *action, const char *json,
                           char *err, size_t errsz)
 {
     battery_ctx *ctx = (battery_ctx *)v;
-    if (!ctx || !action) {
+    if (!ctx || !action)
+    {
         if (err && errsz) snprintf(err, errsz, "invalid args");
         return MF_ERR_INVAL;
     }
-    if (strcmp(action, "set_switch") == 0) {
+    if (strcmp(action, "set_switch") == 0)
+    {
         int on = 1;
         if (json && strstr(json, "false"))
             on = 0;
@@ -227,7 +244,8 @@ static int battery_action(void *v, const char *action, const char *json,
             err[0] = '\0';
         return MF_OK;
     }
-    if (strcmp(action, "refresh") == 0) {
+    if (strcmp(action, "refresh") == 0)
+    {
         if (err && errsz) snprintf(err, errsz, "ok");
         return MF_OK;
     }
@@ -240,39 +258,73 @@ static int battery_action(void *v, const char *action, const char *json,
 static void *charger_open(const char *spec_json, char *err, size_t errsz)
 {
     charger_ctx *ctx = (charger_ctx *)calloc(1, sizeof(*ctx));
-    if (!ctx) {
+    if (!ctx)
+    {
         if (err && errsz) snprintf(err, errsz, "oom");
         return NULL;
     }
     if (err && errsz) err[0] = '\0';
 
     const char *p = strstr(spec_json, "\"name\"");
-    if (p) {
+    if (p)
+    {
         p = strchr(p, ':');
-        if (p) {
-            while (*++p == ' ' || *p == '"') {}
+        if (p)
+        {
+            while (*++p == ' ' || *p == '"')
+            {
+            }
             const char *q = strchr(p, '"');
-            if (q) { size_t n = (size_t)(q - p); if (n > 126) n = 126; memcpy(ctx->name, p, n); ctx->name[n] = '\0'; }
+            if (q)
+            {
+                size_t n = (size_t)(q - p);
+                if (n > 126)
+                    n = 126;
+                memcpy(ctx->name, p, n);
+                ctx->name[n] = '\0';
+            }
         }
     }
 
     p = strstr(spec_json, "\"uuid\"");
-    if (p) {
+    if (p)
+    {
         p = strchr(p, ':');
-        if (p) {
-            while (*++p == ' ' || *p == '"') {}
+        if (p)
+        {
+            while (*++p == ' ' || *p == '"')
+            {
+            }
             const char *q = strchr(p, '"');
-            if (q) { size_t n = (size_t)(q - p); if (n > 62) n = 62; memcpy(ctx->uuid, p, n); ctx->uuid[n] = '\0'; }
+            if (q)
+            {
+                size_t n = (size_t)(q - p);
+                if (n > 62)
+                    n = 62;
+                memcpy(ctx->uuid, p, n);
+                ctx->uuid[n] = '\0';
+            }
         }
     }
 
     return ctx;
 }
 
-static void charger_close(void *v) { free(v); }
+static void charger_close(void *v)
+{
+    free(v);
+}
 
-static int charger_fd(void *v) { (void)v; return -1; }
-static unsigned charger_select_mask(void *v) { (void)v; return 0; }
+static int charger_fd(void *v)
+{
+    (void)v;
+    return -1;
+}
+static unsigned charger_select_mask(void *v)
+{
+    (void)v;
+    return 0;
+}
 
 static mf_step_t charger_step(void *v)
 {
@@ -289,7 +341,11 @@ static unsigned charger_caps(void *v)
     return MF_CAP_READ;
 }
 
-static const char *charger_last_error(void *v) { (void)v; return ""; }
+static const char *charger_last_error(void *v)
+{
+    (void)v;
+    return "";
+}
 
 static int charger_get_reading(void *v, char *json, size_t cap)
 {

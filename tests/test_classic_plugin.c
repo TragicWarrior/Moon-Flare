@@ -35,7 +35,8 @@ static void spawn_fake(const char *bin)
     g_child = fork();
     if (g_child < 0)
         exit(1);
-    if (g_child == 0) {
+    if (g_child == 0)
+    {
         dup2(sp[1], STDOUT_FILENO);
         close(sp[0]);
         close(sp[1]);
@@ -45,11 +46,13 @@ static void spawn_fake(const char *bin)
     close(sp[1]);
     atexit(stop_fake);
     fp = fdopen(sp[0], "r");
-    if (!fp || !fgets(line, sizeof(line), fp)) {
+    if (!fp || !fgets(line, sizeof(line), fp))
+    {
         fprintf(stderr, "FAIL: no listen line\n");
         exit(1);
     }
-    if (sscanf(line, "fake_classic: listening on 127.0.0.1:%u", &port) != 1) {
+    if (sscanf(line, "fake_classic: listening on 127.0.0.1:%u", &port) != 1)
+    {
         fprintf(stderr, "FAIL: parse %s", line);
         exit(1);
     }
@@ -63,8 +66,10 @@ static void stop_fake(void)
     if (g_child <= 0)
         return;
     kill(g_child, SIGTERM);
-    for (i = 0; i < 20; i++) {
-        if (waitpid(g_child, NULL, WNOHANG) == g_child) {
+    for (i = 0; i < 20; i++)
+    {
+        if (waitpid(g_child, NULL, WNOHANG) == g_child)
+        {
             g_child = -1;
             return;
         }
@@ -78,13 +83,15 @@ static void stop_fake(void)
 static int drive(const mf_plugin_ops_t *ops, void *ctx, int max_ms)
 {
     int waited = 0;
-    while (waited <= max_ms) {
+    while (waited <= max_ms)
+    {
         int fd = ops->fd(ctx);
         unsigned mask = ops->select_mask(ctx);
         struct pollfd p;
         int to = 50;
         mf_step_t st;
-        if (fd >= 0 && mask) {
+        if (fd >= 0 && mask)
+        {
             p.fd = fd;
             p.events = 0;
             if (mask & MF_IO_WANT_READ)
@@ -92,7 +99,9 @@ static int drive(const mf_plugin_ops_t *ops, void *ctx, int max_ms)
             if (mask & MF_IO_WANT_WRITE)
                 p.events = (short)(p.events | POLLOUT);
             (void)poll(&p, 1, to);
-        } else {
+        }
+        else
+        {
             usleep((useconds_t)to * 1000);
         }
         waited += to;
@@ -130,7 +139,8 @@ int main(int argc, char **argv)
     char err[96];
     int fd1, fd2;
 
-    if (argc < 3) {
+    if (argc < 3)
+    {
         fprintf(stderr, "usage: %s fake_classic libmf_charger_classic.so\n", argv[0]);
         return 2;
     }
@@ -139,13 +149,15 @@ int main(int argc, char **argv)
     spawn_fake(fake_bin);
 
     dl = dlopen(so_path, RTLD_NOW);
-    if (!dl) {
+    if (!dl)
+    {
         fprintf(stderr, "FAIL: dlopen %s: %s\n", so_path, dlerror());
         stop_fake();
         return 1;
     }
     entries = (size_t (*)(const mf_plugin_ops_t **))dlsym(dl, "mf_plugin_entries");
-    if (!entries) {
+    if (!entries)
+    {
         fprintf(stderr, "FAIL: missing mf_plugin_entries\n");
         stop_fake();
         return 1;
@@ -217,7 +229,8 @@ int main(int argc, char **argv)
 
     dlclose(dl);
     stop_fake();
-    if (g_fail) {
+    if (g_fail)
+    {
         fprintf(stderr, "%d check(s) failed\n", g_fail);
         return 1;
     }

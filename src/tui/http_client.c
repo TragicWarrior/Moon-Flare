@@ -60,7 +60,8 @@ static int nb_connect(mf_http_cli_t *c)
     snprintf(portstr, sizeof(portstr), "%d", c->port);
     if (getaddrinfo(c->host, portstr, &hints, &ai) != 0)
         return -1;
-    for (p = ai; p; p = p->ai_next) {
+    for (p = ai; p; p = p->ai_next)
+    {
         fd = socket(p->ai_family, p->ai_socktype | SOCK_NONBLOCK | SOCK_CLOEXEC,
                     p->ai_protocol);
         if (fd < 0)
@@ -82,7 +83,8 @@ static int nb_connect(mf_http_cli_t *c)
 
 void mf_http_cli_start(mf_http_cli_t *c, double now)
 {
-    if (nb_connect(c) != 0) {
+    if (nb_connect(c) != 0)
+    {
         c->state = MF_CONN_WAIT;
         c->next_try = now + c->backoff;
         c->backoff *= 2.0;
@@ -159,20 +161,25 @@ void mf_http_cli_prepare_fds(mf_http_cli_t *c, fd_set *r, fd_set *w, int *maxfd)
 
 void mf_http_cli_pump(mf_http_cli_t *c, int readable, int writable, double now)
 {
-    if (c->state == MF_CONN_WAIT) {
+    if (c->state == MF_CONN_WAIT)
+    {
         if (now >= c->next_try)
             mf_http_cli_start(c, now);
         return;
     }
-    if (c->state == MF_CONN_CONNECTING) {
-        if (writable) {
+    if (c->state == MF_CONN_CONNECTING)
+    {
+        if (writable)
+        {
             int err = 0;
             socklen_t el = (socklen_t)sizeof(err);
             if (getsockopt(c->fd, SOL_SOCKET, SO_ERROR, &err, &el) == 0 && err == 0)
                 mark_up(c, now);
             else
                 schedule_retry(c, now, "connect failed");
-        } else if (now - c->conn_since > CONNECT_TMO_S) {
+        }
+        else if (now - c->conn_since > CONNECT_TMO_S)
+        {
             schedule_retry(c, now, "connect timeout");
         }
         return;
@@ -180,16 +187,19 @@ void mf_http_cli_pump(mf_http_cli_t *c, int readable, int writable, double now)
     if (c->state != MF_CONN_UP)
         return;
 
-    if (c->inflight) {
+    if (c->inflight)
+    {
         if (c->req_since <= 0.0)
             c->req_since = now;
-        else if (now - c->req_since > INFLIGHT_TMO_S) {
+        else if (now - c->req_since > INFLIGHT_TMO_S)
+        {
             schedule_retry(c, now, "request timeout");
             return;
         }
     }
 
-    if (!c->inflight && c->pend) {
+    if (!c->inflight && c->pend)
+    {
         char m[8], pth[160], js[2048];
 
         snprintf(m, sizeof(m), "%s", c->pend_method);
@@ -200,10 +210,12 @@ void mf_http_cli_pump(mf_http_cli_t *c, int readable, int writable, double now)
         (void)cli_begin(c, m, pth, js[0] ? js : NULL);
     }
 
-    if (c->inflight && c->out_off < c->out_len && writable) {
+    if (c->inflight && c->out_off < c->out_len && writable)
+    {
         ssize_t n = send(c->fd, c->out + c->out_off, c->out_len - c->out_off,
-                         MSG_NOSIGNAL);
-        if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+                          MSG_NOSIGNAL);
+        if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+        {
             schedule_retry(c, now, "send failed");
             return;
         }
@@ -212,25 +224,31 @@ void mf_http_cli_pump(mf_http_cli_t *c, int readable, int writable, double now)
         if (c->out_off >= c->out_len)
             c->want = MF_CLI_IO_READ;
     }
-    if (readable) {
+    if (readable)
+    {
         ssize_t n;
-        if (c->in_len >= sizeof(c->in) - 1) {
+        if (c->in_len >= sizeof(c->in) - 1)
+        {
             schedule_retry(c, now, "response too large");
             return;
         }
         n = recv(c->fd, c->in + c->in_len, sizeof(c->in) - 1 - c->in_len, 0);
-        if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+        if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+        {
             schedule_retry(c, now, "recv failed");
             return;
         }
-        if (n == 0) {
+        if (n == 0)
+        {
             schedule_retry(c, now, "peer closed");
             return;
         }
-        if (n > 0 && c->inflight) {
+        if (n > 0 && c->inflight)
+        {
             c->in_len += (size_t)n;
             c->in[c->in_len] = '\0';
-            if (parse_complete(c)) {
+            if (parse_complete(c))
+            {
                 c->last_fresh = now;
                 c->stale = 0;
                 c->want = MF_CLI_IO_READ;
@@ -244,9 +262,11 @@ static int cli_begin(mf_http_cli_t *c, const char *method, const char *path,
 {
     if (c->state != MF_CONN_UP || c->fd < 0)
         return -1;
-    if (c->inflight) {
+    if (c->inflight)
+    {
         /* Status GET is single-flight; never clobber a queued PUT/POST. */
-        if (method && strcmp(method, "GET") == 0) {
+        if (method && strcmp(method, "GET") == 0)
+        {
             c->skipped++;
             return 0;
         }

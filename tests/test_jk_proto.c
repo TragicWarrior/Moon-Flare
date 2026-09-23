@@ -34,7 +34,11 @@ static void put_i32(uint8_t *buf, size_t off, int32_t val)
 static void put_str(uint8_t *buf, size_t off, size_t len, const char *text)
 {
     size_t n = 0;
-    while (text[n] && n < len - 1) { buf[off+n] = (uint8_t)text[n]; n++; }
+    while (text[n] && n < len - 1)
+    {
+        buf[off + n] = (uint8_t)text[n];
+        n++;
+    }
     buf[off+n] = '\0';
 }
 
@@ -68,11 +72,14 @@ static uint8_t *_make_cell_info_frame(
     /* Average / delta / min-max cell number */
     uint16_t sum = 0;
     uint16_t min_v = 0xFFFF, max_v = 0;
-    for (uint8_t i = 0; i < n_cells; i++) {
+    for (uint8_t i = 0; i < n_cells; i++)
+    {
         uint16_t mv = voltages_mv ? voltages_mv[i] : 3300;
         sum += mv;
-        if (mv < min_v) min_v = mv;
-        if (mv > max_v) max_v = mv;
+        if (mv < min_v)
+            min_v = mv;
+        if (mv > max_v)
+            max_v = mv;
     }
     put_u16(buf, 74, sum / n_cells);
     put_u16(buf, 76, max_v - min_v);
@@ -80,11 +87,19 @@ static uint8_t *_make_cell_info_frame(
               (uint8_t)(max_v - voltages_mv[0]) : 0;  /* approximate index */
     buf[79] = voltages_mv ?
               (uint8_t)(min_v - voltages_mv[0]) : 0;
-    if (!voltages_mv) { buf[78] = 0; buf[79] = 0; }
-    else {
-        for (uint8_t i = 0; i < n_cells; i++) {
-            if (voltages_mv[i] == max_v) buf[78] = i;
-            if (voltages_mv[i] == min_v) buf[79] = i;
+    if (!voltages_mv)
+    {
+        buf[78] = 0;
+        buf[79] = 0;
+    }
+    else
+    {
+        for (uint8_t i = 0; i < n_cells; i++)
+        {
+            if (voltages_mv[i] == max_v)
+                buf[78] = i;
+            if (voltages_mv[i] == min_v)
+                buf[79] = i;
         }
     }
 
@@ -344,9 +359,18 @@ TEST(test_decode_cell_info_spread)
     /* Find actual min/max from decoded cells */
     int max_idx = 0, min_idx = 0;
     float max_v = 0, min_v = 10.0f;
-    for (uint8_t i = 0; i < info.cell_count; i++) {
-        if (info.cells[i].voltage_v > max_v) { max_v = info.cells[i].voltage_v; max_idx = i; }
-        if (info.cells[i].voltage_v < min_v) { min_v = info.cells[i].voltage_v; min_idx = i; }
+    for (uint8_t i = 0; i < info.cell_count; i++)
+    {
+        if (info.cells[i].voltage_v > max_v)
+        {
+            max_v = info.cells[i].voltage_v;
+            max_idx = i;
+        }
+        if (info.cells[i].voltage_v < min_v)
+        {
+            min_v = info.cells[i].voltage_v;
+            min_idx = i;
+        }
     }
     ASSERT(info.cells[max_idx].index == 3, "max cell index 3");
     ASSERT(info.cells[min_idx].index == 11, "min cell index 11");
@@ -461,7 +485,8 @@ TEST(test_assembler_fragments_and_at_junk)
            "no frame yet from first fragment");
 
     /* Feed remaining 280 bytes in 20-byte chunks. */
-    for (int i = 10; i < JK_FRAME_SIZE; i += 20) {
+    for (int i = 10; i < JK_FRAME_SIZE; i += 20)
+    {
         if (jk_assembler_feed(&asm_, raw + i, 20, assembled, 1))
             break;
     }
@@ -531,8 +556,10 @@ TEST(test_balancer_heuristic)
 
     /* Cell at index 3 (voltages[2]) is 2 mV above min -> should be marked balancing */
     bool any_balancing = false;
-    for (uint8_t i = 0; i < info.cell_count; i++) {
-        if (info.cells[i].balancing) any_balancing = true;
+    for (uint8_t i = 0; i < info.cell_count; i++)
+    {
+        if (info.cells[i].balancing)
+            any_balancing = true;
     }
     ASSERT(any_balancing, "some cells marked balancing");
 

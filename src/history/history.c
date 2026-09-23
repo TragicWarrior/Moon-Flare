@@ -20,7 +20,8 @@ static int dev_last_count;
 static int find_or_add_dev(const char *uuid)
 {
     int i;
-    for (i = 0; i < dev_last_count; i++) {
+    for (i = 0; i < dev_last_count; i++)
+    {
         if (strcmp(dev_last[i].uuid, uuid) == 0)
             return i;
     }
@@ -123,14 +124,16 @@ int mf_history_open(const char *path)
         mf_history_close();
     rc = sqlite3_open_v2(path, &g_db,
                          SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, NULL);
-    if (rc != SQLITE_OK) {
+    if (rc != SQLITE_OK)
+    {
         g_db = NULL;
         return -1;
     }
     sqlite3_exec(g_db, "PRAGMA journal_mode=WAL;", NULL, NULL, NULL);
     sqlite3_exec(g_db, "PRAGMA synchronous=NORMAL;", NULL, NULL, NULL);
     rc = sqlite3_exec(g_db, schema, NULL, NULL, &err);
-    if (rc != SQLITE_OK) {
+    if (rc != SQLITE_OK)
+    {
         fprintf(stderr, "history: schema: %s\n", err ? err : "");
         sqlite3_free(err);
         sqlite3_close(g_db);
@@ -146,7 +149,8 @@ int mf_history_open(const char *path)
 
 void mf_history_close(void)
 {
-    if (g_db) {
+    if (g_db)
+    {
         sqlite3_close(g_db);
         g_db = NULL;
     }
@@ -200,14 +204,16 @@ int mf_history_enqueue(const mf_sample_t *s)
         return 0; /* tracking off for this device */
     interval = s->capture_interval_s;
     didx = find_or_add_dev(s->uuid);
-    if (didx >= 0 && dev_last[didx].last_ts >= 0.0) {
+    if (didx >= 0 && dev_last[didx].last_ts >= 0.0)
+    {
         if ((s->ts - dev_last[didx].last_ts) < interval)
             return 0; /* downsample */
     }
     if (didx >= 0)
         dev_last[didx].last_ts = s->ts;
 
-    if (ring_count == MF_HISTORY_RING_CAP) {
+    if (ring_count == MF_HISTORY_RING_CAP)
+    {
         fprintf(stderr, "WARNING: history ring full, dropping oldest\n");
         ring_head = (ring_head + 1) % MF_HISTORY_RING_CAP;
         ring_count--;
@@ -231,9 +237,11 @@ int mf_history_flush_slice(int max_rows)
         to_flush = max_rows;
 
     sqlite3_exec(g_db, "BEGIN", NULL, NULL, NULL);
-    for (i = 0; i < to_flush; i++) {
+    for (i = 0; i < to_flush; i++)
+    {
         size_t pos = ring_head % MF_HISTORY_RING_CAP;
-        if (db_insert_sample(&ring[pos]) != 0) {
+        if (db_insert_sample(&ring[pos]) != 0)
+        {
             sqlite3_exec(g_db, "ROLLBACK", NULL, NULL, NULL);
             return inserted;
         }
@@ -257,8 +265,10 @@ int mf_history_query(const char *uuid, const char *column, double *out, int max)
         return -1;
 
     /* whitelist the column: it is interpolated into the SQL below */
-    for (i = 0; i < sizeof(cols) / sizeof(cols[0]); i++) {
-        if (strcmp(column, cols[i]) == 0) {
+    for (i = 0; i < sizeof(cols) / sizeof(cols[0]); i++)
+    {
+        if (strcmp(column, cols[i]) == 0)
+        {
             ok = 1;
             break;
         }
@@ -308,8 +318,10 @@ int mf_history_query_ts_step(const char *uuid, const char *column,
         return -1;
 
     /* whitelist the column: it is interpolated into the SQL below */
-    for (i = 0; i < sizeof(cols) / sizeof(cols[0]); i++) {
-        if (strcmp(column, cols[i]) == 0) {
+    for (i = 0; i < sizeof(cols) / sizeof(cols[0]); i++)
+    {
+        if (strcmp(column, cols[i]) == 0)
+        {
             ok = 1;
             break;
         }

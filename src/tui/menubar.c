@@ -31,15 +31,41 @@ static int           g_drop_idx = -1;
 static int           g_focused;
 static const struct mb_item *g_open_table;
 
-static void on_quit(void) { mf_ui_quit(); }
-static void on_general(void) { mf_ui_open_settings(); }
-static void on_connections(void) { mf_ui_open_connections(); }
-static void on_save(void) { mf_ui_save_config(); }
-static void on_load(void) { mf_ui_load_config(); }
-static void on_dash(void) { mf_ui_show_dashboard(); }
-static void on_keys(void) { mf_ui_show_help(0); }
-static void on_about(void) { mf_ui_show_help(1); }
-static void on_noop(void) { }
+static void on_quit(void)
+{
+    mf_ui_quit();
+}
+static void on_general(void)
+{
+    mf_ui_open_settings();
+}
+static void on_connections(void)
+{
+    mf_ui_open_connections();
+}
+static void on_save(void)
+{
+    mf_ui_save_config();
+}
+static void on_load(void)
+{
+    mf_ui_load_config();
+}
+static void on_dash(void)
+{
+    mf_ui_show_dashboard();
+}
+static void on_keys(void)
+{
+    mf_ui_show_help(0);
+}
+static void on_about(void)
+{
+    mf_ui_show_help(1);
+}
+static void on_noop(void)
+{
+}
 
 static int g_dyn_cat[32];
 
@@ -78,7 +104,8 @@ static const char *const titles[MB_COUNT] = {
 
 static void close_dropdown(void)
 {
-    if (g_drop) {
+    if (g_drop)
+    {
         vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_drop));
         vk_window_destroy(g_drop);
         g_drop = NULL;
@@ -93,12 +120,14 @@ static int on_drop_item(vk_widget_t *w, void *idxp)
     (void)w;
     close_dropdown();
     g_focused = 0;
-    if (g_bar) {
+    if (g_bar)
+    {
         vk_menubar_set_focused(g_bar, false);
         vk_menubar_update(g_bar);
     }
     mf_ui_refresh();
-    if (g_open_table && i >= 0 && g_open_table[i].fn == on_dyn_item) {
+    if (g_open_table && i >= 0 && g_open_table[i].fn == on_dyn_item)
+    {
         mf_ui_open_device_view(g_dyn_cat[i]);
         return 0;
     }
@@ -120,7 +149,8 @@ static void open_dropdown(int idx)
         return;
     close_dropdown();
     t = tables[idx];
-    if (idx == MB_DEVICES) {
+    if (idx == MB_DEVICES)
+    {
         static struct mb_item dyn[40];
         int nd = 0, c;
         memset(dyn, 0, sizeof(dyn));
@@ -129,7 +159,8 @@ static void open_dropdown(int idx)
         dyn[nd++] = (struct mb_item){ "Add Device…", on_noop, 0 };
         dyn[nd++] = (struct mb_item){ "Remove Device…", on_noop, 0 };
         dyn[nd++] = (struct mb_item){ NULL, NULL, 0 };
-        for (c = 0; c < mf_dash_catalog_n() && nd < 34; c++) {
+        for (c = 0; c < mf_dash_catalog_n() && nd < 34; c++)
+        {
             const char *nm = mf_dash_catalog_name(c);
             if (!nm || !nm[0])
                 continue;
@@ -143,8 +174,10 @@ static void open_dropdown(int idx)
         t = dyn;
     }
     g_open_table = t;
-    for (i = 0; !t[i].end; i++) {
-        if (t[i].label && t[i].fn) {
+    for (i = 0; !t[i].end; i++)
+    {
+        if (t[i].label && t[i].fn)
+        {
             int len = (int)strlen(t[i].label);
             if (len + 2 > max_w)
                 max_w = len + 2;
@@ -166,7 +199,8 @@ static void open_dropdown(int idx)
     vk_listbox_set_highlight_attrs(lb, A_BOLD);
     vk_widget_set_colors(VK_WIDGET(lb), COL_DROP_FG, COL_MENU_BG);
     vk_widget_set_attrs(VK_WIDGET(lb), A_BOLD);
-    for (i = 0; !t[i].end; i++) {
+    for (i = 0; !t[i].end; i++)
+    {
         if (!t[i].label && !t[i].fn)
             vk_listbox_add_separator(lb, VK_SEPARATOR_SINGLE);
         else if (t[i].label && t[i].fn)
@@ -206,7 +240,8 @@ static int on_bar_activate(vk_widget_t *w, void *idxp)
 {
     int idx = (int)(intptr_t)idxp;
     (void)w;
-    if (g_drop && g_drop_idx == idx) {
+    if (g_drop && g_drop_idx == idx)
+    {
         close_dropdown();
         mf_ui_refresh();
         return 0;
@@ -239,7 +274,8 @@ void mf_menubar_on_resize(void)
     if (width < 80)
         width = 80;
     g_focused = 0;
-    if (g_bar) {
+    if (g_bar)
+    {
         vk_widget_resize(VK_WIDGET(g_bar), width, 1);
         vk_menubar_set_focused(g_bar, false);
         vk_menubar_update(g_bar);
@@ -249,7 +285,8 @@ void mf_menubar_on_resize(void)
 void mf_menubar_shutdown(void)
 {
     close_dropdown();
-    if (g_bar) {
+    if (g_bar)
+    {
         vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_bar));
         vk_menubar_destroy(g_bar);
         g_bar = NULL;
@@ -264,15 +301,20 @@ int mf_menubar_active(void)
 int mf_menubar_key(wint_t c)
 {
     vk_listbox_t *lb;
-    if (c == KEY_F(10)) {
-        if (mf_menubar_active()) {
+    if (c == KEY_F(10))
+    {
+        if (mf_menubar_active())
+        {
             close_dropdown();
             g_focused = 0;
-            if (g_bar) {
+            if (g_bar)
+            {
                 vk_menubar_set_focused(g_bar, false);
                 vk_menubar_update(g_bar);
             }
-        } else {
+        }
+        else
+        {
             g_focused = 1;
             vk_menubar_set_focused(g_bar, true);
             if (vk_menubar_get_curr(g_bar) < 0)
@@ -284,39 +326,46 @@ int mf_menubar_key(wint_t c)
     }
     if (!mf_menubar_active())
         return 0;
-    if (g_drop) {
+    if (g_drop)
+    {
         lb = VK_LISTBOX(vk_window_get_child(g_drop));
-        if (c == 27) {
+        if (c == 27)
+        {
             close_dropdown();
             mf_ui_refresh();
             return 1;
         }
-        if (c == KEY_UP && lb) {
+        if (c == KEY_UP && lb)
+        {
             vk_listbox_set_prev(lb);
             vk_listbox_update(lb);
             vk_window_update(g_drop);
             mf_ui_refresh();
             return 1;
         }
-        if (c == KEY_DOWN && lb) {
+        if (c == KEY_DOWN && lb)
+        {
             vk_listbox_set_next(lb);
             vk_listbox_update(lb);
             vk_window_update(g_drop);
             mf_ui_refresh();
             return 1;
         }
-        if ((c == '\n' || c == KEY_ENTER) && lb) {
+        if ((c == '\n' || c == KEY_ENTER) && lb)
+        {
             vk_listbox_exec_curr(lb);
             return 1;
         }
-        if (c == KEY_LEFT) {
+        if (c == KEY_LEFT)
+        {
             close_dropdown();
             vk_menubar_set_prev(g_bar);
             vk_menubar_update(g_bar);
             open_dropdown(vk_menubar_get_curr(g_bar));
             return 1;
         }
-        if (c == KEY_RIGHT) {
+        if (c == KEY_RIGHT)
+        {
             close_dropdown();
             vk_menubar_set_next(g_bar);
             vk_menubar_update(g_bar);
@@ -325,33 +374,40 @@ int mf_menubar_key(wint_t c)
         }
         return 1;
     }
-    if (c == 27) {
+    if (c == 27)
+    {
         g_focused = 0;
         vk_menubar_set_focused(g_bar, false);
         vk_menubar_update(g_bar);
         mf_ui_refresh();
         return 1;
     }
-    if (c == KEY_LEFT) {
+    if (c == KEY_LEFT)
+    {
         vk_menubar_set_prev(g_bar);
         vk_menubar_update(g_bar);
         mf_ui_refresh();
         return 1;
     }
-    if (c == KEY_RIGHT) {
+    if (c == KEY_RIGHT)
+    {
         vk_menubar_set_next(g_bar);
         vk_menubar_update(g_bar);
         mf_ui_refresh();
         return 1;
     }
-    if (c == KEY_DOWN || c == '\n' || c == KEY_ENTER) {
+    if (c == KEY_DOWN || c == '\n' || c == KEY_ENTER)
+    {
         open_dropdown(vk_menubar_get_curr(g_bar));
         return 1;
     }
     return 1;
 }
 
-int mf_menubar_is_init(void) { return g_bar != NULL; }
+int mf_menubar_is_init(void)
+{
+    return g_bar != NULL;
+}
 
 /* Left-press mask (pressed / clicked / double-clicked). */
 #define LEFT (BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON1_DOUBLE_CLICKED)
@@ -366,12 +422,15 @@ mf_menubar_mouse(int x, int y, mmask_t bstate)
     int ly, scroll, n, row;
 
     /* Wheel over open dropdown → move selection. */
-    if (g_drop && (bstate & (BUTTON4_PRESSED | BUTTON5_PRESSED))) {
+    if (g_drop && (bstate & (BUTTON4_PRESSED | BUTTON5_PRESSED)))
+    {
         vk_widget_get_position(VK_WIDGET(g_drop), &dx, &dy);
         vk_widget_get_metrics(VK_WIDGET(g_drop), &dw, &dh);
-        if (x >= dx && x < dx + dw && y >= dy && y < dy + dh) {
+        if (x >= dx && x < dx + dw && y >= dy && y < dy + dh)
+        {
             lb = VK_LISTBOX(vk_window_get_child(g_drop));
-            if (lb) {
+            if (lb)
+            {
                 if (bstate & BUTTON4_PRESSED)
                     vk_listbox_set_prev(lb);
                 else
@@ -388,18 +447,22 @@ mf_menubar_mouse(int x, int y, mmask_t bstate)
         return 0;
 
     /* Click on open dropdown list → select and activate. */
-    if (g_drop) {
+    if (g_drop)
+    {
         vk_widget_get_position(VK_WIDGET(g_drop), &dx, &dy);
         vk_widget_get_metrics(VK_WIDGET(g_drop), &dw, &dh);
-        if (x >= dx && x < dx + dw && y >= dy && y < dy + dh) {
+        if (x >= dx && x < dx + dw && y >= dy && y < dy + dh)
+        {
             lb = VK_LISTBOX(vk_window_get_child(g_drop));
             /* Interior of window frame: inset 1 for border. */
             ly = y - dy - 1;
-            if (lb && ly >= 0) {
+            if (lb && ly >= 0)
+            {
                 n = vk_listbox_get_item_count(lb);
                 scroll = vk_listbox_get_scroll_pos(lb);
                 row = scroll + ly;
-                if (row >= 0 && row < n) {
+                if (row >= 0 && row < n)
+                {
                     vk_listbox_set_curr(lb, row);
                     vk_listbox_update(lb);
                     vk_window_update(g_drop);
@@ -419,8 +482,10 @@ mf_menubar_mouse(int x, int y, mmask_t bstate)
 
     vk_widget_get_position(VK_WIDGET(g_bar), &bar_x, &bar_y);
     vk_widget_get_metrics(VK_WIDGET(g_bar), &bar_w, &bar_h);
-    if (y < bar_y || y >= bar_y + bar_h || x < bar_x || x >= bar_x + bar_w) {
-        if (mf_menubar_active()) {
+    if (y < bar_y || y >= bar_y + bar_h || x < bar_x || x >= bar_x + bar_w)
+    {
+        if (mf_menubar_active())
+        {
             g_focused = 0;
             vk_menubar_set_focused(g_bar, false);
             vk_menubar_update(g_bar);
@@ -432,8 +497,10 @@ mf_menubar_mouse(int x, int y, mmask_t bstate)
 
     lx = x - bar_x;
     idx = vk_menubar_hit_test(g_bar, lx);
-    if (idx < 0) {
-        if (!mf_menubar_active()) {
+    if (idx < 0)
+    {
+        if (!mf_menubar_active())
+        {
             g_focused = 1;
             vk_menubar_set_focused(g_bar, true);
             if (vk_menubar_get_curr(g_bar) < 0)
@@ -444,7 +511,8 @@ mf_menubar_mouse(int x, int y, mmask_t bstate)
         return 1;
     }
 
-    if (!mf_menubar_active()) {
+    if (!mf_menubar_active())
+    {
         g_focused = 1;
         vk_menubar_set_focused(g_bar, true);
     }

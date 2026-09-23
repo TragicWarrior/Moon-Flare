@@ -27,9 +27,12 @@ static int g_fail = 0;
 
 static void check(int cond, const char *desc)
 {
-    if (cond) {
+    if (cond)
+    {
         printf("  PASS: %s\n", desc);
-    } else {
+    }
+    else
+    {
         fprintf(stderr, "  FAIL: %s\n", desc);
         g_fail++;
     }
@@ -56,7 +59,8 @@ static void test_status(void)
     /* Check server header */
     cJSON *root = cJSON_Parse(resp.body);
     check(root != NULL, "response parses as JSON");
-    if (root) {
+    if (root)
+    {
         cJSON *server = cJSON_GetObjectItem(root, "server");
         check(server != NULL && strcmp(server->valuestring, "moonflared/0.1.0") == 0,
               "server is moonflared/0.1.0");
@@ -103,20 +107,24 @@ static void test_drivers(void)
 
     cJSON *root = cJSON_Parse(resp.body);
     check(root != NULL, "response parses as JSON");
-    if (root) {
+    if (root)
+    {
         cJSON *drivers = cJSON_GetObjectItem(root, "drivers");
         check(drivers != NULL && cJSON_IsArray(drivers), "drivers array present");
-        if (drivers) {
+        if (drivers)
+        {
             int sz = cJSON_GetArraySize(drivers);
             check(sz == 2, "2 drivers");
 
             /* Find battery/demo */
             bool found_battery = false, found_charger = false;
-            for (int i = 0; i < sz; i++) {
+            for (int i = 0; i < sz; i++)
+            {
                 cJSON *d = cJSON_GetArrayItem(drivers, i);
                 cJSON *kind = cJSON_GetObjectItem(d, "kind");
                 cJSON *driver = cJSON_GetObjectItem(d, "driver");
-                if (kind && driver) {
+                if (kind && driver)
+                {
                     if (strcmp(kind->valuestring, "battery") == 0 &&
                         strcmp(driver->valuestring, "demo") == 0)
                         found_battery = true;
@@ -152,7 +160,8 @@ static void test_404(void)
 
     cJSON *root = cJSON_Parse(resp.body);
     check(root != NULL, "response parses as JSON");
-    if (root) {
+    if (root)
+    {
         cJSON *err = cJSON_GetObjectItem(root, "error");
         check(err != NULL && err->type == cJSON_String, "error field present");
         cJSON_Delete(root);
@@ -179,7 +188,8 @@ static void test_405(void)
 
     cJSON *root = cJSON_Parse(resp.body);
     check(root != NULL, "response parses as JSON");
-    if (root) {
+    if (root)
+    {
         cJSON *err = cJSON_GetObjectItem(root, "error");
         check(err != NULL && err->type == cJSON_String, "error field present");
         cJSON_Delete(root);
@@ -209,15 +219,18 @@ static void test_create_device(void)
 
     /* Check Location header */
     check(strlen(resp.location) > 0, "Location header set");
-    if (strlen(resp.location) > 0) {
+    if (strlen(resp.location) > 0)
+    {
         check(strncmp(resp.location, "/api/v1/devices/", 16) == 0,
               "Location starts with /api/v1/devices/");
     }
 
     /* Check uuid in Location (36 char UUID at end) */
-    if (strlen(resp.location) > 0) {
+    if (strlen(resp.location) > 0)
+    {
         const char *uuid_part = strrchr(resp.location, '/');
-        if (uuid_part) {
+        if (uuid_part)
+        {
             uuid_part++; /* skip '/' */
             check(strlen(uuid_part) == 36, "uuid is 36-char");
         }
@@ -226,7 +239,8 @@ static void test_create_device(void)
     /* Parse response body */
     cJSON *root = cJSON_Parse(resp.body);
     check(root != NULL, "response parses as JSON");
-    if (root) {
+    if (root)
+    {
         cJSON *id = cJSON_GetObjectItem(root, "id");
         check(id != NULL && id->type == cJSON_String, "id field present in body");
 
@@ -244,7 +258,8 @@ static void test_create_device(void)
 
         /* Save uuid for test 6 */
         char saved_uuid[37];
-        if (id && strlen(id->valuestring) == 36) {
+        if (id && strlen(id->valuestring) == 36)
+        {
             strncpy(saved_uuid, id->valuestring, 36);
             saved_uuid[36] = '\0';
 
@@ -271,7 +286,8 @@ static void test_create_device(void)
 
             cJSON *root2 = cJSON_Parse(resp2.body);
             check(root2 != NULL, "device response parses as JSON");
-            if (root2) {
+            if (root2)
+            {
                 cJSON *id2 = cJSON_GetObjectItem(root2, "id");
                 check(id2 != NULL && strcmp(id2->valuestring, saved_uuid) == 0,
                       "id matches");
@@ -305,7 +321,8 @@ static void test_malformed_json(void)
 
     cJSON *root = cJSON_Parse(resp.body);
     check(root != NULL, "response parses as JSON");
-    if (root) {
+    if (root)
+    {
         cJSON *err = cJSON_GetObjectItem(root, "error");
         check(err != NULL && err->type == cJSON_String, "error field present");
         cJSON_Delete(root);
@@ -412,7 +429,8 @@ static void test_pr10(void)
         const char *p = resp.body;
         int npoll = 0;
 
-        while (p && (p = strstr(p, "\"poll_interval_s\""))) {
+        while (p && (p = strstr(p, "\"poll_interval_s\"")))
+        {
             npoll++;
             p += 16;
         }
@@ -454,7 +472,8 @@ static void test_pr10(void)
     check(resp.etag[0] == '"', "ETag quoted");
     {
         cJSON *root = cJSON_Parse(resp.body);
-        if (root) {
+        if (root)
+        {
             cJSON *g = cJSON_GetObjectItem(root, "config_gen");
             if (g && cJSON_IsNumber(g))
                 gen = (uint64_t)g->valuedouble;
@@ -519,7 +538,8 @@ static uint64_t gen_from(const char *body)
 {
     cJSON *root = cJSON_Parse(body);
     uint64_t g = 0;
-    if (root) {
+    if (root)
+    {
         cJSON *it = cJSON_GetObjectItem(root, "config_gen");
         if (it && cJSON_IsNumber(it))
             g = (uint64_t)it->valuedouble;
@@ -675,7 +695,8 @@ int main(void)
     test_config_apply();
 
     printf("\n");
-    if (g_fail > 0) {
+    if (g_fail > 0)
+    {
         printf("%d check(s) failed\n", g_fail);
         return 1;
     }

@@ -192,7 +192,8 @@ static void fill_units(int cfg, int *u, int *n)
 {
     int seen10 = 0, seen1 = 0;
     *n = 0;
-    if (cfg > 0) {
+    if (cfg > 0)
+    {
         u[(*n)++] = cfg;
         if (cfg == 10)
             seen10 = 1;
@@ -214,7 +215,8 @@ static void mac_fmt(const uint8_t m[6], char *dst, size_t n)
 static int skipped(const probe_job_t *j, const char *ip)
 {
     int i;
-    for (i = 0; i < j->nskip; i++) {
+    for (i = 0; i < j->nskip; i++)
+    {
         if (strcmp(j->skip[i], ip) == 0)
             return 1;
     }
@@ -235,7 +237,8 @@ static void add_cand(probe_job_t *j, const char *ip, int port)
         return;
     if (j->last_ip[0] && strcmp(j->last_ip, ip) == 0 && port == j->last_port)
         return;
-    for (i = 0; i < j->ncand; i++) {
+    for (i = 0; i < j->ncand; i++)
+    {
         if (strcmp(j->cand_ip[i], ip) == 0 && j->cand_port[i] == port)
             return;
     }
@@ -273,7 +276,8 @@ static void parse_string_array(const char *js, const char *key,
     if (!p)
         return;
     p++;
-    while (*p && *p != ']') {
+    while (*p && *p != ']')
+    {
         const char *q;
         while (*p == ' ' || *p == '\t' || *p == '\n' || *p == ',' || *p == '\r')
             p++;
@@ -322,11 +326,13 @@ static int default_src_ipv4(char *out, size_t outsz)
     a.sin_family = AF_INET;
     a.sin_port = htons(53);
     (void)inet_pton(AF_INET, "8.8.8.8", &a.sin_addr);
-    if (connect(fd, (struct sockaddr *)&a, sizeof(a)) != 0) {
+    if (connect(fd, (struct sockaddr *)&a, sizeof(a)) != 0)
+    {
         close(fd);
         return -1;
     }
-    if (getsockname(fd, (struct sockaddr *)&l, &ln) != 0) {
+    if (getsockname(fd, (struct sockaddr *)&l, &ln) != 0)
+    {
         close(fd);
         return -1;
     }
@@ -343,10 +349,12 @@ static int listen_host_ip(const char *listen, char *out, size_t outsz)
     if (!listen || !listen[0])
         return default_src_ipv4(out, outsz);
     colon = strrchr(listen, ':');
-    if (colon && colon != listen && (size_t)(colon - listen) < sizeof(host)) {
+    if (colon && colon != listen && (size_t)(colon - listen) < sizeof(host))
+    {
         memcpy(host, listen, (size_t)(colon - listen));
         host[colon - listen] = '\0';
-        if (strcmp(host, "0.0.0.0") != 0 && strcmp(host, "*") != 0) {
+        if (strcmp(host, "0.0.0.0") != 0 && strcmp(host, "*") != 0)
+        {
             snprintf(out, outsz, "%s", host);
             return 0;
         }
@@ -373,7 +381,8 @@ static void fill_subnet(probe_job_t *j)
     syslog(LOG_NOTICE,
            "moonflare: classic auto_net TCP probe %u.%u.%u.0/24 (%d port%s)",
            a, b, c, np, np == 1 ? "" : "s");
-    for (host = 1; host <= 254; host++) {
+    for (host = 1; host <= 254; host++)
+    {
         int pi;
         char ip[16];
         if (host == d)
@@ -436,12 +445,14 @@ static int slot_connect(probe_slot_t *s)
     memset(&a, 0, sizeof(a));
     a.sin_family = AF_INET;
     a.sin_port = htons((uint16_t)s->port);
-    if (inet_pton(AF_INET, s->ip, &a.sin_addr) != 1) {
+    if (inet_pton(AF_INET, s->ip, &a.sin_addr) != 1)
+    {
         close(fd);
         return -1;
     }
     if (connect(fd, (struct sockaddr *)&a, sizeof(a)) < 0 &&
-        errno != EINPROGRESS) {
+        errno != EINPROGRESS)
+    {
         close(fd);
         return -1;
     }
@@ -509,22 +520,27 @@ static int slot_pump(probe_slot_t *s, classic_data_t *data)
     if (s->state == SL_FREE)
         return -1;
 
-    if (now > s->deadline) {
+    if (now > s->deadline)
+    {
         s->itry++;
-        if (s->itry >= s->ntry || slot_connect(s) != 0) {
+        if (s->itry >= s->ntry || slot_connect(s) != 0)
+        {
             slot_close(s);
             return -1;
         }
         return 0;
     }
 
-    if (s->state == SL_CONNECTING) {
+    if (s->state == SL_CONNECTING)
+    {
         int cr = connect_ready(s->fd);
         if (cr == 0)
             return 0;
-        if (cr < 0) {
+        if (cr < 0)
+        {
             s->itry++;
-            if (s->itry >= s->ntry || slot_connect(s) != 0) {
+            if (s->itry >= s->ntry || slot_connect(s) != 0)
+            {
                 slot_close(s);
                 return -1;
             }
@@ -536,23 +552,29 @@ static int slot_pump(probe_slot_t *s, classic_data_t *data)
         s->tx_off = 0;
     }
 
-    if (s->state == SL_SEND) {
-        while (s->tx_off < s->tx_len) {
+    if (s->state == SL_SEND)
+    {
+        while (s->tx_off < s->tx_len)
+        {
             ssize_t n = send(s->fd, s->tx + s->tx_off, s->tx_len - s->tx_off,
                              MSG_NOSIGNAL);
-            if (n < 0) {
+            if (n < 0)
+            {
                 if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
                     return 0;
                 s->itry++;
-                if (s->itry >= s->ntry || slot_connect(s) != 0) {
+                if (s->itry >= s->ntry || slot_connect(s) != 0)
+                {
                     slot_close(s);
                     return -1;
                 }
                 return 0;
             }
-            if (n == 0) {
+            if (n == 0)
+            {
                 s->itry++;
-                if (s->itry >= s->ntry || slot_connect(s) != 0) {
+                if (s->itry >= s->ntry || slot_connect(s) != 0)
+                {
                     slot_close(s);
                     return -1;
                 }
@@ -566,28 +588,35 @@ static int slot_pump(probe_slot_t *s, classic_data_t *data)
         s->deadline = now + IO_TIMEOUT_S;
     }
 
-    if (s->state == SL_RECV) {
-        for (;;) {
+    if (s->state == SL_RECV)
+    {
+        for (;;)
+        {
             ssize_t n;
             int pr;
-            if (s->rx_len >= sizeof(s->rx)) {
+            if (s->rx_len >= sizeof(s->rx))
+            {
                 slot_close(s);
                 return -1;
             }
             n = recv(s->fd, s->rx + s->rx_len, sizeof(s->rx) - s->rx_len, 0);
-            if (n < 0) {
+            if (n < 0)
+            {
                 if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
                     return 0;
                 s->itry++;
-                if (s->itry >= s->ntry || slot_connect(s) != 0) {
+                if (s->itry >= s->ntry || slot_connect(s) != 0)
+                {
                     slot_close(s);
                     return -1;
                 }
                 return 0;
             }
-            if (n == 0) {
+            if (n == 0)
+            {
                 s->itry++;
-                if (s->itry >= s->ntry || slot_connect(s) != 0) {
+                if (s->itry >= s->ntry || slot_connect(s) != 0)
+                {
                     slot_close(s);
                     return -1;
                 }
@@ -597,18 +626,21 @@ static int slot_pump(probe_slot_t *s, classic_data_t *data)
             pr = decode_rx(s, data);
             if (pr == 0)
                 continue;
-            if (pr == 1) {
+            if (pr == 1)
+            {
                 slot_close(s);
                 return 1;
             }
-            if (pr == -3) {
+            if (pr == -3)
+            {
                 /* 4209 mismatch: not a Classic. Do not try other unit ids. */
                 slot_close(s);
                 return -1;
             }
             /* exception or bad PDU: next unit */
             s->itry++;
-            if (s->itry >= s->ntry || slot_connect(s) != 0) {
+            if (s->itry >= s->ntry || slot_connect(s) != 0)
+            {
                 slot_close(s);
                 return -1;
             }
@@ -635,7 +667,8 @@ static void add_hit(probe_job_t *j, const probe_slot_t *s, const classic_data_t 
     if (j->nhit >= PROBE_MAX_HIT)
         return;
     mac_fmt(d->unit_mac, mac, sizeof(mac));
-    for (i = 0; i < j->nhit; i++) {
+    for (i = 0; i < j->nhit; i++)
+    {
         if (strcmp(j->hits[i].ip, s->ip) == 0 && j->hits[i].port == s->port)
             return;
     }
@@ -651,7 +684,8 @@ static void add_hit(probe_job_t *j, const probe_slot_t *s, const classic_data_t 
 static int inflight(const probe_job_t *j)
 {
     int i, n = 0;
-    for (i = 0; i < PROBE_INFLIGHT; i++) {
+    for (i = 0; i < PROBE_INFLIGHT; i++)
+    {
         if (j->slots[i].state != SL_FREE)
             n++;
     }
@@ -674,10 +708,13 @@ static void start_lastknown(probe_job_t *j)
 static void fill_scan_slots(probe_job_t *j)
 {
     int i;
-    while (j->next_cand < j->ncand && inflight(j) < PROBE_INFLIGHT) {
+    while (j->next_cand < j->ncand && inflight(j) < PROBE_INFLIGHT)
+    {
         probe_slot_t *s = NULL;
-        for (i = 0; i < PROBE_INFLIGHT; i++) {
-            if (j->slots[i].state == SL_FREE) {
+        for (i = 0; i < PROBE_INFLIGHT; i++)
+        {
+            if (j->slots[i].state == SL_FREE)
+            {
                 s = &j->slots[i];
                 break;
             }
@@ -711,13 +748,15 @@ int classic_probe_start(const char *args_json, void **job, char *err, size_t err
     const char *mb;
     int i;
 
-    if (!job) {
+    if (!job)
+    {
         if (err && errsz)
             snprintf(err, errsz, "no job out");
         return MF_ERR_INVAL;
     }
     j = calloc(1, sizeof(*j));
-    if (!j) {
+    if (!j)
+    {
         if (err && errsz)
             snprintf(err, errsz, "oom");
         return MF_ERR_INVAL;
@@ -742,18 +781,23 @@ int classic_probe_start(const char *args_json, void **job, char *err, size_t err
         fill_subnet(j);
 
     j->t0 = mono_now();
-    if (j->last_ip[0]) {
+    if (j->last_ip[0])
+    {
         j->phase = PJ_LASTKNOWN;
         start_lastknown(j);
-        if (j->slots[0].state == SL_FREE) {
+        if (j->slots[0].state == SL_FREE)
+        {
             if (j->auto_net)
                 j->phase = PJ_SCAN;
             else
                 j->phase = PJ_DONE;
         }
-    } else if (j->auto_net) {
+    } else if (j->auto_net)
+    {
         j->phase = PJ_SCAN;
-    } else {
+    }
+    else
+    {
         j->phase = PJ_DONE;
     }
     if (j->phase == PJ_SCAN)
@@ -775,46 +819,58 @@ mf_step_t classic_probe_step(void *job)
         return MF_STEP_ERROR;
     if (j->phase == PJ_DONE)
         return MF_STEP_IDLE;
-    if (mono_now() - j->t0 >= PROBE_CAP_S) {
+    if (mono_now() - j->t0 >= PROBE_CAP_S)
+    {
         job_finish(j);
         return MF_STEP_UPDATED;
     }
 
-    if (j->phase == PJ_LASTKNOWN) {
+    if (j->phase == PJ_LASTKNOWN)
+    {
         int pr = slot_pump(&j->slots[0], &data);
-        if (pr == 1) {
-            if (consider_hit(j, &j->slots[0], &data)) {
+        if (pr == 1)
+        {
+            if (consider_hit(j, &j->slots[0], &data))
+            {
                 job_finish(j);
                 return MF_STEP_UPDATED;
             }
             /* type-ok but MAC mismatch: fall through to scan if allowed */
         }
-        if (pr != 0) {
-            if (!j->auto_net) {
+        if (pr != 0)
+        {
+            if (!j->auto_net)
+            {
                 job_finish(j);
                 return MF_STEP_UPDATED;
             }
             j->phase = PJ_SCAN;
             fill_scan_slots(j);
-        } else {
+        }
+        else
+        {
             return MF_STEP_IDLE;
         }
     }
 
-    if (j->phase == PJ_SCAN) {
+    if (j->phase == PJ_SCAN)
+    {
         fill_scan_slots(j);
-        for (i = 0; i < PROBE_INFLIGHT; i++) {
+        for (i = 0; i < PROBE_INFLIGHT; i++)
+        {
             int pr;
             if (j->slots[i].state == SL_FREE)
                 continue;
             pr = slot_pump(&j->slots[i], &data);
-            if (pr == 1 && consider_hit(j, &j->slots[i], &data)) {
+            if (pr == 1 && consider_hit(j, &j->slots[i], &data))
+            {
                 job_finish(j);
                 return MF_STEP_UPDATED;
             }
         }
         fill_scan_slots(j);
-        if (inflight(j) == 0 && j->next_cand >= j->ncand) {
+        if (inflight(j) == 0 && j->next_cand >= j->ncand)
+        {
             job_finish(j);
             return MF_STEP_UPDATED;
         }
@@ -841,7 +897,8 @@ void classic_probe_prepare_fds(void *job, fd_set *r, fd_set *w, int *maxfd)
     int i;
     if (!j || !maxfd)
         return;
-    for (i = 0; i < PROBE_INFLIGHT; i++) {
+    for (i = 0; i < PROBE_INFLIGHT; i++)
+    {
         int fd = j->slots[i].fd;
         unsigned mask = j->slots[i].mask;
         if (fd < 0 || !mask)
@@ -870,7 +927,8 @@ int classic_probe_result(void *job, char *json, size_t cap)
     if (n < 0)
         return -1;
     off = (size_t)n;
-    for (i = 0; i < j->nhit && off < cap; i++) {
+    for (i = 0; i < j->nhit && off < cap; i++)
+    {
         n = snprintf(json + off, cap - off,
                      "%s{\"kind\":\"charger\",\"driver\":\"classic\","
                      "\"bus\":\"modbus\",\"endpoint\":\"%s:%d\","
@@ -883,11 +941,14 @@ int classic_probe_result(void *job, char *json, size_t cap)
             break;
         off += (size_t)n;
     }
-    if (off < cap) {
+    if (off < cap)
+    {
         n = snprintf(json + off, cap - off, "]}");
         if (n < 0)
             json[cap - 1] = '\0';
-    } else {
+    }
+    else
+    {
         json[cap - 1] = '\0';
     }
     return 0;

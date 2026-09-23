@@ -176,7 +176,8 @@ TEST(test_charge_stages)
         { 18, CLASSIC_STAGE_EQMPPT,       "EqMppt" },
     };
 
-    for (size_t i = 0; i < sizeof(stages) / sizeof(stages[0]); i++) {
+    for (size_t i = 0; i < sizeof(stages) / sizeof(stages[0]); i++)
+    {
         uint16_t regs[4220];
         memset(regs, 0, sizeof(regs));
         regs[4119] = (uint16_t)stages[i].msb << 8;

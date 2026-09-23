@@ -26,33 +26,39 @@ mf_mouse_handle(const MEVENT *mev)
      */
 
     /* Confirm overlay (y/n). Sink all mouse while open. 2 = Yes. */
-    if (mf_confirm_open()) {
+    if (mf_confirm_open())
+    {
         int r = mf_confirm_mouse(x, y, bstate);
         return r == 2 ? 2 : 1;
     }
 
     /* Help / settings: sink until dismissed. */
-    if (mf_ui_help_open()) {
+    if (mf_ui_help_open())
+    {
         (void)mf_help_mouse(x, y, bstate);
         return 1;
     }
 
     /* Profile editor overlays the connections manager: route to it first and
      * sink clicks outside it (modal). Then the manager itself. */
-    if (mf_ui_editor_open()) {
+    if (mf_ui_editor_open())
+    {
         (void)mf_editor_mouse(x, y, bstate);
         return 1;
     }
-    if (mf_ui_connections_open()) {
+    if (mf_ui_connections_open())
+    {
         (void)mf_connections_mouse(x, y, bstate);
         return 1;
     }
 
-    if (mf_devset_open()) {
+    if (mf_devset_open())
+    {
         int r = mf_devset_mouse(x, y, bstate);
         return r == 2 ? 2 : 1;
     }
-    if (mf_ui_settings_open()) {
+    if (mf_ui_settings_open())
+    {
         (void)mf_settings_mouse(x, y, bstate);
         return 1;
     }

@@ -31,7 +31,8 @@ int main(void)
           "status line");
     {
         int found_b = 0, found_c = 0, found_i = 0, found_nc = 0, found_small = 0;
-        for (r = 0; r < MF_TUI_ROWS; r++) {
+        for (r = 0; r < MF_TUI_ROWS; r++)
+        {
             if (strstr(grid[r], "Batteries"))
                 found_b = 1;
             if (strstr(grid[r], "Chargers"))
@@ -56,7 +57,8 @@ int main(void)
     CHECK(y + h - 1 < MF_TUI_ROWS, "settings bottom visible");
 
     mf_tui_paint_pack(grid, 1);
-    for (r = 0; r < MF_TUI_ROWS; r++) {
+    for (r = 0; r < MF_TUI_ROWS; r++)
+    {
         CHECK(strlen(grid[r]) == 80, "pack row width 80");
         CHECK(!strstr(grid[r], "72x22") && !strstr(grid[r], "too small"),
               "pack no 72x22");
@@ -72,7 +74,8 @@ int main(void)
     CHECK(strstr(grid[14], "dV") || strstr(grid[14], "mV"), "spread on row 14");
     {
         int overflow = 0;
-        for (r = 16; r <= 23; r++) {
+        for (r = 16; r <= 23; r++)
+        {
             if (strstr(grid[r], "Pack") || strstr(grid[r], "Cells"))
                 overflow = 1;
         }
@@ -107,7 +110,8 @@ int main(void)
     CHECK(strstr(grid[y], "pack-demo") || strstr(grid[y], "pack"), "confirm title");
     CHECK(strstr(grid[y + 4], "y") && strstr(grid[y + 4], "n"), "y/n visible");
 
-    if (g_fail) {
+    if (g_fail)
+    {
         fprintf(stderr, "%d check(s) failed\n", g_fail);
         return 1;
     }

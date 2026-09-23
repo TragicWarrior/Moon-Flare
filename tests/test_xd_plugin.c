@@ -36,7 +36,8 @@ static size_t recorded_0x01_payload(uint8_t *b, size_t cap)
         return 0;
     memset(b, 0, need);
     b[1] = (uint8_t)n;
-    for (i = 0; i < n; i++) {
+    for (i = 0; i < n; i++)
+    {
         uint16_t mv = (uint16_t)(3300 + i);
         uint8_t hi = (uint8_t)((mv >> 8) & 0x1F);
         uint8_t lo = (uint8_t)(mv & 0xFF);
@@ -63,7 +64,8 @@ static int make_pty(int *master, char *slave, size_t slsz)
     if (openpty(&m, &s, slave, NULL, NULL) < 0)
         return -1;
     close(s);
-    if (fcntl(m, F_SETFL, O_NONBLOCK) < 0) {
+    if (fcntl(m, F_SETFL, O_NONBLOCK) < 0)
+    {
         close(m);
         return -1;
     }
@@ -82,7 +84,8 @@ static int reply_one(int master)
     uint8_t addr, cmd;
 
     n = read(master, req, sizeof(req));
-    if (n < 0) {
+    if (n < 0)
+    {
         if (errno == EAGAIN || errno == EWOULDBLOCK)
             return 0;
         return -1;
@@ -91,17 +94,22 @@ static int reply_one(int master)
         return 0;
     addr = req[1];
     cmd = req[2];
-    if (cmd == 0x33) {
+    if (cmd == 0x33)
+    {
         const char *fw = "BN-HES16S48V100LT52-V1.3.0";
         plen = strlen(fw);
         memcpy(payload, fw, plen);
-    } else if (cmd == 0x42) {
+    } else if (cmd == 0x42)
+    {
         const char *bc = "TBI23012900136";
         plen = strlen(bc);
         memcpy(payload, bc, plen);
-    } else if (cmd == 0x01) {
+    } else if (cmd == 0x01)
+    {
         plen = recorded_0x01_payload(payload, sizeof(payload));
-    } else {
+    }
+    else
+    {
         return 0;
     }
     flen = bms_build_frame(addr, cmd, payload, plen, tx);
@@ -115,12 +123,14 @@ static mf_step_t drive(const mf_plugin_ops_t *ops, void *ctx, int master,
 {
     int waited = 0;
     mf_step_t last = MF_STEP_IDLE;
-    while (waited <= max_ms) {
+    while (waited <= max_ms)
+    {
         int fd = ops->fd(ctx);
         unsigned mask = ops->select_mask(ctx);
         struct pollfd p[2];
         int np = 0, to = 50;
-        if (fd >= 0 && mask) {
+        if (fd >= 0 && mask)
+        {
             p[np].fd = fd;
             p[np].events = 0;
             if (mask & MF_IO_WANT_READ)
@@ -129,7 +139,8 @@ static mf_step_t drive(const mf_plugin_ops_t *ops, void *ctx, int master,
                 p[np].events = (short)(p[np].events | POLLOUT);
             np++;
         }
-        if (reply && master >= 0) {
+        if (reply && master >= 0)
+        {
             p[np].fd = master;
             p[np].events = POLLIN;
             np++;
@@ -180,18 +191,21 @@ int main(int argc, char **argv)
     int fd1, fd2;
     mf_step_t st;
 
-    if (argc < 2) {
+    if (argc < 2)
+    {
         fprintf(stderr, "usage: %s libmf_battery_xd.so\n", argv[0]);
         return 2;
     }
     so_path = argv[1];
     dl = dlopen(so_path, RTLD_NOW);
-    if (!dl) {
+    if (!dl)
+    {
         fprintf(stderr, "FAIL: dlopen %s: %s\n", so_path, dlerror());
         return 1;
     }
     entries = (size_t (*)(const mf_plugin_ops_t **))dlsym(dl, "mf_plugin_entries");
-    if (!entries) {
+    if (!entries)
+    {
         fprintf(stderr, "FAIL: missing mf_plugin_entries\n");
         return 1;
     }
@@ -203,11 +217,13 @@ int main(int argc, char **argv)
     CHECK(ops && (ops->caps(NULL) & MF_CAP_PROBE), "cap probe");
     CHECK(ops && (ops->caps(NULL) & MF_CAP_AUTO_PORT), "cap auto_port");
 
-    if (make_pty(&master, slave, sizeof(slave)) != 0) {
+    if (make_pty(&master, slave, sizeof(slave)) != 0)
+    {
         fprintf(stderr, "FAIL: openpty: %s\n", strerror(errno));
         return 1;
     }
-    if (make_pty(&master2, slave2, sizeof(slave2)) != 0) {
+    if (make_pty(&master2, slave2, sizeof(slave2)) != 0)
+    {
         fprintf(stderr, "FAIL: openpty 2: %s\n", strerror(errno));
         return 1;
     }
@@ -268,10 +284,13 @@ int main(int argc, char **argv)
         char sl[128];
         int m = -1;
         void *silent;
-        if (make_pty(&m, sl, sizeof(sl)) != 0) {
+        if (make_pty(&m, sl, sizeof(sl)) != 0)
+        {
             fprintf(stderr, "FAIL: silent openpty\n");
             g_fail++;
-        } else {
+        }
+        else
+        {
             snprintf(spec, sizeof(spec),
                      "{\"usb\":{\"path\":\"%s\",\"baud\":9600,\"addr\":1},"
                      "\"poll_interval_s\":0.5}", sl);
@@ -289,7 +308,8 @@ int main(int argc, char **argv)
     close(master);
     close(master2);
     dlclose(dl);
-    if (g_fail) {
+    if (g_fail)
+    {
         fprintf(stderr, "%d check(s) failed\n", g_fail);
         return 1;
     }

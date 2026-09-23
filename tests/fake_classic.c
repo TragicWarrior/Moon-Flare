@@ -55,9 +55,11 @@ static int send_all(int fd, const void *buf, size_t len)
 {
     const uint8_t *p = buf;
     size_t sent = 0;
-    while (sent < len) {
+    while (sent < len)
+    {
         ssize_t n = send(fd, p + sent, len - sent, MSG_NOSIGNAL);
-        if (n < 0) {
+        if (n < 0)
+        {
             if (errno == EINTR)
                 continue;
             return -1;
@@ -73,9 +75,11 @@ static int recv_all(int fd, void *buf, size_t len)
 {
     uint8_t *p = buf;
     size_t got = 0;
-    while (got < len) {
+    while (got < len)
+    {
         ssize_t n = recv(fd, p + got, len - got, 0);
-        if (n < 0) {
+        if (n < 0)
+        {
             if (errno == EINTR)
                 continue;
             return -1;
@@ -128,7 +132,8 @@ static int handle_fc3(int fd, uint16_t tid, uint8_t unit,
 /* One TCP session: keep serving until the peer closes. */
 static void handle_client(int fd)
 {
-    for (;;) {
+    for (;;)
+    {
         uint8_t hdr[6];
         uint8_t body[256];
         uint16_t tid, proto, length;
@@ -145,11 +150,13 @@ static void handle_client(int fd)
             break;
         unit = body[0];
         fc = body[1];
-        if (unit != 10 && unit != 1) {
+        if (unit != 10 && unit != 1)
+        {
             /* Wrong unit: no reply. */
             break;
         }
-        if (fc == 0x03) {
+        if (fc == 0x03)
+        {
             uint16_t start, qty;
             if (length < 6)
                 break;
@@ -157,10 +164,13 @@ static void handle_client(int fd)
             qty = be16(body + 4);
             if (handle_fc3(fd, tid, unit, start, qty) != 0)
                 break;
-        } else if (fc == 0x06 || fc == 0x10) {
+        } else if (fc == 0x06 || fc == 0x10)
+        {
             if (send_exception(fd, tid, unit, fc, 1) != 0)
                 break;
-        } else {
+        }
+        else
+        {
             if (send_exception(fd, tid, unit, fc, 1) != 0)
                 break;
         }
@@ -180,7 +190,8 @@ int main(int argc, char **argv)
     if (argc >= 2 && argv[1] && argv[1][0])
         golden_regs[4209] = (uint16_t)strtoul(argv[1], NULL, 0);
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd < 0) {
+    if (server_fd < 0)
+    {
         perror("socket");
         return 1;
     }
@@ -190,12 +201,14 @@ int main(int argc, char **argv)
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     addr.sin_port = 0;
     if (bind(server_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0 ||
-        listen(server_fd, 8) < 0) {
+        listen(server_fd, 8) < 0)
+    {
         perror("bind/listen");
         close(server_fd);
         return 1;
     }
-    if (getsockname(server_fd, (struct sockaddr *)&addr, &alen) != 0) {
+    if (getsockname(server_fd, (struct sockaddr *)&addr, &alen) != 0)
+    {
         perror("getsockname");
         close(server_fd);
         return 1;
@@ -204,9 +217,11 @@ int main(int argc, char **argv)
            (unsigned)ntohs(addr.sin_port));
     fflush(stdout);
 
-    for (;;) {
+    for (;;)
+    {
         int cfd = accept(server_fd, NULL, NULL);
-        if (cfd < 0) {
+        if (cfd < 0)
+        {
             if (errno == EINTR)
                 continue;
             break;

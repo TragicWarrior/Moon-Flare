@@ -29,7 +29,8 @@ static size_t recorded_0x01_payload(uint8_t *b, size_t cap)
         return 0;
     memset(b, 0, need);
     b[1] = (uint8_t)n;
-    for (i = 0; i < n; i++) {
+    for (i = 0; i < n; i++)
+    {
         uint16_t mv = (uint16_t)(3300 + i);
         uint8_t hi = (uint8_t)((mv >> 8) & 0x1F);
         uint8_t lo = (uint8_t)(mv & 0xFF);
@@ -87,7 +88,8 @@ int main(void)
 
     CHECK(bms_parse_realtime(body, 2, &r) != 0, "short payload fails");
 
-    if (g_fail) {
+    if (g_fail)
+    {
         fprintf(stderr, "%d check(s) failed\n", g_fail);
         return 1;
     }

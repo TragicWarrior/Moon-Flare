@@ -52,7 +52,8 @@ static void test_upsert_flush(void)
           "upsert");
     CHECK(mf_history_upsert_device("dev-001", "PackAlpha", "battery", "jk", now) == 0,
           "upsert again");
-    for (i = 0; i < 100; i++) {
+    for (i = 0; i < 100; i++)
+    {
         mf_sample_t s;
         memset(&s, 0, sizeof(s));
         snprintf(s.uuid, sizeof(s.uuid), "dev-001");
@@ -90,7 +91,8 @@ static void test_downsample(void)
     CHECK(mf_history_open(path) == 0, "open");
     CHECK(mf_history_upsert_device("dev-down", "DownPack", "battery", "jk", now) == 0,
           "upsert");
-    for (i = 0; i < 10; i++) {
+    for (i = 0; i < 10; i++)
+    {
         mf_sample_t s;
         memset(&s, 0, sizeof(s));
         snprintf(s.uuid, sizeof(s.uuid), "dev-down");
@@ -121,7 +123,8 @@ static void test_retire(void)
     CHECK(mf_history_open(path) == 0, "open");
     CHECK(mf_history_upsert_device("dev-ret", "RetiredPack", "battery", "xd", now) == 0,
           "upsert");
-    for (i = 0; i < 50; i++) {
+    for (i = 0; i < 50; i++)
+    {
         mf_sample_t s;
         memset(&s, 0, sizeof(s));
         snprintf(s.uuid, sizeof(s.uuid), "dev-ret");
@@ -161,7 +164,8 @@ static void test_flush_slices(void)
     CHECK(mf_history_open(path) == 0, "open");
     CHECK(mf_history_upsert_device("dev-flush", "FlushTest", "charger", "classic", now) == 0,
           "upsert");
-    for (i = 0; i < 25; i++) {
+    for (i = 0; i < 25; i++)
+    {
         mf_sample_t s;
         memset(&s, 0, sizeof(s));
         snprintf(s.uuid, sizeof(s.uuid), "dev-flush");
@@ -173,7 +177,8 @@ static void test_flush_slices(void)
         snprintf(s.extra_json, sizeof(s.extra_json), "{}");
         CHECK(mf_history_enqueue(&s) == 0, "enqueue slice");
     }
-    for (;;) {
+    for (;;)
+    {
         int n = mf_history_flush_slice(10);
         total += n;
         if (n == 0)
@@ -197,7 +202,8 @@ static void test_power_w_query(void)
     CHECK(mf_history_open(path) == 0, "open");
     CHECK(mf_history_upsert_device("dev-pwr", "PwrTest", "charger", "classic", now) == 0,
           "upsert");
-    for (i = 0; i < 10; i++) {
+    for (i = 0; i < 10; i++)
+    {
         mf_sample_t s;
         memset(&s, 0, sizeof(s));
         snprintf(s.uuid, sizeof(s.uuid), "dev-pwr");
@@ -215,7 +221,8 @@ static void test_power_w_query(void)
     n = mf_history_query("dev-pwr", "power_w", values, 512);
     CHECK(n == 10, "query returned 10");
     CHECK(n >= 3, "enough values for round-trip");
-    if (n >= 3) {
+    if (n >= 3)
+    {
         /* Values are newest first; last element is oldest. */
         CHECK(values[n - 1] == 100.0, "oldest power_w = 100");
         CHECK(values[n - 2] == 200.0, "mid power_w = 200");
@@ -247,7 +254,8 @@ static void test_json_parse_history_fixture(void)
     CHECK(arr != NULL && cJSON_IsArray(arr), "values is array");
     n = cJSON_GetArraySize(arr);
     CHECK(n == 3, "array size 3");
-    for (i = 0; i < n; i++) {
+    for (i = 0; i < n; i++)
+    {
         cJSON *elem = cJSON_GetArrayItem(arr, i);
         values[i] = (elem && cJSON_IsNumber(elem)) ? elem->valuedouble : 0.0;
     }
@@ -291,7 +299,8 @@ static void test_query_ts(void)
     CHECK(mf_history_open(path) == 0, "open");
     CHECK(mf_history_upsert_device("dev-ts", "TsPack", "charger", "classic", now) == 0,
           "upsert");
-    for (i = 0; i < 10; i++) {
+    for (i = 0; i < 10; i++)
+    {
         mf_sample_t s;
         memset(&s, 0, sizeof(s));
         snprintf(s.uuid, sizeof(s.uuid), "dev-ts");
@@ -307,7 +316,8 @@ static void test_query_ts(void)
     n = mf_history_query_ts("dev-ts", "power_w", ts_arr, val_arr, 16);
     CHECK(n == 10, "query_ts returned 10");
     CHECK(n >= 3, "enough for checks");
-    if (n >= 3) {
+    if (n >= 3)
+    {
         /* Oldest first: first element = ts at now, value=100 */
         CHECK(ts_arr[0] == now, "oldest ts correct");
         CHECK(val_arr[0] == 100.0, "oldest value=100");
@@ -315,7 +325,8 @@ static void test_query_ts(void)
         CHECK(ts_arr[n - 1] == now + 27.0, "newest ts correct");
         CHECK(val_arr[n - 1] == 1000.0, "newest value=1000");
         /* Timestamps ascending */
-        for (i = 1; i < n; i++) {
+        for (i = 1; i < n; i++)
+        {
             CHECK(ts_arr[i] > ts_arr[i - 1], "ts ascending");
         }
     }
@@ -373,7 +384,8 @@ int main(void)
     test_query_ts();
     test_query_ts_step();
     mf_history_close();
-    if (g_fail) {
+    if (g_fail)
+    {
         fprintf(stderr, "%d check(s) failed\n", g_fail);
         return 1;
     }

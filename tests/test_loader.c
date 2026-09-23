@@ -21,7 +21,8 @@ int main(int argc, char **argv)
     mf_plugin_registry_t reg;
     const mf_plugin_ops_t *batt, *chg;
 
-    if (argc < 2) {
+    if (argc < 2)
+    {
         fprintf(stderr, "usage: %s plugin-dir\n", argv[0]);
         return 2;
     }
