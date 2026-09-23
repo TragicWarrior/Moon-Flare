@@ -4,6 +4,7 @@
 #include "usb_id.h"
 
 #include <dirent.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -143,7 +144,12 @@ static int serial_from_byid(const char *by_id, char *out, size_t cap)
 
 static int sysfs_identity(const char *tty, mf_usb_id_t *out)
 {
-    char linkp[512], resolved[512], serialp[576], vendp[576], prodp[576];
+    /* Fortified realpath rejects a destination smaller than PATH_MAX. */
+    char linkp[PATH_MAX];
+    char resolved[PATH_MAX];
+    char serialp[PATH_MAX + 32];
+    char vendp[PATH_MAX + 32];
+    char prodp[PATH_MAX + 32];
     char vend[8], prod[8];
     char rel[64];
 
