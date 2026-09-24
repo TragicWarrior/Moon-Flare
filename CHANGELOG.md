@@ -5,6 +5,36 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-09-24
+
+### Added
+
+- Two new module kinds, services and actuators. `GET /api/v1/status` has
+  `services` and `actuators` arrays; their rows carry the module's whole
+  reading as `data`. `moonflare-cli --status` lists both.
+- The dashboard grid is now 3 × 2. The top row is Batteries, Chargers and
+  an Info panel; the bottom row is Inverters, Actuators and Services. The
+  Info panel shows the weather from the first active weather service:
+  current temperature and conditions, humidity and wind, the next two
+  forecast periods, and the station and time of the observation.
+- A weather.gov service plugin (`libmf_service_weathergov.so`, kind
+  `service`, driver `weathergov`). Add it with Devices → Add Module; the
+  form asks for latitude, longitude and a contact email, which weather.gov
+  wants in the User-Agent. It fetches current conditions every 10 minutes
+  (configurable, at least 5) and the forecast every 30, using libcurl
+  without blocking the daemon. Its reading is provider-neutral, so another
+  weather provider can feed the same panel. Building it needs
+  `libcurl4-openssl-dev`; without that it is skipped.
+- Plugin-specific settings, such as the weather location, are now kept in
+  the daemon's config and passed back to the plugin on start. Before this,
+  any setting the daemon had no field for was dropped when the config was
+  saved.
+
+### Changed
+
+- Readings of a module kind the dashboard has no place for are no longer
+  shown as batteries.
+
 ## [0.3.0] - 2026-09-23
 
 ### Added

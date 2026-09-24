@@ -27,6 +27,8 @@ cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on
 
 Plugins (`libmf_charger_classic.so`, `libmf_battery_xd.so`, `libmf_battery_jk.so`) live in one `--plugin-dir` (default `/usr/local/lib/moon-flare`). The build tree splits them under `build/*_plugins/` so tests load one driver at a time. The demo plugin (`libmf_demo.so`, a fake battery and charger for development) is built but not installed unless you configure with `-DMF_INSTALL_DEMO=ON`; to use it without installing, point `--plugin-dir` at `build/demo_plugins`.
 
+The weather.gov service plugin (`libmf_service_weathergov.so`) needs libcurl: install `libcurl4-openssl-dev` to build it (it is skipped otherwise), and the target needs the `libcurl4` runtime. Add it with Devices → Add Module; it asks for latitude, longitude and a contact email for the NWS User-Agent, and feeds the dashboard's Info panel.
+
 ## Install
 
 `cmake --install build` puts binaries under `$prefix` (default `/usr/local`), plugins in `/usr/local/lib/moon-flare`, `mf_gatt` in `/usr/local/libexec`, and the unit + examples in `/usr/local/share/moon-flare`. **It does not install or enable a systemd unit.** Copy those yourself:

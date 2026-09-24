@@ -706,6 +706,31 @@ static void info_line(const char *fmt, ...)
     vk_listbox_add_item(g_info_lb, line, NULL, NULL);
 }
 
+/* Forecast period names made to fit a 24-column card: "Thursday" -> "Thu",
+ * "Thursday Night" -> "Thu Nt", "Tonight" -> "Tngt", "This Afternoon" ->
+ * "Aftn".  Unknown names pass through. */
+static void short_period(const char *name, char *out, size_t cap)
+{
+    static const char *const map[][2] = {
+        { "Tonight", "Tngt" }, { "This Afternoon", "Aftn" },
+        { "Overnight", "Ovnt" }, { "Today", "Today" },
+    };
+    size_t i;
+    const char *sp;
+
+    for (i = 0; i < sizeof(map) / sizeof(map[0]); i++)
+        if (strcmp(name, map[i][0]) == 0)
+        {
+            snprintf(out, cap, "%s", map[i][1]);
+            return;
+        }
+    sp = strchr(name, ' ');
+    if (strlen(name) > 3 && (!sp || strcmp(sp, " Night") == 0))
+        snprintf(out, cap, "%.3s%s", name, sp ? " Nt" : "");
+    else
+        snprintf(out, cap, "%s", name);
+}
+
 /* The Info panel shows the first active, online service that publishes a
  * provider-neutral "weather" object (see the weather service plugins). */
 static void fill_info(const cJSON *services)
@@ -767,9 +792,12 @@ static void fill_info(const cJSON *services)
             const cJSON *pt = cJSON_GetObjectItemCaseSensitive(p, "temp_f");
             const cJSON *sh = cJSON_GetObjectItemCaseSensitive(p, "short");
 
+            char nm[16];
+
             if (nf++ >= 2)
                 break;
-            info_line("%.8s: %.0fF %s", cJSON_IsString(n) ? n->valuestring : "",
+            short_period(cJSON_IsString(n) ? n->valuestring : "", nm, sizeof(nm));
+            info_line("%s %.0fF %s", nm,
                       cJSON_IsNumber(pt) ? pt->valuedouble : 0.0,
                       cJSON_IsString(sh) ? sh->valuestring : "");
         }

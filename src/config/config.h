@@ -30,6 +30,7 @@ typedef struct cJSON cJSON;
 #define MF_DEV_MODBUS_IP_SIZE 64
 #define MF_DEV_MODBUS_MAC_SIZE 32
 #define MF_HISTORY_PATH_SIZE  256
+#define MF_DEV_EXTRA_SIZE     1024
 
 typedef struct {
     char path[MF_HISTORY_PATH_SIZE];
@@ -76,6 +77,10 @@ typedef struct {
     mf_config_usb_t usb;
     mf_config_ble_t ble;
     mf_config_modbus_t modbus;
+    /* Plugin-specific keys the daemon has no struct for (e.g. a weather
+     * service's "weather": {"lat": ...}), kept verbatim as a JSON object
+     * so they survive save/load and reach the plugin's open(). */
+    char extra_json[MF_DEV_EXTRA_SIZE];
 } mf_config_device_t;
 
 #define MF_MAX_DEVICES 16
