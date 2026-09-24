@@ -88,6 +88,14 @@ static char g_view_path[192];
 static char g_view_json[65536];
 static char g_view_name[32];
 static int g_devset_fetch;
+static int g_devset_put;       /* a settings PUT is out; reply to the dialog */
+/* A save waiting for the connection (the daemon closes idle ones while the
+ * dialog pauses polling), and when the dialog gives up on a reply. */
+static int    g_devset_put_pending;
+static double g_devset_put_deadline;
+static char   g_devset_put_path[192];
+static char   g_devset_put_body[2048];
+#define DEVSET_PUT_TMO_S 10.0
 /* Add Module: 1 = want GET /drivers, 2 = sent; g_add_wait = POST pending. */
 static int g_add_fetch;
 static int g_add_wait;
@@ -1836,6 +1844,26 @@ static void post_new_module(void)
         g_add_wait = 1;
 }
 
+/* Send the settings dialog's changes; the dialog stays open and shows the
+ * daemon's answer (see mf_devset_put_result). */
+static void put_devset(void)
+{
+    int gi = mf_devset_get_graph_interval();
+
+    snprintf(g_devset_put_path, sizeof(g_devset_put_path),
+             "/api/v1/devices/%s/settings", mf_devset_id());
+    snprintf(g_devset_put_body, sizeof(g_devset_put_body), "%s",
+             mf_devset_payload());
+    g_devset_put_deadline = mono_now() + DEVSET_PUT_TMO_S;
+    /* Not connected right now: send it once the client reconnects. */
+    g_devset_put_pending = 1;
+    g_devset_put = 1;
+    if (mf_http_cli_put(&g_cli, g_devset_put_path, g_devset_put_body) >= 0)
+        g_devset_put_pending = 0;
+    if (gi > 0)
+        mf_pack_set_graph_interval(gi);
+}
+
 static void add_reply(const char *json)
 {
     cJSON *root = cJSON_Parse(json);
@@ -2280,6 +2308,18 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
                 g_devset_fetch = 0;
                 g_devset_wait_ovp = 0;
             }
+            if (g_devset_put && !mf_devset_saving())
+                g_devset_put = g_devset_put_pending = 0;
+            if (g_devset_put_pending && g_cli.state == MF_CONN_UP &&
+                mf_http_cli_put(&g_cli, g_devset_put_path,
+                                g_devset_put_body) >= 0)
+                g_devset_put_pending = 0;
+            if (g_devset_put && t > g_devset_put_deadline)
+            {
+                g_devset_put = g_devset_put_pending = 0;
+                mf_devset_put_result(
+                    "{\"error\":\"no reply from moonflared\"}");
+            }
             if (mf_devset_touched())
                 g_devset_wait_ovp = 0;
             if (mf_devset_has_key("cell_ovp_v"))
@@ -2317,6 +2357,14 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
                           strstr(last_json, "\"id\"")))
                 {
                     add_reply(last_json);
+                }
+                else if (g_devset_put && mf_devset_saving() && !is_status &&
+                         (strstr(last_json, "\"uuid\"") ||
+                          strstr(last_json, "\"error\"")))
+                {
+                    g_devset_put = 0;
+                    mf_devset_put_result(last_json);
+                    g_last_get = 0;
                 }
                 else if (g_devset_fetch && mf_devset_open())
                 {
@@ -2389,17 +2437,7 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
                     post_new_module();
             }
             else if (mr == 2 && mf_devset_open())
-            {
-                char path[192];
-                int gi = mf_devset_get_graph_interval();
-                snprintf(path, sizeof(path),
-                         "/api/v1/devices/%s/settings", mf_devset_id());
-                (void)mf_http_cli_put(&g_cli, path, mf_devset_payload());
-                if (gi > 0)
-                    mf_pack_set_graph_interval(gi);
-                mf_devset_close();
-                g_last_get = 0;
-            }
+                put_devset();
             continue;
         }
         if (key <= 0)
@@ -2457,17 +2495,7 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
                         post_new_module();
                 }
                 else if (sr == 2)
-                {
-                    char path[192];
-                    int gi = mf_devset_get_graph_interval();
-                    snprintf(path, sizeof(path),
-                             "/api/v1/devices/%s/settings", mf_devset_id());
-                    (void)mf_http_cli_put(&g_cli, path, mf_devset_payload());
-                    if (gi > 0)
-                        mf_pack_set_graph_interval(gi);
-                    mf_devset_close();
-                    g_last_get = 0;
-                }
+                    put_devset();
                 continue;
             }
             if (g_settings_open && settings_key((wint_t)key))

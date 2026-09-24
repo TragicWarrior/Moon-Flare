@@ -5,6 +5,33 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-09-24
+
+### Changed
+
+- The module settings dialog (**e** on the dashboard, or Add Module) now
+  works like vwm's Settings. Every setting is one row of a list,
+  `Label ........ [value]`, in a sunken frame, with Modify, Save and
+  Close below (Modify, Add and Cancel when adding a module).
+  - Enter or Modify edits the selected row in a popup that shows the
+    setting's hint (Apply/Cancel); true/false settings get a two-item
+    list, and Left/Right flips them in place.
+  - Settings that cannot be changed (transport, cell count, UUID…) stay
+    in the list, drawn in gray; Enter on one says it is read-only.
+  - The title shows "(modified)" while there are unsaved changes. Save
+    asks first ("Save module settings?"), then shows the daemon's answer:
+    "Settings saved." or its error, with the dialog left open to fix it.
+    Closing with unsaved changes asks whether to discard them.
+  - Mouse: click a row to select it, click it again to modify it; the
+    buttons and popup buttons are clickable.
+- A settings save no longer gets lost when the connection has gone idle
+  while the dialog was open: it is sent once the TUI reconnects, and
+  reports "no reply from moonflared" after 10 s without an answer.
+
+### Requires
+
+- libviper 7.7.0 (`vk_listbox_set_item_colors`, for the gray rows).
+
 ## [0.5.1] - 2026-09-24
 
 ### Added
