@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 #include <vdk.h>
 
 #define COL_BG   COLOR_WHITE
@@ -25,8 +26,14 @@ struct mb_item {
     int end;
 };
 
-static vk_menubar_t *g_bar;
-static vk_window_t  *g_drop;
+static vk_menubar_t   *g_bar;
+static vk_box_t      *g_row;
+static vk_filler_t   *g_spacer;
+static vk_label_t    *g_clock;
+static vk_activity_t *g_throb;
+static vk_label_t    *g_pad;
+static time_t        g_clock_sec;
+static vk_window_t   *g_drop;
 static int           g_drop_idx = -1;
 static int           g_focused;
 static const struct mb_item *g_open_table;
@@ -101,6 +108,55 @@ static const struct mb_item *const tables[MB_COUNT] = {
 static const char *const titles[MB_COUNT] = {
     "File", "Devices", "Help"
 };
+
+/* One pad, "HH:MM:SS", and the space before the throbber. Moon emoji
+ * is 2 wide, then one more space at the right edge. */
+#define CLOCK_W 10
+#define MOON_W 2
+#define PAD_W 1
+#define CHROME_W (CLOCK_W + MOON_W + PAD_W)
+
+static int menu_width(void)
+{
+    int i;
+    int w = 0;
+
+    for (i = 0; i < MB_COUNT; i++)
+        w += (int)strlen(titles[i]) + 2;
+    /* The menubar draws a vertical bar between items. */
+    if (MB_COUNT > 1)
+        w += MB_COUNT - 1;
+    if (w < 1)
+        w = 1;
+    return w;
+}
+
+static int row_width(void)
+{
+    int cols = mf_ui_cols();
+    int need = menu_width() + CHROME_W;
+
+    if (cols < need)
+        cols = need;
+    return cols;
+}
+
+static void paint_clock(void)
+{
+    time_t now;
+    struct tm tm;
+    char buf[16];
+
+    if (!g_clock)
+        return;
+    now = time(NULL);
+    localtime_r(&now, &tm);
+    snprintf(buf, sizeof(buf), " %02d:%02d:%02d ",
+             tm.tm_hour, tm.tm_min, tm.tm_sec);
+    vk_label_set_text(g_clock, buf);
+    vk_label_update(g_clock);
+    g_clock_sec = now;
+}
 
 static void close_dropdown(void)
 {
@@ -231,7 +287,7 @@ static void open_dropdown(int idx)
     g_drop = win;
     g_drop_idx = idx;
     mf_ui_front_clear();
-    mf_ui_front_push(VK_WIDGET(g_bar));
+    mf_ui_front_push(VK_WIDGET(g_row));
     mf_ui_front_push(VK_WIDGET(g_drop));
     mf_ui_refresh();
 }
@@ -252,44 +308,117 @@ static int on_bar_activate(vk_widget_t *w, void *idxp)
 
 void mf_menubar_init(void)
 {
-    int i, width = mf_ui_cols();
-    if (width < 80)
-        width = 80;
-    g_bar = vk_menubar_create(width);
+    int i;
+    int cols = row_width();
+    int mw = menu_width();
+
+    g_bar = vk_menubar_create(mw);
     vk_widget_set_colors(VK_WIDGET(g_bar), COL_TEXT, COL_BG);
     vk_menubar_set_highlight(g_bar, COL_HI_FG, COL_HI_BG);
     for (i = 0; i < MB_COUNT; i++)
         vk_menubar_add_item(g_bar, (char *)titles[i], on_bar_activate,
                             (void *)(intptr_t)i);
-    mf_ui_attach(VK_WIDGET(g_bar), 0, 0);
     vk_menubar_set_focused(g_bar, false);
     vk_menubar_update(g_bar);
+
+    g_spacer = vk_filler_create();
+    vk_widget_set_colors(VK_WIDGET(g_spacer), COL_TEXT, COL_BG);
+
+    g_clock = vk_label_create(CLOCK_W);
+    vk_widget_set_colors(VK_WIDGET(g_clock), COL_TEXT, COLOR_CYAN);
+    paint_clock();
+
+    g_throb = vk_activity_create();
+    vk_widget_set_colors(VK_WIDGET(g_throb), COL_TEXT, COLOR_CYAN);
+    vk_activity_set_style(g_throb, VK_ACTIVITY_MOON);
+    /* Main loop wakes about every 100ms. Speed 3 is ~0.3s per moon. */
+    vk_activity_set_speed(g_throb, 3);
+    vk_activity_start(g_throb);
+    vk_activity_run(g_throb);
+
+    g_pad = vk_label_create(PAD_W);
+    vk_widget_set_colors(VK_WIDGET(g_pad), COL_TEXT, COLOR_CYAN);
+    vk_label_set_text(g_pad, " ");
+    vk_label_update(g_pad);
+
+    g_row = vk_box_create(cols, 1, VK_BOX_HORIZONTAL, 5);
+    vk_box_set_homogeneous(g_row, false);
+    vk_widget_set_colors(VK_WIDGET(g_row), COL_TEXT, COL_BG);
+    vk_box_set_widget(g_row, 0, VK_WIDGET(g_bar), VK_INHERIT_NONE);
+    vk_box_set_widget(g_row, 1, VK_WIDGET(g_spacer), VK_INHERIT_NONE);
+    vk_box_set_widget(g_row, 2, VK_WIDGET(g_clock), VK_INHERIT_NONE);
+    vk_box_set_widget(g_row, 3, VK_WIDGET(g_throb), VK_INHERIT_NONE);
+    vk_box_set_widget(g_row, 4, VK_WIDGET(g_pad), VK_INHERIT_NONE);
+    mf_ui_attach(VK_WIDGET(g_row), 0, 0);
+    vk_box_update(g_row);
     g_focused = 0;
 }
 
 void mf_menubar_on_resize(void)
 {
-    int width = mf_ui_cols();
     close_dropdown();
-    if (width < 80)
-        width = 80;
     g_focused = 0;
     if (g_bar)
     {
-        vk_widget_resize(VK_WIDGET(g_bar), width, 1);
+        vk_widget_resize(VK_WIDGET(g_bar), menu_width(), 1);
         vk_menubar_set_focused(g_bar, false);
         vk_menubar_update(g_bar);
     }
+    if (g_row)
+    {
+        vk_widget_resize(VK_WIDGET(g_row), row_width(), 1);
+        vk_box_update(g_row);
+    }
+}
+
+void mf_menubar_tick(void)
+{
+    time_t now;
+
+    if (!g_row)
+        return;
+    now = time(NULL);
+    if (now != g_clock_sec)
+        paint_clock();
+    if (g_throb)
+        vk_activity_run(g_throb);
+    vk_box_update(g_row);
+    mf_ui_refresh();
 }
 
 void mf_menubar_shutdown(void)
 {
     close_dropdown();
+    if (g_row)
+    {
+        vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_row));
+        vk_box_destroy(g_row);
+        g_row = NULL;
+    }
     if (g_bar)
     {
-        vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_bar));
         vk_menubar_destroy(g_bar);
         g_bar = NULL;
+    }
+    if (g_spacer)
+    {
+        vk_filler_destroy(g_spacer);
+        g_spacer = NULL;
+    }
+    if (g_clock)
+    {
+        vk_label_destroy(g_clock);
+        g_clock = NULL;
+    }
+    if (g_throb)
+    {
+        vk_activity_destroy(g_throb);
+        g_throb = NULL;
+    }
+    if (g_pad)
+    {
+        vk_label_destroy(g_pad);
+        g_pad = NULL;
     }
 }
 

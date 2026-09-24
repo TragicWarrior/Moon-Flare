@@ -1955,6 +1955,7 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
         mf_http_cli_pump(&g_cli,
                          g_cli.fd >= 0 && FD_ISSET(g_cli.fd, &r),
                          g_cli.fd >= 0 && FD_ISSET(g_cli.fd, &w), t);
+        mf_menubar_tick();
 
         if (g_cli.state == MF_CONN_UP && !g_cli.inflight &&
             t - g_last_get >= g_refresh && !g_devset_fetch &&
