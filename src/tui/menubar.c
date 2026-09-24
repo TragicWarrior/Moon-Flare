@@ -70,8 +70,13 @@ static void on_about(void)
 {
     mf_ui_show_help(1);
 }
-static void on_noop(void)
+static void on_add(void)
 {
+    mf_ui_add_module();
+}
+static void on_remove(void)
+{
+    mf_ui_remove_module();
 }
 
 static int g_dyn_cat[32];
@@ -92,8 +97,8 @@ static const struct mb_item file_items[] = {
     { NULL, NULL, 1 }
 };
 static const struct mb_item devices_items[] = {
-    { "Add Device\u2026", on_noop, 0 },
-    { "Remove Device\u2026", on_noop, 0 },
+    { "Add Module\u2026", on_add, 0 },
+    { "Remove Module\u2026", on_remove, 0 },
     { NULL, NULL, 1 }
 };
 static const struct mb_item help_items[] = {
@@ -212,8 +217,8 @@ static void open_dropdown(int idx)
         memset(dyn, 0, sizeof(dyn));
         dyn[nd++] = (struct mb_item){ "Dashboard", on_dash, 0 };
         dyn[nd++] = (struct mb_item){ NULL, NULL, 0 };
-        dyn[nd++] = (struct mb_item){ "Add Device…", on_noop, 0 };
-        dyn[nd++] = (struct mb_item){ "Remove Device…", on_noop, 0 };
+        dyn[nd++] = (struct mb_item){ "Add Module…", on_add, 0 };
+        dyn[nd++] = (struct mb_item){ "Remove Module…", on_remove, 0 };
         dyn[nd++] = (struct mb_item){ NULL, NULL, 0 };
         for (c = 0; c < mf_dash_catalog_n() && nd < 34; c++)
         {

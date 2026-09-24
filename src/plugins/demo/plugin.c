@@ -380,6 +380,15 @@ static int charger_action(void *v, const char *action, const char *json,
     return MF_ERR_UNSUPPORTED;
 }
 
+/* What the Add Module form asks for (mf_plugin_ops_t.describe). */
+static const char *demo_describe(void)
+{
+    return
+        "{\"fields\":["
+        "{\"key\":\"poll_interval_s\",\"label\":\"Poll Interval\",\"hint\":\"(Seconds)\",\"type\":\"number\",\"default\":2.0}"
+        "]}";
+}
+
 /* ── Plugin entries ── */
 
 static const mf_plugin_ops_t g_ops[2] = {
@@ -407,6 +416,7 @@ static const mf_plugin_ops_t g_ops[2] = {
         .probe_prepare_fds = NULL,
         .probe_result = NULL,
         .probe_close = NULL,
+        .describe    = demo_describe,
     },
     {
         .abi         = MF_PLUGIN_ABI,
@@ -432,6 +442,7 @@ static const mf_plugin_ops_t g_ops[2] = {
         .probe_prepare_fds = NULL,
         .probe_result = NULL,
         .probe_close = NULL,
+        .describe    = demo_describe,
     },
 };
 

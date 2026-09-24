@@ -104,6 +104,12 @@ static void stub_probe_close(void *job)
     (void)job;
 }
 
+static const char *stub_describe(void)
+{
+    return "{\"fields\":[{\"key\":\"stub.path\",\"label\":\"Stub Path\","
+           "\"type\":\"string\",\"required\":true}]}";
+}
+
 static const mf_plugin_ops_t g_ops[2] = {
     {
         .abi = MF_PLUGIN_ABI,
@@ -129,6 +135,7 @@ static const mf_plugin_ops_t g_ops[2] = {
         .probe_prepare_fds = NULL,
         .probe_result = stub_probe_result,
         .probe_close = stub_probe_close,
+        .describe = stub_describe,
     },
     {
         .abi = MF_PLUGIN_ABI,
@@ -157,9 +164,32 @@ static const mf_plugin_ops_t g_ops[2] = {
     },
 };
 
+#ifdef MF_STUB_OLD_ABI
+/* Mimic a plugin built before the optional fields (describe) existed:
+ * entries are MF_PLUGIN_OPS_MIN_SIZE bytes, packed back to back. */
+static unsigned char g_old[2][MF_PLUGIN_OPS_MIN_SIZE]
+    __attribute__((aligned(16)));
+
+size_t mf_plugin_entries(const mf_plugin_ops_t **out)
+{
+    int i;
+
+    for (i = 0; i < 2; i++)
+    {
+        mf_plugin_ops_t e = g_ops[i];
+
+        e.ops_size = MF_PLUGIN_OPS_MIN_SIZE;
+        memcpy(g_old[i], &e, MF_PLUGIN_OPS_MIN_SIZE);
+    }
+    if (out)
+        *out = (const mf_plugin_ops_t *)(const void *)g_old;
+    return 2;
+}
+#else
 size_t mf_plugin_entries(const mf_plugin_ops_t **out)
 {
     if (out)
         *out = g_ops;
     return 2;
 }
+#endif

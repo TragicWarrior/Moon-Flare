@@ -62,6 +62,7 @@ int    mf_devices_put_settings(const char *uuid, const char *json,
 int    mf_devices_action(const char *uuid, const char *action, const char *json,
                          char *err, size_t errsz);
 double mf_poll_interval_min(const char *driver);
+
 int    mf_devices_any_dying(void);
 
 void mf_devices_prepare_fds(fd_set *rset, fd_set *wset, int *maxfd);

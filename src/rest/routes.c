@@ -19,14 +19,13 @@ void mf_log(int prio, const char *fmt, ...);
 
 static mf_daemon_config_t  g_cfg_local;
 static mf_daemon_config_t *g_live;
-static char                g_cfg_path[256];
 
+/* path: the seed config.  The daemon saves to and reloads from the state
+ * config (mf_config_state_path), never the seed. */
 void mf_rest_set_live_config(void *daemon_cfg, const char *path)
 {
+    (void)path;
     g_live = daemon_cfg;
-    g_cfg_path[0] = '\0';
-    if (path && path[0])
-        snprintf(g_cfg_path, sizeof(g_cfg_path), "%s", path);
 }
 
 const char *mf_rest_listen_spec(void)
@@ -44,6 +43,13 @@ static mf_daemon_config_t *live_cfg(void)
         g_live = &g_cfg_local;
     }
     return g_live;
+}
+
+/* Every accepted change saves the whole document to the state config. */
+static void persist_config(void)
+{
+    if (mf_config_save_state(live_cfg()) != 0)
+        mf_log(LOG_WARNING, "config save failed: %s", mf_config_state_path());
 }
 
 static void cfg_remove_uuid(const char *uuid)
@@ -358,6 +364,40 @@ static int handle_status(mf_rest_response_t *resp)
     return 0;
 }
 
+/* The plugin's own description of its Add Module form ("bus" + "fields"),
+ * passed through so clients need no plugin knowledge.  Plugins without
+ * describe() (older builds) get a poll interval field only. */
+static const char *k_plain_describe =
+    "{\"fields\":[{\"key\":\"poll_interval_s\",\"label\":\"Poll Interval\","
+    "\"hint\":\"(Seconds)\",\"type\":\"number\",\"default\":2.0}]}";
+
+static cJSON *plugin_describe(const mf_plugin_ops_t *ops)
+{
+    cJSON *d = NULL;
+
+    if (ops && ops->describe)
+        d = cJSON_Parse(ops->describe());
+    if (!cJSON_IsObject(d) ||
+        !cJSON_IsArray(cJSON_GetObjectItemCaseSensitive(d, "fields")))
+    {
+        cJSON_Delete(d);
+        d = cJSON_Parse(k_plain_describe);
+    }
+    return d;
+}
+
+static void add_driver_schema(cJSON *o, const mf_plugin_ops_t *ops)
+{
+    cJSON *d = plugin_describe(ops);
+    cJSON *bus = cJSON_GetObjectItemCaseSensitive(d, "bus");
+
+    if (cJSON_IsString(bus))
+        cJSON_AddStringToObject(o, "bus", bus->valuestring);
+    cJSON_AddItemToObject(o, "fields",
+        cJSON_DetachItemFromObjectCaseSensitive(d, "fields"));
+    cJSON_Delete(d);
+}
+
 static int handle_drivers(mf_rest_response_t *resp)
 {
     cJSON *root = cJSON_CreateObject();
@@ -381,6 +421,7 @@ static int handle_drivers(mf_rest_response_t *resp)
                 add_caps(caps, c);
                 cJSON_AddItemToObject(o, "caps", caps);
             }
+            add_driver_schema(o, ops);
             cJSON_AddItemToArray(arr, o);
         }
     }
@@ -390,9 +431,11 @@ static int handle_drivers(mf_rest_response_t *resp)
         cJSON *c = cJSON_CreateObject();
         cJSON_AddStringToObject(b, "kind", "battery");
         cJSON_AddStringToObject(b, "driver", "demo");
+        add_driver_schema(b, NULL);
         cJSON_AddItemToArray(arr, b);
         cJSON_AddStringToObject(c, "kind", "charger");
         cJSON_AddStringToObject(c, "driver", "demo");
+        add_driver_schema(c, NULL);
         cJSON_AddItemToArray(arr, c);
     }
     cJSON_AddItemToObject(root, "drivers", arr);
@@ -420,6 +463,49 @@ static int handle_devices_list(mf_rest_response_t *resp)
     mf_devices_visit_live(add_list_row, root);
     set_json(resp, 200, root, NULL);
     return 0;
+}
+
+/* Accept the flat form the Add Module form sends ("usb.path": "...") by
+ * moving each dotted key into its nested object, as config files have it. */
+static void nest_dotted_keys(cJSON *root)
+{
+    cJSON *it = root ? root->child : NULL;
+
+    while (it)
+    {
+        cJSON *next = it->next;
+        const char *dot = it->string ? strchr(it->string, '.') : NULL;
+
+        if (dot && dot != it->string && dot[1])
+        {
+            char parent[32];
+            char child[64];
+            size_t n = (size_t)(dot - it->string);
+            cJSON *obj;
+            cJSON *moved;
+
+            /* Copy the child name out: the item's key is freed on re-add. */
+            snprintf(child, sizeof(child), "%s", dot + 1);
+            if (n < sizeof(parent))
+            {
+                memcpy(parent, it->string, n);
+                parent[n] = '\0';
+                obj = cJSON_GetObjectItemCaseSensitive(root, parent);
+                if (!obj)
+                {
+                    obj = cJSON_CreateObject();
+                    cJSON_AddItemToObject(root, parent, obj);
+                }
+                if (cJSON_IsObject(obj))
+                {
+                    moved = cJSON_DetachItemViaPointer(root, it);
+                    cJSON_DeleteItemFromObjectCaseSensitive(obj, child);
+                    cJSON_AddItemToObject(obj, child, moved);
+                }
+            }
+        }
+        it = next;
+    }
 }
 
 static int handle_devices_create(const mf_rest_request_t *req, mf_rest_response_t *resp)
@@ -457,11 +543,25 @@ static int handle_devices_create(const mf_rest_request_t *req, mf_rest_response_
     snprintf(namebuf, sizeof(namebuf), "%s", name);
     snprintf(kindbuf, sizeof(kindbuf), "%s", kind);
     snprintf(driverbuf, sizeof(driverbuf), "%s", driver);
+    nest_dotted_keys(root);
+    if (!cJSON_GetObjectItemCaseSensitive(root, "bus"))
+    {
+        cJSON *d = plugin_describe(mf_plugins_find(mf_devices_registry(),
+                                                   kindbuf, driverbuf));
+        cJSON *bus = cJSON_GetObjectItemCaseSensitive(d, "bus");
+
+        if (cJSON_IsString(bus))
+            cJSON_AddStringToObject(root, "bus", bus->valuestring);
+        cJSON_Delete(d);
+    }
     spec = cJSON_PrintUnformatted(root);
     rc = mf_devices_add(namebuf, kindbuf, driverbuf, spec, NULL,
                         uuid, sizeof(uuid), err, sizeof(err));
     if (rc == 0)
+    {
         cfg_upsert_from_json(uuid, root);
+        persist_config();
+    }
     free(spec);
     cJSON_Delete(root);
     if (rc == -2)
@@ -545,6 +645,7 @@ static int handle_device_delete(const char *id, mf_rest_response_t *resp)
     {
         cJSON *o = cJSON_CreateObject();
         cfg_remove_uuid(id);
+        persist_config();
         cJSON_AddStringToObject(o, "status", "stopping");
         set_json(resp, 202, o, NULL);
         return 0;
@@ -646,11 +747,7 @@ static int handle_settings_put(const char *id, const mf_rest_request_t *req,
             cfg_patch_settings(id, b);
             cJSON_Delete(b);
         }
-        if (g_cfg_path[0])
-            (void)mf_config_save(live_cfg(), g_cfg_path);
-        if (mf_config_save_overlay(live_cfg()) != 0)
-            mf_log(LOG_WARNING, "settings overlay persist failed: %s",
-                   mf_config_overlay_path());
+        persist_config();
     }
     return handle_settings_get(id, resp);
 }
@@ -781,6 +878,7 @@ static int handle_config_put(const mf_rest_request_t *req, mf_rest_response_t *r
     }
     next.config_gen = live->config_gen + 1;
     *live = next;
+    persist_config();
     if (rc == 1 || mf_devices_any_dying())
     {
         cJSON *o = cJSON_CreateObject();
@@ -801,7 +899,7 @@ static int handle_config_save(const mf_rest_request_t *req, mf_rest_response_t *
         set_error(resp, 409, "config_gen mismatch");
         return 0;
     }
-    if (!g_cfg_path[0] || mf_config_save(live, g_cfg_path) != 0)
+    if (mf_config_save_state(live) != 0)
     {
         set_error(resp, 403, "not writable");
         return 0;
@@ -823,18 +921,12 @@ static int handle_config_load(mf_rest_response_t *resp)
     int rc;
     int listen_changed;
 
-    if (!g_cfg_path[0])
-    {
-        set_error(resp, 404, "not found");
-        return 0;
-    }
     mf_config_defaults(&next);
-    if (mf_config_load(g_cfg_path, &next) != 0)
+    if (mf_config_load_state(&next) <= 0)
     {
         set_error(resp, 404, "not found");
         return 0;
     }
-    (void)mf_config_load_overlay(&next);
     if (mf_devices_validate_config(next.devices, next.n_devices,
                                    err, sizeof(err)) != 0)
     {

@@ -607,6 +607,19 @@ static void xd_probe_close(void *job)
     (void)job;
 }
 
+/* What the Add Module form asks for (mf_plugin_ops_t.describe). */
+static const char *xd_describe(void)
+{
+    return
+        "{\"bus\":\"usb-serial\",\"fields\":["
+        "{\"key\":\"poll_interval_s\",\"label\":\"Poll Interval\",\"hint\":\"(Seconds)\",\"type\":\"number\",\"default\":2.0},"
+        "{\"key\":\"usb.path\",\"label\":\"USB Path\",\"hint\":\"(device)\",\"type\":\"string\",\"default\":\"/dev/ttyUSB0\",\"required\":true},"
+        "{\"key\":\"usb.auto_port\",\"label\":\"USB Auto Port\",\"hint\":\"(true/false)\",\"type\":\"bool\",\"default\":true},"
+        "{\"key\":\"usb.baud\",\"label\":\"USB Baud\",\"hint\":\"(baud)\",\"type\":\"number\",\"default\":9600},"
+        "{\"key\":\"usb.addr\",\"label\":\"USB Addr\",\"hint\":\"(addr)\",\"type\":\"number\",\"default\":1}"
+        "]}";
+}
+
 static const mf_plugin_ops_t g_ops = {
     .abi = MF_PLUGIN_ABI,
     .ops_size = sizeof(mf_plugin_ops_t),
@@ -631,6 +644,7 @@ static const mf_plugin_ops_t g_ops = {
     .probe_prepare_fds = xd_probe_prepare,
     .probe_result = xd_probe_result,
     .probe_close = xd_probe_close,
+    .describe = xd_describe,
 };
 
 size_t mf_plugin_entries(const mf_plugin_ops_t **out)

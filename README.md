@@ -25,7 +25,7 @@ cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on
 | `moonflare` | TUI (`--connect 172.16.0.65:5250`; F10 menubar) |
 | `mf_gatt` | BlueZ helper (`/usr/local/libexec/mf_gatt`; never `$PATH`) |
 
-Plugins (`libmf_demo.so`, `libmf_charger_classic.so`, `libmf_battery_xd.so`, `libmf_battery_jk.so`) live in one `--plugin-dir` (default `/usr/local/lib/moon-flare`). The build tree splits them under `build/*_plugins/` so tests load one driver at a time.
+Plugins (`libmf_charger_classic.so`, `libmf_battery_xd.so`, `libmf_battery_jk.so`) live in one `--plugin-dir` (default `/usr/local/lib/moon-flare`). The build tree splits them under `build/*_plugins/` so tests load one driver at a time. The demo plugin (`libmf_demo.so`, a fake battery and charger for development) is built but not installed unless you configure with `-DMF_INSTALL_DEMO=ON`; to use it without installing, point `--plugin-dir` at `build/demo_plugins`.
 
 ## Install
 
@@ -39,9 +39,15 @@ sudo cp /usr/local/share/moon-flare/moonflared.service /etc/systemd/system/
 sudo systemctl daemon-reload
 ```
 
-Do not `systemctl enable --now moonflared` until the soak stage below matches the live site. The example config enables **demo + Classic only**; `pack-xd` and `pack-jk` are `"enabled": false` so an accidental start cannot steal ttyUSB0 or the JK MAC from `xd_bmsd` / `jkbmsd`.
+Do not `systemctl enable --now moonflared` until the soak stage below matches the live site. The example config enables **Classic only**; `pack-xd` and `pack-jk` are `"enabled": false` so an accidental start cannot steal ttyUSB0 or the JK MAC from `xd_bmsd` / `jkbmsd`.
 
-Config search (daemon `moonflared.json`, TUI `moonflare.json`): `--config`, then `~/.config/moonflare/`, then `/etc/moonflare/`. systemd `StateDirectory=moonflare` is `/var/lib/moonflare` (history + endpoint overlay).
+Config search (daemon `moonflared.json`, TUI `moonflare.json`): `--config`, then `~/.config/moonflare/`, then `/etc/moonflare/`. systemd `StateDirectory=moonflare` is `/var/lib/moonflare` (history + the daemon's working config).
+
+### Where the daemon keeps its config
+
+The daemon owns its working config at `/var/lib/moonflare/moonflared.json` (`$STATE_DIRECTORY/moonflared.json` under systemd). On its first start it seeds that file from `/etc/moonflare/moonflared.json` (or `--config`), plus any older `settings.json` overlay. From then on it reads only the state file, and saves the whole thing whenever something changes: device settings, the active flag, and modules added or removed with Devices → Add Module / Remove Module in the TUI.
+
+`/etc/moonflare/moonflared.json` is only the first-run seed after that. To apply an edit to it, stop the daemon, move `/var/lib/moonflare/moonflared.json` aside, and start it again; it reseeds from `/etc`. The state file is mode 0600 because it holds JK app passcodes. If it ever fails to parse, the daemon renames it to `moonflared.json.bad` and reseeds.
 
 ## System totals
 

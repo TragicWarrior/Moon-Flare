@@ -610,6 +610,20 @@ static int classic_action(void *v, const char *action, const char *json,
     return MF_ERR_UNSUPPORTED;
 }
 
+/* What the Add Module form asks for (mf_plugin_ops_t.describe).
+ * No IP needed when auto_net is on: the plugin finds the Classic. */
+static const char *classic_describe(void)
+{
+    return
+        "{\"bus\":\"modbus-tcp\",\"fields\":["
+        "{\"key\":\"poll_interval_s\",\"label\":\"Poll Interval\",\"hint\":\"(Seconds)\",\"type\":\"number\",\"default\":5.0},"
+        "{\"key\":\"modbus.ip\",\"label\":\"Modbus IP\",\"hint\":\"(IPv4)\",\"type\":\"string\"},"
+        "{\"key\":\"modbus.port\",\"label\":\"Modbus Port\",\"hint\":\"(TCP)\",\"type\":\"number\",\"default\":502},"
+        "{\"key\":\"modbus.unit_id\",\"label\":\"Modbus Unit\",\"hint\":\"(unit)\",\"type\":\"number\",\"default\":10},"
+        "{\"key\":\"modbus.auto_net\",\"label\":\"Modbus Auto\",\"hint\":\"(true/false)\",\"type\":\"bool\",\"default\":true}"
+        "]}";
+}
+
 static const mf_plugin_ops_t g_ops = {
     .abi = MF_PLUGIN_ABI,
     .ops_size = sizeof(mf_plugin_ops_t),
@@ -634,6 +648,7 @@ static const mf_plugin_ops_t g_ops = {
     .probe_prepare_fds = classic_probe_prepare_fds,
     .probe_result = classic_probe_result,
     .probe_close = classic_probe_close,
+    .describe = classic_describe,
 };
 
 size_t mf_plugin_entries(const mf_plugin_ops_t **out)

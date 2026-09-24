@@ -777,7 +777,7 @@ void mf_dash_shutdown(void)
             vk_box_set_widget(g_sys_col[1], i, NULL, VK_INHERIT_NONE);
         for (i = 0; i < SYS_ROWS; i++)
         {
-            vk_progress_destroy(g_sys_mt[i]);
+            vk_widget_destroy(VK_WIDGET(g_sys_mt[i]));
             g_sys_mt[i] = NULL;
             vk_label_destroy(g_sys_gap[i]);
             g_sys_gap[i] = NULL;

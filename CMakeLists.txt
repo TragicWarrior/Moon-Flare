@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 project(moon-flare
-    VERSION 0.2.0
+    VERSION 0.3.0
     DESCRIPTION "Moon Flare: multi-kind energy dashboard (daemon, REST, plugins, TUI)"
     LANGUAGES C)
 
@@ -80,6 +80,7 @@ add_executable(moonflare
     src/tui/http_client.c
     src/tui/layout.c
     src/tui/mouse.c
+    src/tui/picker.c
     src/system/system.c
     src/config/config.c)
 target_include_directories(moonflare PRIVATE
@@ -284,6 +285,15 @@ target_include_directories(test_loader PRIVATE
     ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src/plugin)
 target_link_libraries(test_loader PRIVATE ${CMAKE_DL_LIBS})
 add_test(NAME loader COMMAND test_loader $<TARGET_FILE_DIR:mf_stub>)
+# The same stub built like a pre-0.3.0 plugin (short ops entries).
+add_library(mf_stub_old SHARED tests/stub_plugin.c)
+target_include_directories(mf_stub_old PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_compile_definitions(mf_stub_old PRIVATE MF_STUB_OLD_ABI)
+set_target_properties(mf_stub_old PROPERTIES
+    PREFIX "lib" OUTPUT_NAME "mf_stub"
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/stub_old_plugins)
+add_test(NAME loader_old_abi
+         COMMAND test_loader $<TARGET_FILE_DIR:mf_stub_old> old)
 
 add_executable(fake_classic tests/fake_classic.c)
 target_compile_options(fake_classic PRIVATE ${MF_WARN})
@@ -329,8 +339,14 @@ add_test(NAME moonflare_dump_charger COMMAND moonflare --dump-layout charger)
 install(TARGETS moonflared moonflare RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(TARGETS mf_gatt RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR})
 # Match KD 20 / example plugin_dir: $prefix/lib/moon-flare, not multiarch LIBDIR.
-install(TARGETS mf_demo mf_charger_classic mf_battery_xd mf_battery_jk
+install(TARGETS mf_charger_classic mf_battery_xd mf_battery_jk
         LIBRARY DESTINATION lib/moon-flare)
+# The demo plugin fakes a battery and a charger for development.  Keep it
+# out of production plugin dirs unless asked for.
+option(MF_INSTALL_DEMO "Install the demo plugin (libmf_demo.so)" OFF)
+if(MF_INSTALL_DEMO)
+    install(TARGETS mf_demo LIBRARY DESTINATION lib/moon-flare)
+endif()
 install(FILES contrib/moonflared.service
         DESTINATION ${CMAKE_INSTALL_DATADIR}/moon-flare)
 install(FILES etc/moonflared.json.example etc/moonflare.json.example

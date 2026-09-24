@@ -228,20 +228,21 @@ static void test_roundtrip_example(void)
     int rc = mf_config_load(cfg_path, &cfg);
     assert_int_eq(0, rc, "roundtrip: load example");
 
-    /* Soak starter: demo + Classic on; XD/JK templates stay disabled. */
-    assert_int_eq(4, cfg.n_devices, "roundtrip: 4 devices");
+    /* Production starter: Classic on; XD/JK templates stay disabled.  No
+     * demo device (the demo plugin is not installed by default). */
+    assert_int_eq(3, cfg.n_devices, "roundtrip: 3 devices");
 
-    const mf_config_device_t *demo = find_dev(
-        &cfg, "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0004");
     const mf_config_device_t *classic = find_dev(
         &cfg, "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0003");
     const mf_config_device_t *xd = find_dev(
         &cfg, "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0001");
     const mf_config_device_t *jk = find_dev(
         &cfg, "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0002");
-    assert_int_eq(1, demo && classic && xd && jk ? 1 : 0,
-                  "roundtrip: all four example uuids present");
-    assert_int_eq(1, demo->enabled ? 1 : 0, "roundtrip: pack-demo enabled");
+    assert_int_eq(1, classic && xd && jk ? 1 : 0,
+                  "roundtrip: all three example uuids present");
+    for (int i = 0; i < cfg.n_devices; i++)
+        assert_int_eq(0, strcmp(cfg.devices[i].driver, "demo") == 0,
+                      "roundtrip: no demo device in the example");
     assert_int_eq(1, classic->enabled ? 1 : 0, "roundtrip: classic-1 enabled");
     assert_int_eq(0, xd->enabled ? 1 : 0, "roundtrip: pack-xd disabled");
     assert_int_eq(0, jk->enabled ? 1 : 0, "roundtrip: pack-jk disabled");
@@ -671,6 +672,47 @@ static void test_saved_config_reloads(void)
     printf("PASS: saved config reloads\n");
 }
 
+static void test_state_config(void)
+{
+    char dir[] = "/tmp/mf-state-XXXXXX";
+    char path[256];
+    mf_daemon_config_t cfg, back;
+    struct stat st;
+    cJSON *root;
+
+    assert_true(mkdtemp(dir) != NULL, "state tmpdir");
+    snprintf(path, sizeof(path), "%s/moonflared.json", dir);
+    setenv("MF_STATE_CONFIG", path, 1);
+    assert_str_eq(path, mf_config_state_path(), "state path from env");
+
+    mf_config_defaults(&back);
+    assert_int_eq(0, mf_config_load_state(&back), "no state file yet → 0");
+
+    mf_config_defaults(&cfg);
+    root = cJSON_Parse(
+        "{\"system\":{\"input_max_w\":5000},\"devices\":[{\"uuid\":"
+        "\"aaaaaaaa-bbbb-cccc-dddd-000000000021\",\"name\":\"jk\","
+        "\"active\":false,\"ble\":{\"password\":\"1234\"}}]}");
+    mf_config_apply_json(&cfg, root);
+    cJSON_Delete(root);
+    assert_int_eq(0, mf_config_save_state(&cfg), "state save");
+    assert_true(stat(path, &st) == 0 && (st.st_mode & 0777) == 0600,
+                "state file is 0600 (holds passcodes)");
+
+    assert_int_eq(1, mf_config_load_state(&back), "state load → 1");
+    assert_int_eq(1, back.n_devices, "state keeps the device");
+    assert_true(!back.devices[0].active, "state keeps active:false");
+    assert_true(back.system.input_max_w == 5000.0, "state keeps system");
+
+    write_text(path, "{not json");
+    assert_int_eq(-1, mf_config_load_state(&back), "bad state file → -1");
+
+    unsetenv("MF_STATE_CONFIG");
+    unlink(path);
+    rmdir(dir);
+    printf("PASS: state config\n");
+}
+
 /* ------------------------------------------------------------------ */
 /* main                                                               */
 /* ------------------------------------------------------------------ */
@@ -688,6 +730,7 @@ int main(void)
     test_overlay_name_persist();
     test_active_and_system();
     test_saved_config_reloads();
+    test_state_config();
 
     printf("\nAll config tests passed.\n");
     return 0;

@@ -16,6 +16,9 @@ typedef struct mf_plugin_lib {
 typedef struct mf_plugin_registry {
     mf_plugin_lib_t          libs[MF_MAX_PLUGIN_LIBS];
     int                      nlibs;
+    /* Each plugin table is copied into a zeroed full-size slot, so fields
+     * an older (shorter) plugin lacks read as NULL. */
+    mf_plugin_ops_t          store[MF_MAX_PLUGIN_OPS];
     const mf_plugin_ops_t   *ops[MF_MAX_PLUGIN_OPS];
     int                      nops;
 } mf_plugin_registry_t;
