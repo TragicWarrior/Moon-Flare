@@ -54,6 +54,7 @@ void mf_http_cli_pump(mf_http_cli_t *c, int readable, int writable, double now);
 int  mf_http_cli_get(mf_http_cli_t *c, const char *path);
 int  mf_http_cli_post(mf_http_cli_t *c, const char *path, const char *json);
 int  mf_http_cli_put(mf_http_cli_t *c, const char *path, const char *json);
+int  mf_http_cli_delete(mf_http_cli_t *c, const char *path);
 int  mf_http_cli_take_body(mf_http_cli_t *c, char *dst, size_t cap);
 
 #endif

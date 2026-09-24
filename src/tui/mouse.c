@@ -32,6 +32,10 @@ mf_mouse_handle(const MEVENT *mev)
         return r == 2 ? 2 : 1;
     }
 
+    /* Module picker (Add / Remove Module): keyboard only; sink clicks. */
+    if (mf_picker_open())
+        return 1;
+
     /* Help / settings: sink until dismissed. */
     if (mf_ui_help_open())
     {

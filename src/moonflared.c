@@ -246,10 +246,36 @@ int main(int argc, char **argv)
         openlog("moonflared", LOG_PID, LOG_DAEMON);
 
     mf_config_defaults(&g_cfg);
-    if (mf_config_load(config_path, &g_cfg) != 0)
-        LOG_W("config load failed; using defaults");
-    if (mf_config_load_overlay(&g_cfg) != 0)
-        LOG_W("settings overlay not loaded");
+    {
+        const char *state = mf_config_state_path();
+        int rc = mf_config_load_state(&g_cfg);
+
+        if (rc > 0)
+            LOG_I("config: %s", state);
+        else
+        {
+            if (rc < 0)
+            {
+                /* Keep the bad file for inspection; seed a fresh one. */
+                char bad[300];
+
+                snprintf(bad, sizeof(bad), "%s.bad", state);
+                LOG_W("config: %s unreadable; moved to %s", state, bad);
+                (void)rename(state, bad);
+                mf_config_defaults(&g_cfg);
+            }
+            if (mf_config_load(config_path, &g_cfg) != 0)
+                LOG_W("config load failed; using defaults");
+            if (mf_config_load_overlay(&g_cfg) != 0)
+                LOG_W("settings overlay not loaded");
+            if (mf_config_save_state(&g_cfg) == 0)
+                LOG_I("config: seeded %s from %s", state,
+                      config_path ? config_path : "the config search path");
+            else
+                LOG_W("config: cannot write %s; changes will not persist",
+                      state);
+        }
+    }
     if (!listen_from_cli && g_cfg.listen[0])
         listen_spec = g_cfg.listen;
     if (!plugin_dir && g_cfg.plugin_dir[0])

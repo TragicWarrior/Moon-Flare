@@ -74,6 +74,13 @@ void mf_ui_request_history(const char *id);
 void mf_ui_handle_history(void);
 
 void mf_devset_show(const char *id, const char *name, const char *json);
+/* Add Module form: the settings form with every field editable, seeded
+ * from a driver's defaults; Save posts a new device instead of a PUT. */
+void mf_devset_show_add(const char *kind, const char *driver, const char *json);
+int  mf_devset_is_add(void);
+const char *mf_devset_add_kind(void);
+const char *mf_devset_add_driver(void);
+void mf_devset_set_error(const char *msg);
 void mf_devset_apply_json(const char *json);
 void mf_devset_close(void);
 int  mf_devset_open(void);
@@ -88,12 +95,30 @@ int mf_devset_get_graph_interval(void);
 void mf_devset_set_graph_interval(int minutes);
 
 void mf_confirm_show(const char *name, const char *action);
+/* General y/n prompt; `key` comes back from mf_confirm_action(). */
+void mf_confirm_show_msg(const char *title, const char *msg, const char *key);
 void mf_confirm_close(void);
 int  mf_confirm_open(void);
 int  mf_confirm_handle(wint_t c);
 int  mf_confirm_mouse(int x, int y, mmask_t bstate);
 const char *mf_confirm_action(void);
 
+/* Modal pick-one list (picker.c). */
+#define MF_PICK_NONE    0
+#define MF_PICK_HANDLED 1
+#define MF_PICK_CHOSEN  2
+#define MF_PICK_CANCEL  3
+void mf_picker_show(const char *tag, const char *title,
+                    const char *const *rows, int n,
+                    const char *hint, const char *empty);
+void mf_picker_close(void);
+int  mf_picker_open(void);
+int  mf_picker_key(wint_t c);
+int  mf_picker_index(void);
+const char *mf_picker_tag(void);
+
+void mf_ui_add_module(void);
+void mf_ui_remove_module(void);
 void mf_ui_open_device_view(int idx);
 void mf_ui_open_device_settings(int idx);
 void mf_ui_show_dashboard(void);

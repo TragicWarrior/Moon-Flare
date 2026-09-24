@@ -40,6 +40,10 @@ static int          g_row_h[MAX_FIELDS];
 static int          g_shown[MAX_FIELDS];
 static char         g_name[32];
 static char         g_id[40];
+/* Add Module mode: every field editable, no device-only extras. */
+static int          g_add_mode;
+static char         g_add_kind[16];
+static char         g_add_driver[16];
 static char         g_keys[MAX_FIELDS][40];
 static char         g_payload[2048];
 
@@ -79,6 +83,8 @@ static void field_caption(const char *key, char *lab, size_t lab_cap,
         { "graph_interval_min", "Graph Interval", "(minutes)" },
         { "ble.address", "BLE Address", "(MAC)" },
         { "ble.adapter", "BLE Adapter", "(hciN)" },
+        { "ble.protocol", "BLE Protocol", "(JK02_32S)" },
+        { "ble.password", "App Passcode", "(optional)" },
         { "usb.path", "USB Path", "(device)" },
         { "usb.serial_id", "USB Serial", "(id)" },
         { "usb.by_id", "USB By-ID", "(symlink)" },
@@ -88,6 +94,7 @@ static void field_caption(const char *key, char *lab, size_t lab_cap,
         { "modbus.ip", "Modbus IP", "(IPv4)" },
         { "modbus.port", "Modbus Port", "(TCP)" },
         { "modbus.unit_id", "Modbus Unit", "(unit)" },
+        { "modbus.auto_net", "Modbus Auto", "(true/false)" },
         { "balance_trigger_v", "Balance Trigger", "(delta mV)" },
         { "start_balance_v", "Start Balance", "(Volts)" },
         { "cell_ovp_v", "Cell OVP", "(protect)" },
@@ -453,7 +460,7 @@ static int skip_form_key(const char *k)
     return k && (strcmp(k, "balance_trigger_v") == 0 ||
                  strcmp(k, "start_balance_v") == 0 ||
                  strcmp(k, "cell_rcv_v") == 0 ||
-                 strcmp(k, "ble.adapter") == 0 ||
+                 (strcmp(k, "ble.adapter") == 0 && !g_add_mode) ||
                  strcmp(k, "graph_interval_min") == 0);
 }
 
@@ -473,6 +480,9 @@ static int field_readonly(const char *key)
 
     if (!key)
         return 1;
+    /* A new device's transport is exactly what the form is for. */
+    if (g_add_mode)
+        return strcmp(key, "uuid") == 0;
     for (i = 0; i < sizeof(ro) / sizeof(ro[0]); i++)
     {
         if (strcmp(key, ro[i]) == 0)
@@ -1005,7 +1015,8 @@ static void build_form(int iw, int ih, const char *json)
                 nedit++;
         }
         nedit++; /* name */
-        nro++;   /* uuid */
+        if (!g_add_mode)
+            nro++;   /* uuid */
     }
     n = nedit + nro;
     if (n < 2)
@@ -1028,7 +1039,7 @@ static void build_form(int iw, int ih, const char *json)
     if (root)
         json_scalar(cJSON_GetObjectItemCaseSensitive(root, "name"),
                     buf, sizeof(buf));
-    add_field("name", buf[0] ? buf : g_name, row_h, iw - 2);
+    add_field("name", buf[0] || g_add_mode ? buf : g_name, row_h, iw - 2);
 
     buf[0] = '\0';
     if (root)
@@ -1042,7 +1053,8 @@ static void build_form(int iw, int ih, const char *json)
                     buf, sizeof(buf));
     add_field("capture_interval_s", buf[0] ? buf : "10", row_h, iw - 2);
 
-    add_field("graph_interval_min", "30", row_h, iw - 2);
+    if (!g_add_mode)
+        add_field("graph_interval_min", "30", row_h, iw - 2);
 
     add_json_group(root, 0, row_h, iw - 2, MAX_FIELDS);
 
@@ -1054,7 +1066,8 @@ static void build_form(int iw, int ih, const char *json)
     if (buf[0])
         add_field("cell_rcv_v", buf, 1, iw - 2);
 
-    if (root && (cJSON_GetObjectItemCaseSensitive(root, "cell_ovp_v") ||
+    if (root && !g_add_mode &&
+        (cJSON_GetObjectItemCaseSensitive(root, "cell_ovp_v") ||
                  cJSON_GetObjectItemCaseSensitive(root, "ble.address") ||
                  cJSON_GetObjectItemCaseSensitive(root, "balance_trigger_v") ||
                  cJSON_GetObjectItemCaseSensitive(root, "start_balance_v")))
@@ -1077,7 +1090,8 @@ static void build_form(int iw, int ih, const char *json)
     if (root)
         json_scalar(cJSON_GetObjectItemCaseSensitive(root, "uuid"),
                     buf, sizeof(buf));
-    add_field("uuid", buf[0] ? buf : g_id, 1, iw - 2);
+    if (!g_add_mode)
+        add_field("uuid", buf[0] ? buf : g_id, 1, iw - 2);
 
     if (root)
         cJSON_Delete(root);
@@ -1102,8 +1116,8 @@ static void build_form(int iw, int ih, const char *json)
     g_bar = vk_box_create(iw - 2, 3, VK_BOX_HORIZONTAL, 3);
     vk_box_set_homogeneous(g_bar, false);
     style_menu(VK_WIDGET(g_bar));
-    g_btn_save = mk_btn("Save", on_save_btn);
-    g_btn_exit = mk_btn("Exit", on_exit_btn);
+    g_btn_save = mk_btn(g_add_mode ? "Add" : "Save", on_save_btn);
+    g_btn_exit = mk_btn(g_add_mode ? "Cancel" : "Exit", on_exit_btn);
     g_fill = vk_filler_create();
     style_menu(VK_WIDGET(g_fill));
     vk_widget_set_expand(VK_WIDGET(g_fill));
@@ -1153,6 +1167,7 @@ void mf_devset_close(void)
         g_win = NULL;
     }
     g_open = 0;
+    g_add_mode = 0;
     mf_ui_front_clear();
     mf_ui_refresh();
 }
@@ -1331,12 +1346,59 @@ static void paint_dialog(void)
     mf_ui_refresh();
 }
 
+static void show_form(const char *id, const char *name, const char *json);
+
 void mf_devset_show(const char *id, const char *name, const char *json)
+{
+    mf_devset_close();
+    show_form(id, name, json);
+}
+
+void mf_devset_show_add(const char *kind, const char *driver, const char *json)
+{
+    char cap[40];
+
+    mf_devset_close();
+    g_add_mode = 1;
+    snprintf(g_add_kind, sizeof(g_add_kind), "%s", kind ? kind : "");
+    snprintf(g_add_driver, sizeof(g_add_driver), "%s", driver ? driver : "");
+    snprintf(cap, sizeof(cap), "Add %s / %s", g_add_kind, g_add_driver);
+    show_form("", cap, json);
+}
+
+int mf_devset_is_add(void)
+{
+    return g_open && g_add_mode;
+}
+
+const char *mf_devset_add_kind(void)
+{
+    return g_add_kind;
+}
+
+const char *mf_devset_add_driver(void)
+{
+    return g_add_driver;
+}
+
+/* Show a daemon error in the title bar; the form stays open to fix it. */
+void mf_devset_set_error(const char *msg)
+{
+    char cap[72];
+
+    if (!g_open || !g_win)
+        return;
+    snprintf(cap, sizeof(cap), " %.66s ", msg ? msg : "error");
+    vk_window_set_title(g_win, cap);
+    paint_dialog();
+    mf_ui_refresh();
+}
+
+static void show_form(const char *id, const char *name, const char *json)
 {
     int x, y, w, h;
     char cap[40];
 
-    mf_devset_close();
     snprintf(g_id, sizeof(g_id), "%s", id ? id : "");
     snprintf(g_name, sizeof(g_name), "%s", name ? name : "device");
     mf_tui_devsettings_geom(mf_ui_cols(), mf_ui_rows(), &x, &y, &w, &h);
@@ -1401,18 +1463,35 @@ int mf_devset_key(wint_t c)
         return 1;
     }
 #endif
-    if (c == KEY_UP || c == KEY_DOWN || c == KEY_PPAGE || c == KEY_NPAGE)
+    /* Up/Down step through the fields and buttons (no wrap); the form
+       scrolls to keep the focus in view.  PgUp/PgDn scroll the form, which
+       still reaches the read-only rows below the last field. */
+    if (c == KEY_UP || c == KEY_DOWN)
     {
-        int dy = 1;
+        int f = g_focus + (c == KEY_UP ? -1 : 1);
 
-        if (c == KEY_UP)
-            dy = -1;
-        else if (c == KEY_PPAGE)
-            dy = g_form_h > 0 ? -g_form_h : -1;
-        else if (c == KEY_NPAGE)
-            dy = g_form_h > 0 ? g_form_h : 1;
+        if (f >= 0 && f < nbtn)
+        {
+            set_field_focus(f);
+            scroll_focus_into_view();
+            paint_dialog();
+        }
+        return 1;
+    }
+    if (c == KEY_PPAGE || c == KEY_NPAGE)
+    {
+        int dy = c == KEY_PPAGE ? (g_form_h > 0 ? -g_form_h : -1)
+                                : (g_form_h > 0 ? g_form_h : 1);
+
         if (form_nudge(dy))
             paint_dialog();
+        return 1;
+    }
+    /* Left/Right on a button: switch between the two buttons. */
+    if ((c == KEY_LEFT || c == KEY_RIGHT) && g_focus >= g_nedit)
+    {
+        set_field_focus(c == KEY_LEFT ? g_nedit : g_nedit + 1);
+        paint_dialog();
         return 1;
     }
     if (c == '\n' || c == KEY_ENTER)
@@ -1503,11 +1582,25 @@ const char *mf_confirm_action(void)
 
 void mf_confirm_show(const char *name, const char *key)
 {
+    const char *k = key ? key : "charge";
+    const char *msg;
+
+    if (strcmp(k, "balance") == 0)
+        msg = "Turn off balancer?";
+    else if (strcmp(k, "discharge") == 0)
+        msg = "Turn off discharge MOSFET?";
+    else
+        msg = "Turn off charge MOSFET?";
+    mf_confirm_show_msg(name, msg, k);
+}
+
+void mf_confirm_show_msg(const char *name, const char *text, const char *key)
+{
     int x, y, w, h;
     char cap[40], msg[64];
 
     mf_confirm_close();
-    snprintf(g_cf_key, sizeof(g_cf_key), "%s", key ? key : "charge");
+    snprintf(g_cf_key, sizeof(g_cf_key), "%s", key ? key : "");
     mf_tui_confirm_geom(mf_ui_cols(), mf_ui_rows(), &x, &y, &w, &h);
     snprintf(cap, sizeof(cap), " %s ", name ? name : "device");
     g_cf_win = vk_window_create(w, h);
@@ -1521,12 +1614,7 @@ void mf_confirm_show(const char *name, const char *key)
 
     g_cf_l1 = vk_label_create(w - 4);
     vk_widget_set_colors(VK_WIDGET(g_cf_l1), COL_TEXT, COL_MENU);
-    if (strcmp(g_cf_key, "balance") == 0)
-        snprintf(msg, sizeof(msg), "Turn off balancer?");
-    else if (strcmp(g_cf_key, "discharge") == 0)
-        snprintf(msg, sizeof(msg), "Turn off discharge MOSFET?");
-    else
-        snprintf(msg, sizeof(msg), "Turn off charge MOSFET?");
+    snprintf(msg, sizeof(msg), "%s", text ? text : "");
     vk_label_set_text(g_cf_l1, msg);
     mf_ui_attach(VK_WIDGET(g_cf_l1), x + 2, y + 2);
     vk_label_update(g_cf_l1);

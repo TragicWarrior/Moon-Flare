@@ -5,7 +5,54 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - 2026-09-23
+## [0.3.0] - 2026-09-23
+
+### Added
+
+- Devices → Add Module and Remove Module in the TUI. Before this, both menu
+  items did nothing. Add Module lists the drivers the daemon has loaded,
+  then opens a form with that driver's fields and defaults (USB path and
+  baud for XD, BLE address and adapter for JK, Modbus IP, port and unit for
+  the Classic). If the daemon refuses, for example because the name is in
+  use, the error shows in the form's title and the form stays open. Remove
+  Module picks a module from a list and asks to confirm.
+- `GET /api/v1/drivers` returns each driver's `bus`, `settings_schema`
+  (field → type) and `defaults`, so clients can build an add form without
+  knowing the drivers. Plugins are unchanged.
+- `POST /api/v1/devices` accepts dotted keys (`"usb.path": "/dev/ttyUSB0"`)
+  as well as nested objects, and fills in the driver's `bus` if it is left
+  out.
+
+### Fixed
+
+- The TUI crashed on quit (glibc abort from a double free) while tearing
+  down the System bars. It now uses the same teardown as the pack view. The
+  root cause was in libviper's `vk_progress_destroy()`, fixed in libviper
+  7.6.2.
+- Arrow keys now move between fields and buttons in the Add Module and
+  device settings form, File → General, and the connection profile editor.
+  Up/Down step through the fields and buttons, and Left/Right switch
+  between the two buttons. Before this they did nothing unless the form
+  could scroll. In the module pickers and the Connections list the
+  selection did move, but the highlight was not redrawn.
+
+### Changed
+
+- `cmake --install` no longer installs the demo plugin (`libmf_demo.so`)
+  into the production plugin directory, so "demo" no longer appears as a
+  driver in Add Module. Configure with `-DMF_INSTALL_DEMO=ON` to install it.
+  The example `moonflared.json` no longer has a `pack-demo` device.
+- The daemon now owns its config at `/var/lib/moonflare/moonflared.json`
+  (`$STATE_DIRECTORY/moonflared.json`). On first start it seeds that file
+  from `/etc/moonflare/moonflared.json` (or `--config`) plus the older
+  `settings.json` overlay; after that it reads only the state file. Every
+  accepted change is saved to it, including adds, removes and
+  `PUT /api/v1/config`, none of which were saved before. On a machine where
+  `/etc/moonflare` is not writable, an added module used to vanish on
+  restart and a removed one came back. `POST /config/save` and
+  `/config/load` now use the state file. The state file is mode 0600
+  because it holds JK app passcodes.
+
 
 ### Added
 

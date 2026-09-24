@@ -757,9 +757,86 @@ static void test_active(void)
           "config records inactive for saving");
 }
 
+static char g_state[256];
+
+static char *read_state(void)
+{
+    FILE *f = fopen(g_state, "r");
+    static char buf[65536];
+    size_t n;
+
+    if (!f)
+        return NULL;
+    n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+    return buf;
+}
+
+static void test_add_remove_persist(void)
+{
+    const char *body =
+        "{\"name\":\"added-xd\",\"kind\":\"battery\",\"driver\":\"demo\","
+        "\"usb.path\":\"/dev/ttyUSB7\",\"usb.baud\":19200}";
+    mf_rest_request_t req;
+    mf_rest_response_t resp;
+    char path[192];
+    const char *id;
+    char *st;
+
+    printf("12. add/remove persist to the state config\n");
+
+    memset(&req, 0, sizeof(req));
+    req.method = "GET";
+    req.path = "/api/v1/drivers";
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 &&
+          strstr(resp.body, "\"settings_schema\"") &&
+          strstr(resp.body, "\"poll_interval_s\":\"number\""),
+          "drivers carry settings_schema");
+
+    memset(&req, 0, sizeof(req));
+    req.method = "POST";
+    req.path = "/api/v1/devices";
+    req.body = body;
+    req.body_len = strlen(body);
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 201,
+          "POST with dotted keys → 201");
+    id = strrchr(resp.location, '/');
+    check(id && id[1], "added id");
+    if (!id)
+        return;
+    id++;
+    st = read_state();
+    check(st && strstr(st, "added-xd") && strstr(st, "\"/dev/ttyUSB7\"") &&
+          strstr(st, "\"baud\":19200"),
+          "add saved to state config, dotted keys nested");
+
+    snprintf(path, sizeof(path), "/api/v1/devices/%s", id);
+    memset(&req, 0, sizeof(req));
+    req.method = "DELETE";
+    req.path = path;
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 202,
+          "DELETE → 202");
+    st = read_state();
+    check(st && !strstr(st, "added-xd"), "remove saved to state config");
+}
+
 int main(void)
 {
     srand((unsigned)time(NULL));
+
+    /* Never touch a real /var/lib/moonflare: save to a temp state file. */
+    {
+        char dir[] = "/tmp/mf-routes-XXXXXX";
+
+        if (!mkdtemp(dir))
+            return 1;
+        snprintf(g_state, sizeof(g_state), "%s/moonflared.json", dir);
+        setenv("MF_STATE_CONFIG", g_state, 1);
+    }
 
     mf_devices_init(NULL, NULL, NULL, NULL);
     mf_rest_init();
@@ -775,6 +852,7 @@ int main(void)
     test_delete();
     test_pr10();
     test_active();
+    test_add_remove_persist();
     test_config_apply();
 
     printf("\n");

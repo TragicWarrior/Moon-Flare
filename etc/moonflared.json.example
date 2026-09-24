@@ -12,14 +12,6 @@
   },
   "devices": [
     {
-      "uuid": "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0004",
-      "name": "pack-demo",
-      "kind": "battery",
-      "driver": "demo",
-      "enabled": true,
-      "poll_interval_s": 2.0
-    },
-    {
       "uuid": "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0003",
       "name": "classic-1",
       "kind": "charger",

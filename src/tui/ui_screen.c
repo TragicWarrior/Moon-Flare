@@ -88,6 +88,20 @@ static char g_view_path[192];
 static char g_view_json[65536];
 static char g_view_name[32];
 static int g_devset_fetch;
+/* Add Module: 1 = want GET /drivers, 2 = sent; g_add_wait = POST pending. */
+static int g_add_fetch;
+static int g_add_wait;
+static char g_rm_id[40];
+static char g_rm_name[32];
+
+#define MAX_DRIVERS 16
+typedef struct {
+    char kind[16];
+    char driver[16];
+    char form[1024];     /* seed JSON for the Add form */
+} add_driver_t;
+static add_driver_t g_drv[MAX_DRIVERS];
+static int g_ndrv;
 static int g_devset_wait_ovp;
 static int g_devset_ovp_tries;
 static double g_devset_next_try;
@@ -554,6 +568,34 @@ static void apply_settings(void)
     close_settings();
 }
 
+/* Focus ring: input(0) OK(1) Cancel(2). */
+static void set_settings_focus(int f)
+{
+    if (g_set_focus == 0)
+        vk_input_show_cursor(g_set_in[0], false);
+    g_set_focus = f;
+    if (g_set_focus == 0)
+    {
+        vk_input_show_cursor(g_set_in[0], true);
+        vk_input_update(g_set_in[0]);
+    }
+    if (g_set_ok)
+    {
+        vk_widget_set_colors(VK_WIDGET(g_set_ok),
+                             g_set_focus == 1 ? COLOR_YELLOW : COL_TEXT,
+                             COL_MENU);
+        vk_button_update(g_set_ok);
+    }
+    if (g_set_cancel)
+    {
+        vk_widget_set_colors(VK_WIDGET(g_set_cancel),
+                             g_set_focus == 2 ? COLOR_YELLOW : COL_TEXT,
+                             COL_MENU);
+        vk_button_update(g_set_cancel);
+    }
+    paint_settings();
+}
+
 static int settings_key(wint_t c)
 {
     vk_input_t *in;
@@ -564,31 +606,22 @@ static int settings_key(wint_t c)
         close_settings();
         return 1;
     }
-    if (c == '\t')
+    if (c == '\t' || c == KEY_BTAB)
     {
-        if (g_set_focus == 0)
-            vk_input_show_cursor(g_set_in[0], false);
-        g_set_focus = (g_set_focus + 1) % 3;
-        if (g_set_focus == 0)
-        {
-            vk_input_show_cursor(g_set_in[0], true);
-            vk_input_update(g_set_in[0]);
-        }
-        if (g_set_ok)
-        {
-            vk_widget_set_colors(VK_WIDGET(g_set_ok),
-                                 g_set_focus == 1 ? COLOR_YELLOW : COL_TEXT,
-                                 COL_MENU);
-            vk_button_update(g_set_ok);
-        }
-        if (g_set_cancel)
-        {
-            vk_widget_set_colors(VK_WIDGET(g_set_cancel),
-                                 g_set_focus == 2 ? COLOR_YELLOW : COL_TEXT,
-                                 COL_MENU);
-            vk_button_update(g_set_cancel);
-        }
-        paint_settings();
+        set_settings_focus((g_set_focus + (c == '\t' ? 1 : 2)) % 3);
+        return 1;
+    }
+    if (c == KEY_UP || c == KEY_DOWN)
+    {
+        int f = g_set_focus + (c == KEY_UP ? -1 : 1);
+
+        if (f >= 0 && f <= 2)
+            set_settings_focus(f);
+        return 1;
+    }
+    if ((c == KEY_LEFT || c == KEY_RIGHT) && g_set_focus >= 1)
+    {
+        set_settings_focus(c == KEY_LEFT ? 1 : 2);
         return 1;
     }
     if (c == '\n' || c == KEY_ENTER)
@@ -874,6 +907,7 @@ static int connections_key(wint_t c)
             g_conn_sel--;
             vk_listbox_set_curr(g_conn_list, g_conn_sel);
             vk_listbox_update(g_conn_list);
+            vk_box_update(g_conn_vbox);   /* list sits in a box */
             vk_window_update(g_conn_win);
             mf_ui_refresh();
         }
@@ -887,6 +921,7 @@ static int connections_key(wint_t c)
             g_conn_sel++;
             vk_listbox_set_curr(g_conn_list, g_conn_sel);
             vk_listbox_update(g_conn_list);
+            vk_box_update(g_conn_vbox);   /* list sits in a box */
             vk_window_update(g_conn_win);
             mf_ui_refresh();
         }
@@ -1431,6 +1466,23 @@ static int editor_key(wint_t c)
         paint_editor();
         return 1;
     }
+    if (c == KEY_UP || c == KEY_DOWN)
+    {
+        int f = g_ed_focus + (c == KEY_UP ? -1 : 1);
+
+        if (f >= 0 && f <= 4)
+        {
+            g_ed_focus = f;
+            paint_editor();
+        }
+        return 1;
+    }
+    if ((c == KEY_LEFT || c == KEY_RIGHT) && g_ed_focus >= 3)
+    {
+        g_ed_focus = c == KEY_LEFT ? 3 : 4;
+        paint_editor();
+        return 1;
+    }
     if (c == '\n' || c == KEY_ENTER)
     {
         if (g_ed_focus == 4)
@@ -1579,6 +1631,162 @@ static void post_switch(const char *key, int on)
     snprintf(payload, sizeof(payload),
              "{\"key\":\"%s\",\"value\":%s}", key, on ? "true" : "false");
     (void)mf_http_cli_post(&g_cli, path, payload);
+}
+
+/* ---- Devices -> Add / Remove Module ------------------------------- */
+
+void mf_ui_add_module(void)
+{
+    if (g_cli.state != MF_CONN_UP)
+        return;
+    g_add_fetch = 1;          /* the main loop sends GET /drivers */
+}
+
+void mf_ui_remove_module(void)
+{
+    static char rows[32][64];
+    const char *rp[32];
+    int i, n = mf_dash_catalog_n();
+
+    if (n > 32)
+        n = 32;
+    for (i = 0; i < n; i++)
+    {
+        snprintf(rows[i], sizeof(rows[i]), "%-20.20s %s",
+                 mf_dash_catalog_name(i), mf_dash_catalog_kind(i));
+        rp[i] = rows[i];
+    }
+    mf_picker_show("remove", "Remove Module", rp, n,
+                   "Enter=remove  Esc=close", "no modules");
+}
+
+/* Seed JSON for the Add form: name first, then each schema key with the
+ * driver's default ("" when it has none). */
+static void add_form_seed(const cJSON *d, char *out, size_t cap)
+{
+    const cJSON *schema = cJSON_GetObjectItemCaseSensitive(d, "settings_schema");
+    const cJSON *dflt = cJSON_GetObjectItemCaseSensitive(d, "defaults");
+    const cJSON *it;
+    cJSON *o = cJSON_CreateObject();
+    char *s;
+
+    cJSON_AddStringToObject(o, "name", "");
+    cJSON_ArrayForEach(it, schema)
+    {
+        const cJSON *v = cJSON_GetObjectItemCaseSensitive(dflt, it->string);
+
+        if (v)
+            cJSON_AddItemToObject(o, it->string, cJSON_Duplicate(v, 1));
+        else
+            cJSON_AddStringToObject(o, it->string, "");
+    }
+    s = cJSON_PrintUnformatted(o);
+    snprintf(out, cap, "%s", s ? s : "{}");
+    free(s);
+    cJSON_Delete(o);
+}
+
+static void show_driver_picker(const char *json)
+{
+    static char rows[MAX_DRIVERS][48];
+    const char *rp[MAX_DRIVERS];
+    cJSON *root = cJSON_Parse(json);
+    const cJSON *arr = cJSON_GetObjectItemCaseSensitive(root, "drivers");
+    const cJSON *d;
+
+    g_ndrv = 0;
+    cJSON_ArrayForEach(d, arr)
+    {
+        const cJSON *k = cJSON_GetObjectItemCaseSensitive(d, "kind");
+        const cJSON *dr = cJSON_GetObjectItemCaseSensitive(d, "driver");
+        add_driver_t *a;
+
+        if (g_ndrv >= MAX_DRIVERS || !cJSON_IsString(k) || !cJSON_IsString(dr))
+            continue;
+        a = &g_drv[g_ndrv];
+        snprintf(a->kind, sizeof(a->kind), "%s", k->valuestring);
+        snprintf(a->driver, sizeof(a->driver), "%s", dr->valuestring);
+        add_form_seed(d, a->form, sizeof(a->form));
+        snprintf(rows[g_ndrv], sizeof(rows[g_ndrv]), "%-10s %s",
+                 a->kind, a->driver);
+        rp[g_ndrv] = rows[g_ndrv];
+        g_ndrv++;
+    }
+    cJSON_Delete(root);
+    mf_picker_show("add", "Add Module", rp, g_ndrv,
+                   "Enter=choose  Esc=close", "no drivers loaded");
+}
+
+static void on_pick(void)
+{
+    int i = mf_picker_index();
+
+    if (strcmp(mf_picker_tag(), "add") == 0)
+    {
+        mf_picker_close();
+        if (i >= 0 && i < g_ndrv)
+            mf_devset_show_add(g_drv[i].kind, g_drv[i].driver, g_drv[i].form);
+        return;
+    }
+    if (strcmp(mf_picker_tag(), "remove") == 0)
+    {
+        mf_picker_close();
+        if (i < 0 || i >= mf_dash_catalog_n())
+            return;
+        snprintf(g_rm_id, sizeof(g_rm_id), "%s", mf_dash_catalog_id(i));
+        snprintf(g_rm_name, sizeof(g_rm_name), "%s", mf_dash_catalog_name(i));
+        mf_confirm_show_msg(g_rm_name, "Remove this module?", "remove");
+    }
+}
+
+static void remove_confirmed(void)
+{
+    char path[192];
+
+    if (!g_rm_id[0])
+        return;
+    /* Leave its view first if it is the module being removed. */
+    if (g_view_idx >= 0 &&
+        strcmp(mf_dash_catalog_id(g_view_idx), g_rm_id) == 0)
+        mf_ui_show_dashboard();
+    snprintf(path, sizeof(path), "/api/v1/devices/%s", g_rm_id);
+    (void)mf_http_cli_delete(&g_cli, path);
+    g_rm_id[0] = '\0';
+    g_last_get = 0;
+}
+
+/* The Add Module form's payload plus kind/driver, as POST /devices takes it. */
+static void post_new_module(void)
+{
+    const char *p = mf_devset_payload();
+    char body[2048];
+
+    snprintf(body, sizeof(body), "{\"kind\":\"%s\",\"driver\":\"%s\"%s%s",
+             mf_devset_add_kind(), mf_devset_add_driver(),
+             (p && p[1] && p[1] != '}') ? "," : "}",
+             (p && p[1] && p[1] != '}') ? p + 1 : "");
+    if (mf_http_cli_post(&g_cli, "/api/v1/devices", body) >= 0)
+        g_add_wait = 1;
+}
+
+static void add_reply(const char *json)
+{
+    cJSON *root = cJSON_Parse(json);
+    const cJSON *err = cJSON_GetObjectItemCaseSensitive(root, "error");
+    char msg[80];
+
+    g_add_wait = 0;
+    if (cJSON_IsString(err))
+    {
+        snprintf(msg, sizeof(msg), "Add failed: %s", err->valuestring);
+        mf_devset_set_error(msg);
+    }
+    else
+    {
+        mf_devset_close();
+        g_last_get = 0;
+    }
+    cJSON_Delete(root);
 }
 
 const char *mf_ui_poll_path(void)
@@ -1959,11 +2167,16 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
 
         if (g_cli.state == MF_CONN_UP && !g_cli.inflight &&
             t - g_last_get >= g_refresh && !g_devset_fetch &&
-             !mf_devset_open())
+             !g_add_fetch && !mf_devset_open())
             {
             if (mf_http_cli_get(&g_cli, mf_ui_poll_path()) == 1)
                 g_last_get = t;
         }
+        if (g_add_fetch == 1 && g_cli.state == MF_CONN_UP && !g_cli.inflight &&
+            mf_http_cli_get(&g_cli, "/api/v1/drivers") == 1)
+            g_add_fetch = 2;
+        if (g_add_fetch && g_cli.state != MF_CONN_UP)
+            g_add_fetch = 0;
         {
             const char *tag = "WAIT";
             static char last_json[65536];
@@ -2017,7 +2230,18 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
                      strstr(last_json, "\"chargers\"") != NULL);
                 int is_devset = last_json[0] &&
                     strstr(last_json, "\"uuid\"") != NULL && !is_status;
-                if (g_devset_fetch && mf_devset_open())
+                if (g_add_fetch == 2 && strstr(last_json, "\"drivers\""))
+                {
+                    g_add_fetch = 0;
+                    show_driver_picker(last_json);
+                }
+                else if (g_add_wait && mf_devset_is_add() && !is_status &&
+                         (strstr(last_json, "\"error\"") ||
+                          strstr(last_json, "\"id\"")))
+                {
+                    add_reply(last_json);
+                }
+                else if (g_devset_fetch && mf_devset_open())
                 {
                     g_devset_fetch = 0;
                     if (is_devset && !mf_devset_touched())
@@ -2064,7 +2288,13 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
         if (key == KEY_MOUSE)
         {
             int mr = mf_mouse_handle(&mev);
-            if (mr == 2 && mf_confirm_open() && g_view_idx >= 0)
+            if (mr == 2 && mf_confirm_open() &&
+                strcmp(mf_confirm_action(), "remove") == 0)
+            {
+                mf_confirm_close();
+                remove_confirmed();
+            }
+            else if (mr == 2 && mf_confirm_open() && g_view_idx >= 0)
             {
                 char path[192], payload[80];
                 snprintf(path, sizeof(path),
@@ -2075,6 +2305,11 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
                          mf_confirm_action());
                 mf_confirm_close();
                 (void)mf_http_cli_post(&g_cli, path, payload);
+            }
+            else if (mr == 2 && mf_devset_is_add())
+            {
+                if (!g_add_wait)
+                    post_new_module();
             }
             else if (mr == 2 && mf_devset_open())
             {
@@ -2107,10 +2342,21 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
                 close_help();
                 continue;
             }
+            if (mf_picker_open())
+            {
+                if (mf_picker_key((wint_t)key) == MF_PICK_CHOSEN)
+                    on_pick();
+                continue;
+            }
             if (mf_confirm_open())
             {
                 int cr = mf_confirm_handle((wint_t)key);
-                if (cr == 2 && g_view_idx >= 0)
+                if (cr == 2 && strcmp(mf_confirm_action(), "remove") == 0)
+                {
+                    mf_confirm_close();
+                    remove_confirmed();
+                }
+                else if (cr == 2 && g_view_idx >= 0)
                 {
                     char path[192], payload[80];
                     snprintf(path, sizeof(path),
@@ -2127,7 +2373,12 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
             if (mf_devset_open())
             {
                 int sr = mf_devset_key((wint_t)key);
-                if (sr == 2)
+                if (sr == 2 && mf_devset_is_add())
+                {
+                    if (!g_add_wait)
+                        post_new_module();
+                }
+                else if (sr == 2)
                 {
                     char path[192];
                     int gi = mf_devset_get_graph_interval();

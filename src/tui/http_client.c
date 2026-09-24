@@ -318,6 +318,11 @@ int mf_http_cli_put(mf_http_cli_t *c, const char *path, const char *json)
     return cli_begin(c, "PUT", path, json);
 }
 
+int mf_http_cli_delete(mf_http_cli_t *c, const char *path)
+{
+    return cli_begin(c, "DELETE", path, NULL);
+}
+
 int mf_http_cli_take_body(mf_http_cli_t *c, char *dst, size_t cap)
 {
     if (!c->have_body || !dst || cap == 0)

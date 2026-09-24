@@ -674,7 +674,7 @@ static void ensure_parent_dir(const char *path)
     mkdir(tmp, 0755);
 }
 
-static int write_atomic(const char *path, const char *json)
+static int write_atomic_mode(const char *path, const char *json, mode_t mode)
 {
     char tmp[PATH_MAX];
     size_t len;
@@ -684,7 +684,7 @@ static int write_atomic(const char *path, const char *json)
         return -1;
     ensure_parent_dir(path);
     snprintf(tmp, sizeof(tmp), "%s.tmp.%ld", path, (long)getpid());
-    fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, mode);
     if (fd < 0)
         return -1;
     len = strlen(json);
@@ -703,6 +703,11 @@ static int write_atomic(const char *path, const char *json)
     return 0;
 }
 
+static int write_atomic(const char *path, const char *json)
+{
+    return write_atomic_mode(path, json, 0644);
+}
+
 int mf_config_save(const mf_daemon_config_t *cfg, const char *path)
 {
     char *json = mf_config_serialize(cfg);
@@ -711,6 +716,62 @@ int mf_config_save(const mf_daemon_config_t *cfg, const char *path)
     if (!json)
         return -1;
     rc = write_atomic(path, json);
+    free(json);
+    return rc;
+}
+
+/* ─── daemon-owned state config ─────────────────────────────── */
+
+const char *mf_config_state_path(void)
+{
+    static char path[256];
+    const char *e = getenv("MF_STATE_CONFIG");
+    const char *st;
+
+    if (e && e[0])
+        return e;
+    st = getenv("STATE_DIRECTORY");
+    if (!st || !st[0])
+        st = "/var/lib/moonflare";
+    snprintf(path, sizeof(path), "%s/moonflared.json", st);
+    return path;
+}
+
+int mf_config_load_state(mf_daemon_config_t *cfg)
+{
+    const char *path = mf_config_state_path();
+    struct stat st;
+    char *raw = NULL;
+    cJSON *root;
+
+    if (!cfg)
+        return -1;
+    if (stat(path, &st) < 0)
+        return 0;
+    if (!S_ISREG(st.st_mode) || load_file(path, &raw, NULL) < 0)
+        return -1;
+    root = cJSON_Parse(raw);
+    free(raw);
+    if (!root)
+        return -1;
+    mf_config_defaults(cfg);
+    mf_config_apply_json(cfg, root);
+    cJSON_Delete(root);
+    return 1;
+}
+
+int mf_config_save_state(const mf_daemon_config_t *cfg)
+{
+    char *json;
+    int rc;
+
+    if (!cfg)
+        return -1;
+    json = mf_config_serialize(cfg);
+    if (!json)
+        return -1;
+    /* 0600: the document carries BLE app passcodes. */
+    rc = write_atomic_mode(mf_config_state_path(), json, 0600);
     free(json);
     return rc;
 }

@@ -182,7 +182,19 @@ void mf_config_redact(mf_daemon_config_t *cfg);
 void mf_config_overlay_merge(mf_daemon_config_t *base_cfg,
                              const mf_daemon_config_t *overlay_cfg);
 
-/* Writable settings overlay (name, poll) when /etc is not writable.
+/* Daemon-owned working config (the daemon's source of truth once it
+ * exists).  Path: $MF_STATE_CONFIG, else $STATE_DIRECTORY/moonflared.json,
+ * else /var/lib/moonflare/moonflared.json.  On first start the daemon seeds
+ * it from moonflared.json (--config or the search path) plus the legacy
+ * settings overlay; after that /etc is not read.  Every change the daemon
+ * accepts (settings, add, remove, PUT config) saves the whole document.
+ * load: 1 loaded, 0 no state file yet (cfg untouched), -1 unreadable. */
+const char *mf_config_state_path(void);
+int         mf_config_load_state(mf_daemon_config_t *cfg);
+int         mf_config_save_state(const mf_daemon_config_t *cfg);
+
+/* Legacy writable settings overlay (name, poll) from before the state
+ * config.  Read only when seeding the state config.
  * Path: $MF_SETTINGS_OVERLAY, else $STATE_DIRECTORY/settings.json,
  * else /var/lib/moonflare/settings.json. */
 const char *mf_config_overlay_path(void);

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 project(moon-flare
-    VERSION 0.2.0
+    VERSION 0.3.0
     DESCRIPTION "Moon Flare: multi-kind energy dashboard (daemon, REST, plugins, TUI)"
     LANGUAGES C)
 
@@ -80,6 +80,7 @@ add_executable(moonflare
     src/tui/http_client.c
     src/tui/layout.c
     src/tui/mouse.c
+    src/tui/picker.c
     src/system/system.c
     src/config/config.c)
 target_include_directories(moonflare PRIVATE
@@ -329,8 +330,14 @@ add_test(NAME moonflare_dump_charger COMMAND moonflare --dump-layout charger)
 install(TARGETS moonflared moonflare RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(TARGETS mf_gatt RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR})
 # Match KD 20 / example plugin_dir: $prefix/lib/moon-flare, not multiarch LIBDIR.
-install(TARGETS mf_demo mf_charger_classic mf_battery_xd mf_battery_jk
+install(TARGETS mf_charger_classic mf_battery_xd mf_battery_jk
         LIBRARY DESTINATION lib/moon-flare)
+# The demo plugin fakes a battery and a charger for development.  Keep it
+# out of production plugin dirs unless asked for.
+option(MF_INSTALL_DEMO "Install the demo plugin (libmf_demo.so)" OFF)
+if(MF_INSTALL_DEMO)
+    install(TARGETS mf_demo LIBRARY DESTINATION lib/moon-flare)
+endif()
 install(FILES contrib/moonflared.service
         DESTINATION ${CMAKE_INSTALL_DATADIR}/moon-flare)
 install(FILES etc/moonflared.json.example etc/moonflare.json.example
