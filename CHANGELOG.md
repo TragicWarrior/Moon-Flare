@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-09-24
+
+### Added
+
+- `PLUGINS.md`, a guide to writing third-party plugins. It covers loading
+  and naming, kinds and the reading keys the dashboard uses, the
+  single-threaded event loop and what must not block, every field of the
+  ops table, return codes, the configuration `open()` receives,
+  `describe()`, settings and what gets saved, readings, history capture and
+  pruning, actions, capabilities, probes, files and privileges, ABI
+  compatibility, how to test against a private daemon, and a checklist.
+  It ends with a complete example plugin (`service`/`loadavg`), compiled
+  out of tree and verified against a live daemon.
+
 ## [0.5.0] - 2026-09-24
 
 ### Added
