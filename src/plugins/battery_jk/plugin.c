@@ -1135,6 +1135,19 @@ static void jk_probe_close(void *job)
     (void)job;
 }
 
+/* What the Add Module form asks for (mf_plugin_ops_t.describe). */
+static const char *jk_describe(void)
+{
+    return
+        "{\"bus\":\"ble\",\"fields\":["
+        "{\"key\":\"poll_interval_s\",\"label\":\"Poll Interval\",\"hint\":\"(Seconds)\",\"type\":\"number\",\"default\":2.0},"
+        "{\"key\":\"ble.address\",\"label\":\"BLE Address\",\"hint\":\"(MAC)\",\"type\":\"string\",\"required\":true},"
+        "{\"key\":\"ble.adapter\",\"label\":\"BLE Adapter\",\"hint\":\"(hciN)\",\"type\":\"string\",\"default\":\"hci0\"},"
+        "{\"key\":\"ble.protocol\",\"label\":\"BLE Protocol\",\"hint\":\"(JK02_32S)\",\"type\":\"string\",\"default\":\"JK02_32S\"},"
+        "{\"key\":\"ble.password\",\"label\":\"App Passcode\",\"hint\":\"(optional)\",\"type\":\"string\"}"
+        "]}";
+}
+
 static const mf_plugin_ops_t g_ops = {
     .abi = MF_PLUGIN_ABI,
     .ops_size = sizeof(mf_plugin_ops_t),
@@ -1159,6 +1172,7 @@ static const mf_plugin_ops_t g_ops = {
     .probe_prepare_fds = jk_probe_prepare,
     .probe_result = jk_probe_result,
     .probe_close = jk_probe_close,
+    .describe = jk_describe,
 };
 
 size_t mf_plugin_entries(const mf_plugin_ops_t **out)

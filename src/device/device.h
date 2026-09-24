@@ -63,23 +63,6 @@ int    mf_devices_action(const char *uuid, const char *action, const char *json,
                          char *err, size_t errsz);
 double mf_poll_interval_min(const char *driver);
 
-/* What the Add Module form asks for, per driver.  Keys are dotted config
- * paths ("usb.path"); dflt is a JSON literal or NULL.  The daemon owns this
- * so clients stay generic and plugins need no ABI change. */
-typedef struct {
-    const char *key;
-    const char *type;          /* "string" | "number" | "bool" */
-    const char *dflt;
-} mf_driver_field_t;
-
-typedef struct {
-    const char              *driver;
-    const char              *bus;       /* config "bus", or NULL */
-    const mf_driver_field_t *fields;    /* ends at key == NULL */
-} mf_driver_info_t;
-
-/* Never NULL: unknown drivers get just poll_interval_s. */
-const mf_driver_info_t *mf_driver_info(const char *driver);
 int    mf_devices_any_dying(void);
 
 void mf_devices_prepare_fds(fd_set *rset, fd_set *wset, int *maxfd);

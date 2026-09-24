@@ -49,7 +49,7 @@ int mf_plugins_load_dir(mf_plugin_registry_t *reg, const char *dir)
         void *dl;
         size_t (*entries)(const mf_plugin_ops_t **);
         const mf_plugin_ops_t *ops = NULL;
-        size_t n = 0, i;
+        size_t n = 0, i, stride;
         int nwr;
 
         if (de->d_name[0] == '.')
@@ -85,13 +85,20 @@ int mf_plugins_load_dir(mf_plugin_registry_t *reg, const char *dir)
             dlclose(dl);
             continue;
         }
+        /* Walk the table by the plugin's own entry size: an older plugin's
+           entries are shorter than today's mf_plugin_ops_t. */
+        stride = ops[0].ops_size;
         for (i = 0; i < n; i++)
         {
-            if (ops[i].abi != MF_PLUGIN_ABI ||
-                ops[i].ops_size < sizeof(mf_plugin_ops_t))
+            const mf_plugin_ops_t *e =
+                (const mf_plugin_ops_t *)((const char *)ops + i * stride);
+
+            if (e->abi != MF_PLUGIN_ABI ||
+                e->ops_size < MF_PLUGIN_OPS_MIN_SIZE ||
+                e->ops_size != stride)
             {
                 LOG_W("%s: refuse abi=%u ops_size=%u", path,
-                      (unsigned)ops[i].abi, (unsigned)ops[i].ops_size);
+                      (unsigned)e->abi, (unsigned)e->ops_size);
                 n = 0;
                 break;
             }
@@ -114,11 +121,16 @@ int mf_plugins_load_dir(mf_plugin_registry_t *reg, const char *dir)
         }
         for (i = 0; i < n; i++)
         {
-            reg->ops[reg->nops++] = &ops[i];
+            mf_plugin_ops_t *slot = &reg->store[reg->nops];
+            const char *src = (const char *)ops + i * stride;
+
+            memset(slot, 0, sizeof(*slot));
+            memcpy(slot, src, stride < sizeof(*slot) ? stride : sizeof(*slot));
+            reg->ops[reg->nops++] = slot;
             LOG_I("plugin %s kind=%s driver=%s ver=%s", path,
-                  ops[i].kind ? ops[i].kind : "?",
-                  ops[i].driver ? ops[i].driver : "?",
-                  ops[i].version ? ops[i].version : "?");
+                  slot->kind ? slot->kind : "?",
+                  slot->driver ? slot->driver : "?",
+                  slot->version ? slot->version : "?");
         }
     }
     closedir(d);
@@ -142,6 +154,8 @@ const mf_plugin_ops_t *mf_plugins_find(const mf_plugin_registry_t *reg,
                                        const char *kind, const char *driver)
 {
     int i;
+    if (!reg)
+        return NULL;
     for (i = 0; i < reg->nops; i++)
     {
         const mf_plugin_ops_t *o = reg->ops[i];

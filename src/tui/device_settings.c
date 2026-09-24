@@ -44,6 +44,14 @@ static char         g_id[40];
 static int          g_add_mode;
 static char         g_add_kind[16];
 static char         g_add_driver[16];
+/* Labels and hints the plugin supplied for its Add Module fields. */
+#define MAX_PLAB 24
+static struct {
+    char key[48];
+    char lab[32];
+    char hint[32];
+} g_plab[MAX_PLAB];
+static int          g_nplab;
 static char         g_keys[MAX_FIELDS][40];
 static char         g_payload[2048];
 
@@ -113,6 +121,18 @@ static void field_caption(const char *key, char *lab, size_t lab_cap,
         hint[0] = '\0';
     if (!key)
         return;
+    /* In the Add Module form the plugin's own wording wins. */
+    for (i = 0; g_add_mode && i < (size_t)g_nplab; i++)
+    {
+        if (strcmp(key, g_plab[i].key) == 0 && g_plab[i].lab[0])
+        {
+            if (lab && lab_cap)
+                snprintf(lab, lab_cap, "%s", g_plab[i].lab);
+            if (hint && hint_cap && g_plab[i].hint[0])
+                snprintf(hint, hint_cap, " %s", g_plab[i].hint);
+            return;
+        }
+    }
     for (i = 0; i < sizeof(map) / sizeof(map[0]); i++)
     {
         if (strcmp(key, map[i].k) == 0)
@@ -1354,12 +1374,32 @@ void mf_devset_show(const char *id, const char *name, const char *json)
     show_form(id, name, json);
 }
 
-void mf_devset_show_add(const char *kind, const char *driver, const char *json)
+void mf_devset_show_add(const char *kind, const char *driver, const char *json,
+                        const char *fields)
 {
     char cap[40];
+    cJSON *arr = fields ? cJSON_Parse(fields) : NULL;
+    const cJSON *f;
 
     mf_devset_close();
     g_add_mode = 1;
+    g_nplab = 0;
+    cJSON_ArrayForEach(f, arr)
+    {
+        const cJSON *k = cJSON_GetObjectItemCaseSensitive(f, "key");
+        const cJSON *l = cJSON_GetObjectItemCaseSensitive(f, "label");
+        const cJSON *h = cJSON_GetObjectItemCaseSensitive(f, "hint");
+
+        if (g_nplab >= MAX_PLAB || !cJSON_IsString(k))
+            continue;
+        snprintf(g_plab[g_nplab].key, sizeof(g_plab[0].key), "%s", k->valuestring);
+        snprintf(g_plab[g_nplab].lab, sizeof(g_plab[0].lab), "%s",
+                 cJSON_IsString(l) ? l->valuestring : "");
+        snprintf(g_plab[g_nplab].hint, sizeof(g_plab[0].hint), "%s",
+                 cJSON_IsString(h) ? h->valuestring : "");
+        g_nplab++;
+    }
+    cJSON_Delete(arr);
     snprintf(g_add_kind, sizeof(g_add_kind), "%s", kind ? kind : "");
     snprintf(g_add_driver, sizeof(g_add_driver), "%s", driver ? driver : "");
     snprintf(cap, sizeof(cap), "Add %s / %s", g_add_kind, g_add_driver);

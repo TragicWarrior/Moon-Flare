@@ -791,9 +791,9 @@ static void test_add_remove_persist(void)
     req.path = "/api/v1/drivers";
     memset(&resp, 0, sizeof(resp));
     check(mf_rest_dispatch(&req, &resp) == 0 &&
-          strstr(resp.body, "\"settings_schema\"") &&
-          strstr(resp.body, "\"poll_interval_s\":\"number\""),
-          "drivers carry settings_schema");
+          strstr(resp.body, "\"fields\"") &&
+          strstr(resp.body, "\"key\":\"poll_interval_s\""),
+          "drivers carry the plugin's form fields");
 
     memset(&req, 0, sizeof(req));
     req.method = "POST";

@@ -16,9 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the Classic). If the daemon refuses, for example because the name is in
   use, the error shows in the form's title and the form stays open. Remove
   Module picks a module from a list and asks to confirm.
-- `GET /api/v1/drivers` returns each driver's `bus`, `settings_schema`
-  (field → type) and `defaults`, so clients can build an add form without
-  knowing the drivers. Plugins are unchanged.
+- Plugins describe their own Add Module form. The plugin interface has a
+  new optional `describe()` entry that returns the fields to ask for
+  (key, label, hint, type, default, required) and the bus.
+  `GET /api/v1/drivers` passes it through as `bus` and `fields`, and the TUI
+  builds the form from it, so neither the daemon nor the TUI needs to know
+  a plugin's settings. Required fields are checked before the form is sent.
+  The loader still accepts plugins built before `describe()` existed: it
+  walks each plugin's table by that plugin's own entry size and treats the
+  missing fields as absent.
 - `POST /api/v1/devices` accepts dotted keys (`"usb.path": "/dev/ttyUSB0"`)
   as well as nested objects, and fills in the driver's `bus` if it is left
   out.

@@ -99,9 +99,11 @@ typedef struct {
     char kind[16];
     char driver[16];
     char form[1024];     /* seed JSON for the Add form */
+    char fields[2048];   /* the plugin's field list (labels, required) */
 } add_driver_t;
 static add_driver_t g_drv[MAX_DRIVERS];
 static int g_ndrv;
+static int g_add_idx = -1;   /* driver the open Add form is for */
 static int g_devset_wait_ovp;
 static int g_devset_ovp_tries;
 static double g_devset_next_try;
@@ -1660,25 +1662,26 @@ void mf_ui_remove_module(void)
                    "Enter=remove  Esc=close", "no modules");
 }
 
-/* Seed JSON for the Add form: name first, then each schema key with the
- * driver's default ("" when it has none). */
-static void add_form_seed(const cJSON *d, char *out, size_t cap)
+/* Seed JSON for the Add form from the plugin's field list: name first,
+ * then each field with its default ("" when it has none). */
+static void add_form_seed(const cJSON *fields, char *out, size_t cap)
 {
-    const cJSON *schema = cJSON_GetObjectItemCaseSensitive(d, "settings_schema");
-    const cJSON *dflt = cJSON_GetObjectItemCaseSensitive(d, "defaults");
-    const cJSON *it;
+    const cJSON *f;
     cJSON *o = cJSON_CreateObject();
     char *s;
 
     cJSON_AddStringToObject(o, "name", "");
-    cJSON_ArrayForEach(it, schema)
+    cJSON_ArrayForEach(f, fields)
     {
-        const cJSON *v = cJSON_GetObjectItemCaseSensitive(dflt, it->string);
+        const cJSON *k = cJSON_GetObjectItemCaseSensitive(f, "key");
+        const cJSON *v = cJSON_GetObjectItemCaseSensitive(f, "default");
 
+        if (!cJSON_IsString(k) || cJSON_GetObjectItemCaseSensitive(o, k->valuestring))
+            continue;
         if (v)
-            cJSON_AddItemToObject(o, it->string, cJSON_Duplicate(v, 1));
+            cJSON_AddItemToObject(o, k->valuestring, cJSON_Duplicate(v, 1));
         else
-            cJSON_AddStringToObject(o, it->string, "");
+            cJSON_AddStringToObject(o, k->valuestring, "");
     }
     s = cJSON_PrintUnformatted(o);
     snprintf(out, cap, "%s", s ? s : "{}");
@@ -1706,7 +1709,14 @@ static void show_driver_picker(const char *json)
         a = &g_drv[g_ndrv];
         snprintf(a->kind, sizeof(a->kind), "%s", k->valuestring);
         snprintf(a->driver, sizeof(a->driver), "%s", dr->valuestring);
-        add_form_seed(d, a->form, sizeof(a->form));
+        {
+            const cJSON *fl = cJSON_GetObjectItemCaseSensitive(d, "fields");
+            char *fs = cJSON_PrintUnformatted(fl);
+
+            add_form_seed(fl, a->form, sizeof(a->form));
+            snprintf(a->fields, sizeof(a->fields), "%s", fs ? fs : "[]");
+            free(fs);
+        }
         snprintf(rows[g_ndrv], sizeof(rows[g_ndrv]), "%-10s %s",
                  a->kind, a->driver);
         rp[g_ndrv] = rows[g_ndrv];
@@ -1725,7 +1735,11 @@ static void on_pick(void)
     {
         mf_picker_close();
         if (i >= 0 && i < g_ndrv)
-            mf_devset_show_add(g_drv[i].kind, g_drv[i].driver, g_drv[i].form);
+        {
+            g_add_idx = i;
+            mf_devset_show_add(g_drv[i].kind, g_drv[i].driver, g_drv[i].form,
+                               g_drv[i].fields);
+        }
         return;
     }
     if (strcmp(mf_picker_tag(), "remove") == 0)
@@ -1755,11 +1769,55 @@ static void remove_confirmed(void)
     g_last_get = 0;
 }
 
+/* Fields the plugin marked required must not be blank. 1 = ok. */
+static int add_required_ok(const char *payload)
+{
+    cJSON *vals, *fields;
+    const cJSON *f;
+    char msg[80];
+    int ok = 1;
+
+    if (g_add_idx < 0 || g_add_idx >= g_ndrv)
+        return 1;
+    vals = cJSON_Parse(payload);
+    fields = cJSON_Parse(g_drv[g_add_idx].fields);
+    msg[0] = '\0';
+    if (!vals || !cJSON_GetObjectItemCaseSensitive(vals, "name") ||
+        !cJSON_IsString(cJSON_GetObjectItemCaseSensitive(vals, "name")) ||
+        !cJSON_GetObjectItemCaseSensitive(vals, "name")->valuestring[0])
+        snprintf(msg, sizeof(msg), "Name is required");
+    cJSON_ArrayForEach(f, fields)
+    {
+        const cJSON *k = cJSON_GetObjectItemCaseSensitive(f, "key");
+        const cJSON *l = cJSON_GetObjectItemCaseSensitive(f, "label");
+        const cJSON *v;
+
+        if (msg[0] || !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(f, "required")) ||
+            !cJSON_IsString(k))
+            continue;
+        v = cJSON_GetObjectItemCaseSensitive(vals, k->valuestring);
+        if (!v || (cJSON_IsString(v) && !v->valuestring[0]))
+            snprintf(msg, sizeof(msg), "%s is required",
+                     cJSON_IsString(l) ? l->valuestring : k->valuestring);
+    }
+    if (msg[0])
+    {
+        mf_devset_set_error(msg);
+        ok = 0;
+    }
+    cJSON_Delete(vals);
+    cJSON_Delete(fields);
+    return ok;
+}
+
 /* The Add Module form's payload plus kind/driver, as POST /devices takes it. */
 static void post_new_module(void)
 {
     const char *p = mf_devset_payload();
     char body[2048];
+
+    if (!add_required_ok(p))
+        return;
 
     snprintf(body, sizeof(body), "{\"kind\":\"%s\",\"driver\":\"%s\"%s%s",
              mf_devset_add_kind(), mf_devset_add_driver(),

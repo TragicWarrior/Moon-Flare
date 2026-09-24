@@ -364,29 +364,38 @@ static int handle_status(mf_rest_response_t *resp)
     return 0;
 }
 
-/* "bus", "settings_schema" {key: type} and "defaults" {key: value} for
- * the Add Module form (design: GET /drivers). */
-static void add_driver_schema(cJSON *o, const char *driver)
-{
-    const mf_driver_info_t *di = mf_driver_info(driver);
-    cJSON *schema = cJSON_CreateObject();
-    cJSON *dflt = cJSON_CreateObject();
-    const mf_driver_field_t *f;
+/* The plugin's own description of its Add Module form ("bus" + "fields"),
+ * passed through so clients need no plugin knowledge.  Plugins without
+ * describe() (older builds) get a poll interval field only. */
+static const char *k_plain_describe =
+    "{\"fields\":[{\"key\":\"poll_interval_s\",\"label\":\"Poll Interval\","
+    "\"hint\":\"(Seconds)\",\"type\":\"number\",\"default\":2.0}]}";
 
-    if (di->bus)
-        cJSON_AddStringToObject(o, "bus", di->bus);
-    for (f = di->fields; f->key; f++)
+static cJSON *plugin_describe(const mf_plugin_ops_t *ops)
+{
+    cJSON *d = NULL;
+
+    if (ops && ops->describe)
+        d = cJSON_Parse(ops->describe());
+    if (!cJSON_IsObject(d) ||
+        !cJSON_IsArray(cJSON_GetObjectItemCaseSensitive(d, "fields")))
     {
-        cJSON_AddStringToObject(schema, f->key, f->type);
-        if (f->dflt)
-        {
-            cJSON *v = cJSON_Parse(f->dflt);
-            if (v)
-                cJSON_AddItemToObject(dflt, f->key, v);
-        }
+        cJSON_Delete(d);
+        d = cJSON_Parse(k_plain_describe);
     }
-    cJSON_AddItemToObject(o, "settings_schema", schema);
-    cJSON_AddItemToObject(o, "defaults", dflt);
+    return d;
+}
+
+static void add_driver_schema(cJSON *o, const mf_plugin_ops_t *ops)
+{
+    cJSON *d = plugin_describe(ops);
+    cJSON *bus = cJSON_GetObjectItemCaseSensitive(d, "bus");
+
+    if (cJSON_IsString(bus))
+        cJSON_AddStringToObject(o, "bus", bus->valuestring);
+    cJSON_AddItemToObject(o, "fields",
+        cJSON_DetachItemFromObjectCaseSensitive(d, "fields"));
+    cJSON_Delete(d);
 }
 
 static int handle_drivers(mf_rest_response_t *resp)
@@ -412,7 +421,7 @@ static int handle_drivers(mf_rest_response_t *resp)
                 add_caps(caps, c);
                 cJSON_AddItemToObject(o, "caps", caps);
             }
-            add_driver_schema(o, ops->driver);
+            add_driver_schema(o, ops);
             cJSON_AddItemToArray(arr, o);
         }
     }
@@ -422,11 +431,11 @@ static int handle_drivers(mf_rest_response_t *resp)
         cJSON *c = cJSON_CreateObject();
         cJSON_AddStringToObject(b, "kind", "battery");
         cJSON_AddStringToObject(b, "driver", "demo");
-        add_driver_schema(b, "demo");
+        add_driver_schema(b, NULL);
         cJSON_AddItemToArray(arr, b);
         cJSON_AddStringToObject(c, "kind", "charger");
         cJSON_AddStringToObject(c, "driver", "demo");
-        add_driver_schema(c, "demo");
+        add_driver_schema(c, NULL);
         cJSON_AddItemToArray(arr, c);
     }
     cJSON_AddItemToObject(root, "drivers", arr);
@@ -535,9 +544,16 @@ static int handle_devices_create(const mf_rest_request_t *req, mf_rest_response_
     snprintf(kindbuf, sizeof(kindbuf), "%s", kind);
     snprintf(driverbuf, sizeof(driverbuf), "%s", driver);
     nest_dotted_keys(root);
-    if (!cJSON_GetObjectItemCaseSensitive(root, "bus") &&
-        mf_driver_info(driverbuf)->bus)
-        cJSON_AddStringToObject(root, "bus", mf_driver_info(driverbuf)->bus);
+    if (!cJSON_GetObjectItemCaseSensitive(root, "bus"))
+    {
+        cJSON *d = plugin_describe(mf_plugins_find(mf_devices_registry(),
+                                                   kindbuf, driverbuf));
+        cJSON *bus = cJSON_GetObjectItemCaseSensitive(d, "bus");
+
+        if (cJSON_IsString(bus))
+            cJSON_AddStringToObject(root, "bus", bus->valuestring);
+        cJSON_Delete(d);
+    }
     spec = cJSON_PrintUnformatted(root);
     rc = mf_devices_add(namebuf, kindbuf, driverbuf, spec, NULL,
                         uuid, sizeof(uuid), err, sizeof(err));

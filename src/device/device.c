@@ -526,51 +526,6 @@ int mf_devices_add(const char *name, const char *kind, const char *driver,
     return 0;
 }
 
-static const mf_driver_field_t xd_fields[] = {
-    { "poll_interval_s", "number", "2.0" },
-    { "usb.path",        "string", "\"/dev/ttyUSB0\"" },
-    { "usb.auto_port",   "bool",   "true" },
-    { "usb.baud",        "number", "9600" },
-    { "usb.addr",        "number", "1" },
-    { NULL, NULL, NULL }
-};
-static const mf_driver_field_t jk_fields[] = {
-    { "poll_interval_s", "number", "2.0" },
-    { "ble.address",     "string", NULL },
-    { "ble.adapter",     "string", "\"hci0\"" },
-    { "ble.protocol",    "string", "\"JK02_32S\"" },
-    { "ble.password",    "string", NULL },
-    { NULL, NULL, NULL }
-};
-static const mf_driver_field_t classic_fields[] = {
-    { "poll_interval_s", "number", "5.0" },
-    { "modbus.ip",       "string", NULL },
-    { "modbus.port",     "number", "502" },
-    { "modbus.unit_id",  "number", "10" },
-    { "modbus.auto_net", "bool",   "true" },
-    { NULL, NULL, NULL }
-};
-static const mf_driver_field_t plain_fields[] = {
-    { "poll_interval_s", "number", "2.0" },
-    { NULL, NULL, NULL }
-};
-static const mf_driver_info_t g_driver_info[] = {
-    { "xd",      "usb-serial", xd_fields },
-    { "jk",      "ble",        jk_fields },
-    { "classic", "modbus-tcp", classic_fields },
-};
-static const mf_driver_info_t g_driver_plain = { "", NULL, plain_fields };
-
-const mf_driver_info_t *mf_driver_info(const char *driver)
-{
-    size_t i;
-
-    for (i = 0; driver && i < sizeof(g_driver_info) / sizeof(g_driver_info[0]); i++)
-        if (strcmp(g_driver_info[i].driver, driver) == 0)
-            return &g_driver_info[i];
-    return &g_driver_plain;
-}
-
 double mf_poll_interval_min(const char *driver)
 {
     if (driver && strcmp(driver, "classic") == 0)

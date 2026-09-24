@@ -76,7 +76,8 @@ void mf_ui_handle_history(void);
 void mf_devset_show(const char *id, const char *name, const char *json);
 /* Add Module form: the settings form with every field editable, seeded
  * from a driver's defaults; Save posts a new device instead of a PUT. */
-void mf_devset_show_add(const char *kind, const char *driver, const char *json);
+void mf_devset_show_add(const char *kind, const char *driver, const char *json,
+                        const char *fields);
 int  mf_devset_is_add(void);
 const char *mf_devset_add_kind(void);
 const char *mf_devset_add_driver(void);

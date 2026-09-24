@@ -66,7 +66,24 @@ typedef struct mf_plugin_ops {
     void       (*probe_prepare_fds)(void *job, fd_set *r, fd_set *w, int *maxfd);
     int        (*probe_result)(void *job, char *json, size_t cap);
     void       (*probe_close)(void *job);
+
+    /* ---- Optional, added in 0.3.0.  Plugins built before it end above;
+     * the loader accepts them and treats these as NULL. ---- */
+
+    /* Static JSON describing what the Add Module form asks for, so clients
+     * need no knowledge of the plugin:
+     *   {"bus": "usb-serial",
+     *    "fields": [{"key": "usb.path", "label": "USB Path",
+     *                "hint": "(device)", "type": "string",
+     *                "default": "/dev/ttyUSB0", "required": true}, ...]}
+     * key: dotted config path.  type: "string" | "number" | "bool".
+     * default, hint, required: optional.  NULL: name + poll interval only. */
+    const char *(*describe)(void);
 } mf_plugin_ops_t;
+
+/* Smallest ops_size the loader accepts: the table as it was before the
+ * optional fields.  Grows only if a required field is ever added. */
+#define MF_PLUGIN_OPS_MIN_SIZE offsetof(mf_plugin_ops_t, describe)
 
 /*
  * *out = pointer to the first of N consecutive mf_plugin_ops_t.

@@ -285,6 +285,15 @@ target_include_directories(test_loader PRIVATE
     ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src/plugin)
 target_link_libraries(test_loader PRIVATE ${CMAKE_DL_LIBS})
 add_test(NAME loader COMMAND test_loader $<TARGET_FILE_DIR:mf_stub>)
+# The same stub built like a pre-0.3.0 plugin (short ops entries).
+add_library(mf_stub_old SHARED tests/stub_plugin.c)
+target_include_directories(mf_stub_old PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_compile_definitions(mf_stub_old PRIVATE MF_STUB_OLD_ABI)
+set_target_properties(mf_stub_old PROPERTIES
+    PREFIX "lib" OUTPUT_NAME "mf_stub"
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/stub_old_plugins)
+add_test(NAME loader_old_abi
+         COMMAND test_loader $<TARGET_FILE_DIR:mf_stub_old> old)
 
 add_executable(fake_classic tests/fake_classic.c)
 target_compile_options(fake_classic PRIVATE ${MF_WARN})
