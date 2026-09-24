@@ -95,7 +95,8 @@ int  mf_devset_mouse(int x, int y, mmask_t bstate);
 const char *mf_devset_id(void);
 const char *mf_devset_poll_text(void);
 const char *mf_devset_payload(void);
-int mf_devset_get_graph_interval(void);
+int mf_devset_get_graph_interval(void);   /* 0 when not shown */
+void mf_devset_set_kind(const char *kind);
 void mf_devset_set_graph_interval(int minutes);
 
 void mf_confirm_show(const char *name, const char *action);

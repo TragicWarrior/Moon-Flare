@@ -42,6 +42,9 @@ static char         g_name[32];
 static char         g_id[40];
 /* Add Module mode: every field editable, no device-only extras. */
 static int          g_add_mode;
+/* Kind of the module being edited: Graph Interval only means something for
+ * batteries and chargers (they have graphs); services hide Active too. */
+static char         g_kind[16];
 static char         g_add_kind[16];
 static char         g_add_driver[16];
 /* Labels and hints the plugin supplied for its Add Module fields. */
@@ -481,6 +484,7 @@ static int skip_form_key(const char *k)
                  strcmp(k, "start_balance_v") == 0 ||
                  strcmp(k, "cell_rcv_v") == 0 ||
                  (strcmp(k, "ble.adapter") == 0 && !g_add_mode) ||
+                 (strcmp(k, "active") == 0 && strcmp(g_kind, "service") == 0) ||
                  strcmp(k, "graph_interval_min") == 0);
 }
 
@@ -1073,7 +1077,8 @@ static void build_form(int iw, int ih, const char *json)
                     buf, sizeof(buf));
     add_field("capture_interval_s", buf[0] ? buf : "10", row_h, iw - 2);
 
-    if (!g_add_mode)
+    if (!g_add_mode && (!g_kind[0] || strcmp(g_kind, "battery") == 0 ||
+                        strcmp(g_kind, "charger") == 0))
         add_field("graph_interval_min", "30", row_h, iw - 2);
 
     add_json_group(root, 0, row_h, iw - 2, MAX_FIELDS);
@@ -1247,7 +1252,12 @@ int mf_devset_get_graph_interval(void)
             return val;
         }
     }
-    return 30;
+    return 0;                           /* not shown for this module */
+}
+
+void mf_devset_set_kind(const char *kind)
+{
+    snprintf(g_kind, sizeof(g_kind), "%s", kind ? kind : "");
 }
 
 void mf_devset_set_graph_interval(int minutes)

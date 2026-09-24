@@ -2057,6 +2057,7 @@ void mf_ui_open_device_settings(int idx)
 
     if (!id || !id[0])
         return;
+    mf_devset_set_kind(mf_dash_catalog_kind(idx));
     mf_devset_show(id, name, NULL);
     mf_devset_set_graph_interval(mf_pack_get_graph_interval());
     snprintf(path, sizeof(path), "/api/v1/devices/%s/settings", id);
@@ -2385,7 +2386,8 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
                 snprintf(path, sizeof(path),
                          "/api/v1/devices/%s/settings", mf_devset_id());
                 (void)mf_http_cli_put(&g_cli, path, mf_devset_payload());
-                mf_pack_set_graph_interval(gi);
+                if (gi > 0)
+                    mf_pack_set_graph_interval(gi);
                 mf_devset_close();
                 g_last_get = 0;
             }
@@ -2452,7 +2454,8 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
                     snprintf(path, sizeof(path),
                              "/api/v1/devices/%s/settings", mf_devset_id());
                     (void)mf_http_cli_put(&g_cli, path, mf_devset_payload());
-                    mf_pack_set_graph_interval(gi);
+                    if (gi > 0)
+                        mf_pack_set_graph_interval(gi);
                     mf_devset_close();
                     g_last_get = 0;
                 }
