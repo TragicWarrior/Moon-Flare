@@ -5,6 +5,76 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-09-24
+
+### Added
+
+- Two new module kinds, services and actuators. `GET /api/v1/status` has
+  `services` and `actuators` arrays; their rows carry the module's whole
+  reading as `data`. `moonflare-cli --status` lists both.
+- The dashboard grid is now 3 × 2. The top row is Batteries, Chargers and
+  an Info panel; the bottom row is Inverters, Actuators and Services. The
+  Info panel shows the weather from the first active weather service:
+  current temperature and conditions, humidity and wind, the next two
+  forecast periods, and the station and time of the observation.
+- A weather.gov service plugin (`libmf_service_weathergov.so`, kind
+  `service`, driver `weathergov`). Add it with Devices → Add Module; the
+  form asks for a ZIP code and a contact email, which weather.gov wants in
+  the User-Agent. It fetches current conditions every 10 minutes
+  (configurable, at least 5) and the forecast every 30, using libcurl
+  without blocking the daemon. Its reading is provider-neutral, so another
+  weather provider can feed the same panel. Building it needs
+  `libcurl4-openssl-dev` and zlib; without libcurl it is skipped.
+- ZIP codes are looked up offline in the Census Bureau's ZIP centroid
+  table (`data/zcta.txt`, 33,791 ZIPs from the 2026 Gazetteer, installed to
+  `share/moon-flare/zcta.txt`). Every `weather.zip_update_days` days
+  (default 7, 0 = never) the plugin checks census.gov for the next year's
+  table; when one appears it downloads, unzips and installs it in
+  `/var/lib/moonflare/weathergov/`, which then takes priority over the
+  shipped copy. Latitude and longitude remain as optional overrides.
+- Weather icons in the Info panel. The weather plugin adds a neutral
+  `icon` key (clear, partly_cloudy, mostly_cloudy, cloudy, wind, rain,
+  showers, thunderstorm, snow, blizzard, sleet, freezing_rain, fog, haze,
+  tornado, hurricane, hot, cold) and `is_day` to the current conditions and
+  each forecast period, taken from weather.gov's own icon codes, or from the
+  description when a station sends none. The dashboard shows ☀ or 🌙, ⛅,
+  🌥, ☁, 🌦, 🌧, ⛈, 🌨, ❄, 🌫 and so on in a fixed 2-column slot, so the text
+  lines up whether the terminal draws a symbol 1 or 2 columns wide. A
+  forecast line that does not fit drops its words and keeps the icon.
+  Needs libviper 7.6.3 for correct column layout of the symbols.
+- The weather plugin has a Station setting (blank = nearest). It fetches
+  the five nearest stations; an observation with no temperature or older
+  than two hours, or a station that fails, is skipped for the next nearest
+  one, and if none is good the last good reading stays up.
+- Weather history: new weather modules capture their reading (including
+  the forecast of the moment) to the history database every 600 s by
+  default, matching the update interval, for later analysis.
+- Weather settings can be changed after adding: select the module on the
+  dashboard and press `e`. ZIP, station, table-check days, latitude and
+  longitude, and contact take effect at once (a new place is looked up
+  again) and are saved. The plugin interface already had get/put settings;
+  the daemon now also saves plugin settings that a plugin's `describe()`
+  declares, and `GET .../settings` returns the plugin's field labels as
+  `_fields` so the dialog uses its wording.
+- `e` on the dashboard opens the settings of the selected module, whatever
+  its kind.
+- A module offline now reports its `last_error` in
+  `GET /api/v1/status`, and the Info panel shows a weather service's error
+  (e.g. "ZIP 00000 not found") under "waiting for weather".
+- Plugin-specific settings, such as the weather location, are now kept in
+  the daemon's config and passed back to the plugin on start. Before this,
+  any setting the daemon had no field for was dropped when the config was
+  saved.
+
+### Changed
+
+- The Devices menu is now Modules.
+- Choosing a module with no detail view (a weather service, say) from the
+  Modules menu shows the dashboard with it selected, instead of opening an
+  empty battery view.
+- Readings of a module kind the dashboard has no place for are no longer
+  shown as batteries.
+
 ## [0.3.0] - 2026-09-23
 
 ### Added

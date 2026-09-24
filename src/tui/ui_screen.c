@@ -1635,7 +1635,7 @@ static void post_switch(const char *key, int on)
     (void)mf_http_cli_post(&g_cli, path, payload);
 }
 
-/* ---- Devices -> Add / Remove Module ------------------------------- */
+/* ---- Modules -> Add / Remove Module ------------------------------- */
 
 void mf_ui_add_module(void)
 {
@@ -1861,6 +1861,15 @@ void mf_ui_open_device_view(int idx)
     const char *name = mf_dash_catalog_name(idx);
     if (!id || !id[0])
         return;
+    /* Only batteries and chargers have a detail view: for anything else
+       (a weather service, say) show the Dashboard with it selected. */
+    if (!kind || (strcmp(kind, "battery") != 0 && strcmp(kind, "charger") != 0))
+    {
+        mf_ui_show_dashboard();
+        mf_dash_select(idx);
+        mf_ui_refresh();
+        return;
+    }
     g_view_idx = idx;
     snprintf(g_view_name, sizeof(g_view_name), "%s", name ? name : id);
     snprintf(g_view_path, sizeof(g_view_path), "/api/v1/devices/%s", id);
@@ -2048,6 +2057,7 @@ void mf_ui_open_device_settings(int idx)
 
     if (!id || !id[0])
         return;
+    mf_devset_set_kind(mf_dash_catalog_kind(idx));
     mf_devset_show(id, name, NULL);
     mf_devset_set_graph_interval(mf_pack_get_graph_interval());
     snprintf(path, sizeof(path), "/api/v1/devices/%s/settings", id);
@@ -2376,7 +2386,8 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
                 snprintf(path, sizeof(path),
                          "/api/v1/devices/%s/settings", mf_devset_id());
                 (void)mf_http_cli_put(&g_cli, path, mf_devset_payload());
-                mf_pack_set_graph_interval(gi);
+                if (gi > 0)
+                    mf_pack_set_graph_interval(gi);
                 mf_devset_close();
                 g_last_get = 0;
             }
@@ -2443,7 +2454,8 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
                     snprintf(path, sizeof(path),
                              "/api/v1/devices/%s/settings", mf_devset_id());
                     (void)mf_http_cli_put(&g_cli, path, mf_devset_payload());
-                    mf_pack_set_graph_interval(gi);
+                    if (gi > 0)
+                        mf_pack_set_graph_interval(gi);
                     mf_devset_close();
                     g_last_get = 0;
                 }
@@ -2527,6 +2539,8 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
 
                 if (dr == MF_DASH_KEY_OPEN)
                     mf_ui_open_device_view(k);
+                else if (dr == MF_DASH_KEY_EDIT)
+                    mf_ui_open_device_settings(k);
                 else if (dr == MF_DASH_KEY_TOGGLE)
                 {
                     char path[192], payload[32];

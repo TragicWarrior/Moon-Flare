@@ -24,9 +24,9 @@ int main(void)
     mf_tui_paint_dashboard(grid, "127.0.0.1:5250", "UP", 0, NULL, 0, NULL, 0, NULL);
     for (r = 0; r < MF_TUI_ROWS; r++)
         CHECK(strlen(grid[r]) == 80, "row width 80");
-    CHECK(strstr(grid[0], "File") && strstr(grid[0], "Settings") &&
-          strstr(grid[0], "Devices") && strstr(grid[0], "View") &&
-          strstr(grid[0], "Help"), "menubar labels");
+    CHECK(strstr(grid[0], "File") && strstr(grid[0], "Modules") &&
+          strstr(grid[0], "Help") && !strstr(grid[0], "Devices"),
+          "menubar labels");
     CHECK(strstr(grid[1], "127.0.0.1:5250") && strstr(grid[1], "[UP]"),
           "status line");
     {
@@ -57,6 +57,14 @@ int main(void)
           "cards start below the System panel");
     CHECK(grid[MF_CARD_Y + MF_CARD_H - 1][0] == '+',
           "cards end above the hints row");
+    {
+        int r2 = MF_CARD_Y + MF_SYS_H + (MF_CARD_H - MF_SYS_H) / 2;
+
+        CHECK(strstr(grid[MF_CARD_Y + MF_SYS_H], "Info"),
+              "Info panel beside Batteries and Chargers");
+        CHECK(strstr(grid[r2], "Inverters") && strstr(grid[r2], "Actuators") &&
+              strstr(grid[r2], "Services"), "second row: Inverters Actuators Services");
+    }
 
     mf_tui_paint_settings(grid, "127.0.0.1", 5250, 1.0);
     CHECK(strstr(grid[y], "General"), "settings title");

@@ -672,6 +672,36 @@ static void test_saved_config_reloads(void)
     printf("PASS: saved config reloads\n");
 }
 
+static void test_plugin_extras(void)
+{
+    mf_daemon_config_t cfg, again;
+    cJSON *root;
+    char *json;
+
+    mf_config_defaults(&cfg);
+    root = cJSON_Parse(
+        "{\"devices\":[{\"uuid\":\"aaaaaaaa-bbbb-cccc-dddd-000000000031\","
+        "\"name\":\"wx\",\"kind\":\"service\",\"driver\":\"weathergov\","
+        "\"weather\":{\"lat\":32.78,\"lon\":-96.8,\"contact\":\"me@x.org\"}}]}");
+    mf_config_apply_json(&cfg, root);
+    cJSON_Delete(root);
+    assert_true(strstr(cfg.devices[0].extra_json, "\"lat\":32.78") != NULL,
+                "extras: plugin keys kept");
+    json = mf_config_serialize(&cfg);
+    mf_config_defaults(&again);
+    root = cJSON_Parse(json);
+    free(json);
+    mf_config_apply_json(&again, root);
+    cJSON_Delete(root);
+    assert_true(strstr(again.devices[0].extra_json, "\"contact\":\"me@x.org\"") != NULL,
+                "extras: survive save and reload");
+    json = mf_config_device_serialize(&again.devices[0]);
+    assert_true(json && strstr(json, "\"weather\":{"),
+                "extras: back in the plugin's open() spec");
+    free(json);
+    printf("PASS: plugin settings round-trip\n");
+}
+
 static void test_state_config(void)
 {
     char dir[] = "/tmp/mf-state-XXXXXX";
@@ -731,6 +761,7 @@ int main(void)
     test_active_and_system();
     test_saved_config_reloads();
     test_state_config();
+    test_plugin_extras();
 
     printf("\nAll config tests passed.\n");
     return 0;

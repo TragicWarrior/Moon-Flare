@@ -1,5 +1,5 @@
 /* A small modal list: pick one row with Up/Down + Enter, Esc cancels.
- * Used by Devices -> Add Module (pick a driver) and Remove Module (pick a
+ * Used by Modules -> Add Module (pick a driver) and Remove Module (pick a
  * module).  Styled like the Connections dialog. */
 
 #include "ui_screen.h"

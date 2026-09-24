@@ -77,22 +77,30 @@ static void draw_box(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
     put_str(grid, y, x + 2, cap);
 }
 
-/* Cards sit below the System panel. */
+/* Cards sit below the System panel in a 3 x 2 grid. */
 #define CARD_TOP (MF_CARD_Y + MF_SYS_H)
-#define CARD_H   (MF_CARD_H - MF_SYS_H)
+#define CARD_H   ((MF_CARD_H - MF_SYS_H) / 2)
+
+static void fill_card_at(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1], int row,
+                         int x, const char *title, int n,
+                         const char *const *lines, const char *empty)
+{
+    int i, y = CARD_TOP + row * CARD_H;
+
+    draw_box(grid, y, x, MF_CARD_W, CARD_H, title);
+    if (n <= 0)
+        put_str(grid, y + 1, x + 2, empty);
+    else
+    {
+        for (i = 0; i < n && i < CARD_H - 2; i++)
+            put_str(grid, y + 1 + i, x + 2, lines[i]);
+    }
+}
 
 static void fill_card(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
                       int x, const char *title, int n, const char *const *lines)
 {
-    int i;
-    draw_box(grid, CARD_TOP, x, MF_CARD_W, CARD_H, title);
-    if (n <= 0)
-        put_str(grid, CARD_TOP + 1, x + 2, "not connected");
-    else
-    {
-        for (i = 0; i < n && i < CARD_H - 2; i++)
-            put_str(grid, CARD_TOP + 1 + i, x + 2, lines[i]);
-    }
+    fill_card_at(grid, 0, x, title, n, lines, "not connected");
 }
 
 static void fill_system(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1])
@@ -122,7 +130,7 @@ void mf_tui_paint_dashboard(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
 {
     char t1[32], t2[32], t3[32], st[81];
     fill_blank(grid);
-    put_str(grid, 0, 1, "File  Settings  Devices  View  Help");
+    put_str(grid, 0, 1, "File  Modules  Help");
     snprintf(st, sizeof(st), "%s  [%s]",
              hostport ? hostport : "127.0.0.1:5250",
              conn_tag ? conn_tag : "WAIT");
@@ -133,8 +141,11 @@ void mf_tui_paint_dashboard(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
     fill_system(grid);
     fill_card(grid, 0, t1, nbatt, batt);
     fill_card(grid, 27, t2, nchg, chg);
-    fill_card(grid, 54, t3, ninv, inv);
-    put_str(grid, 24, 0, "F10 menu  Arrows select  Enter open  Space active  q quit");
+    fill_card_at(grid, 0, 54, "Info", 0, NULL, "no weather service");
+    fill_card_at(grid, 1, 0, t3, ninv, inv, "not connected");
+    fill_card_at(grid, 1, 27, "Actuators (0)", 0, NULL, "not connected");
+    fill_card_at(grid, 1, 54, "Services (0)", 0, NULL, "not connected");
+    put_str(grid, 24, 0, "F10 menu  Arrows select  Enter open  e edit  Space active  q quit");
 }
 
 void mf_tui_paint_settings(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
@@ -190,7 +201,7 @@ void mf_tui_paint_pack(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1], int has_switch)
     int r, c, i;
     char cell[20];
     fill_blank(grid);
-    put_str(grid, 0, 1, "File  Settings  Devices  View  Help");
+    put_str(grid, 0, 1, "File  Modules  Help");
     put_str(grid, 1, 0, "pack-jk  battery/demo  streaming  seq 44");
     put_str(grid, 2, 0, "interface: bluetooth  28:D4:1E:A7:23:39");
     draw_box(grid, 3, 0, 80, 6, "Pack");
@@ -218,7 +229,7 @@ void mf_tui_paint_pack(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1], int has_switch)
 void mf_tui_paint_charger(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1])
 {
     fill_blank(grid);
-    put_str(grid, 0, 1, "File  Settings  Devices  View  Help");
+    put_str(grid, 0, 1, "File  Modules  Help");
     put_str(grid, 1, 0, "classic-1  charger/classic  streaming  seq 4");
     put_str(grid, 2, 0, "interface: tcp  172.16.0.20:502");
     draw_box(grid, 3, 0, 80, 13, "Classic");

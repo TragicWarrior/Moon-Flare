@@ -43,13 +43,16 @@ const char *mf_dash_catalog_name(int i);
 const char *mf_dash_catalog_kind(int i);
 int  mf_dash_catalog_active(int i);
 
-/* Dashboard keys: arrows/Tab move the cursor, Enter opens, Space toggles
- * whether the selected device counts toward the System totals. */
+/* Dashboard keys: arrows/Tab move the cursor, Enter opens, e edits the
+ * selected module's settings, Space toggles whether it counts toward the
+ * System totals. */
 #define MF_DASH_KEY_NONE    0
 #define MF_DASH_KEY_HANDLED 1
 #define MF_DASH_KEY_OPEN    2
 #define MF_DASH_KEY_TOGGLE  3
+#define MF_DASH_KEY_EDIT    4   /* 'e': settings for the selected module */
 int  mf_dash_key(wint_t c, int *cat_idx);
+void mf_dash_select(int cat_idx);
 
 void mf_pack_init(void);
 void mf_pack_show(int charger);
@@ -92,7 +95,8 @@ int  mf_devset_mouse(int x, int y, mmask_t bstate);
 const char *mf_devset_id(void);
 const char *mf_devset_poll_text(void);
 const char *mf_devset_payload(void);
-int mf_devset_get_graph_interval(void);
+int mf_devset_get_graph_interval(void);   /* 0 when not shown */
+void mf_devset_set_kind(const char *kind);
 void mf_devset_set_graph_interval(int minutes);
 
 void mf_confirm_show(const char *name, const char *action);

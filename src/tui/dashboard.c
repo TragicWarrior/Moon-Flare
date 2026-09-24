@@ -3,6 +3,8 @@
 #include "system/system.h"
 
 #include <cJSON.h>
+#include <stdarg.h>
+#include <wchar.h>
 #include <stdio.h>
 #include <string.h>
 #include <vdk.h>
@@ -31,29 +33,45 @@ typedef struct {
     bool active;
 } cat_dev_t;
 
-static const char *const g_card_kind[3] = { "battery", "charger", "inverter" };
+/* Device cards, in keyboard order.  The grid is 3 x 2: row 0 is Batteries,
+ * Chargers and the Info panel; row 1 is Inverters, Actuators, Services. */
+#define NCARD 5
+static const char *const g_card_kind[NCARD] = {
+    "battery", "charger", "inverter", "actuator", "service"
+};
+static const char *const g_card_title[NCARD] = {
+    "Batteries", "Chargers", "Inverters", "Actuators", "Services"
+};
+static const int g_card_row[NCARD] = { 0, 0, 1, 1, 1 };
+static const int g_card_col[NCARD] = { 0, 1, 0, 1, 2 };
+#define INFO_ROW 0
+#define INFO_COL 2
 
 static cat_dev_t g_cat[MAX_CAT];
 static int g_ncat;
 static int g_dash_visible = 1;
 static int g_sel_card;
-static int g_sel_row[3];
+static int g_sel_row[NCARD];
 
-static vk_frame_t   *g_fr[3];
-static vk_listbox_t *g_lb[3];
+static vk_frame_t   *g_fr[NCARD];
+static vk_listbox_t *g_lb[NCARD];
+static vk_frame_t   *g_info_fr;     /* row 0, column 2: weather display */
+static vk_listbox_t *g_info_lb;
+static char          g_info_cap[48];
+static vk_box_t     *g_grid_row[2];
 static vk_label_t   *g_status;
 static vk_label_t   *g_hints;
 static vk_label_t   *g_small;
 static vk_frame_t   *g_client;      /* flat cyan/blue client-area frame */
 static vk_box_t     *g_body;        /* vertical: System panel over the cards */
-static vk_box_t     *g_cards_box;   /* horizontal box holding the 3 cards */
+static vk_box_t     *g_cards_box;   /* vertical: the two grid rows */
 static vk_box_t     *g_sys_body;            /* names | bars | pad */
 static vk_label_t   *g_sys_pad;
 static vk_box_t     *g_sys_col[2];
 static vk_label_t   *g_sys_name[SYS_LINES];
 static vk_progress_t *g_sys_mt[SYS_ROWS];
 static vk_label_t   *g_sys_gap[SYS_ROWS];       /* blank row under each bar */
-static char          g_caps[3][32];
+static char          g_caps[NCARD][32];
 static char          g_last_hp[128];
 static char          g_last_tag[24];
 static char          g_last_json[65536];
@@ -108,6 +126,33 @@ static vk_frame_t *mk_card(int idx, char *cap)
                              frame_caption, cap);
     vk_frame_update(f);
     g_lb[idx] = lb;
+    return f;
+}
+
+/* The Info panel: a card-styled frame with a list that is only drawn,
+ * never selected. */
+static vk_frame_t *mk_info(void)
+{
+    vk_frame_t *f = vk_frame_create(MF_CARD_W, MF_CARD_H);
+    vk_listbox_t *lb;
+
+    vk_widget_set_colors(VK_WIDGET(f), COL_TEXT, COL_BG);
+    vk_widget_set_relief_colors(VK_WIDGET(f), COLOR_WHITE, COLOR_BLACK);
+    vk_frame_set_border_style(f, VK_BORDER_SINGLE | VK_RELIEF_SUNKEN);
+    vk_frame_set_border_colors(f, COL_TEXT, COL_BG);
+    vk_widget_set_expand(VK_WIDGET(f));
+    lb = vk_listbox_create(MF_CARD_W - 2, MF_CARD_H - 2);
+    vk_widget_set_expand(VK_WIDGET(lb));
+    vk_widget_set_colors(VK_WIDGET(lb), COL_TEXT, COL_BG);
+    vk_listbox_set_highlight(lb, COL_TEXT, COL_BG);
+    vk_listbox_set_unfocused(lb, COL_TEXT, COL_BG);
+    vk_listbox_set_focused(lb, false);
+    vk_frame_set_child(f, VK_WIDGET(lb), VK_INHERIT_NONE);
+    snprintf(g_info_cap, sizeof(g_info_cap), "Info");
+    vk_object_register_event(VK_OBJECT(f), VK_EVENT_ON_FINALIZE,
+                             frame_caption, g_info_cap);
+    vk_frame_update(f);
+    g_info_lb = lb;
     return f;
 }
 
@@ -227,23 +272,38 @@ static void ensure_cards(void)
     vk_widget_set_expand(VK_WIDGET(g_body));
     mk_system(MF_CARD_W * 3 - 2);
     g_cards_box = vk_box_create(MF_CARD_W * 3 - 2, MF_CARD_H - 2 - MF_SYS_H,
-                                VK_BOX_HORIZONTAL, 3);
+                                VK_BOX_VERTICAL, 2);
     vk_box_set_homogeneous(g_cards_box, false);
     vk_widget_set_expand(VK_WIDGET(g_cards_box));
-    g_fr[0] = mk_card(0, g_caps[0]);
-    g_fr[1] = mk_card(1, g_caps[1]);
-    g_fr[2] = mk_card(2, g_caps[2]);
+    for (i = 0; i < 2; i++)
+    {
+        g_grid_row[i] = vk_box_create(MF_CARD_W * 3 - 2,
+                                      (MF_CARD_H - 2 - MF_SYS_H) / 2,
+                                      VK_BOX_HORIZONTAL, 3);
+        vk_box_set_homogeneous(g_grid_row[i], false);
+        vk_widget_set_expand(VK_WIDGET(g_grid_row[i]));
+    }
+    for (i = 0; i < NCARD; i++)
+        g_fr[i] = mk_card(i, g_caps[i]);
+    g_info_fr = mk_info();
     /* Top-down attach: frame -> body -> System panel over the cards box ->
-       cards.  Body and cards box are EXPAND and inherit the frame's cyan/blue
-       so any bare gap is blue; the System frame is fixed height and sized by
-       size_system(); the cards are EXPAND too (the box splits its width
-       across them) and keep their own white-on-blue (INHERIT_NONE). */
+       two grid rows -> cards.  Body, cards box and rows are EXPAND and
+       inherit the frame's cyan/blue so any bare gap is blue; the System
+       panel is fixed height and sized by size_system(); the cards are EXPAND
+       too (each row splits its width across them) and keep their own
+       white-on-blue (INHERIT_NONE). */
     mf_ui_attach(VK_WIDGET(g_client), 0, MF_CARD_Y);
     vk_frame_set_child(g_client, VK_WIDGET(g_body), VK_INHERIT_COLOR);
     vk_box_set_widget(g_body, 0, VK_WIDGET(g_sys_body), VK_INHERIT_NONE);
     vk_box_set_widget(g_body, 1, VK_WIDGET(g_cards_box), VK_INHERIT_COLOR);
-    for (i = 0; i < 3; i++)
-        vk_box_set_widget(g_cards_box, i, VK_WIDGET(g_fr[i]), VK_INHERIT_NONE);
+    for (i = 0; i < 2; i++)
+        vk_box_set_widget(g_cards_box, i, VK_WIDGET(g_grid_row[i]),
+                          VK_INHERIT_COLOR);
+    for (i = 0; i < NCARD; i++)
+        vk_box_set_widget(g_grid_row[g_card_row[i]], g_card_col[i],
+                          VK_WIDGET(g_fr[i]), VK_INHERIT_NONE);
+    vk_box_set_widget(g_grid_row[INFO_ROW], INFO_COL, VK_WIDGET(g_info_fr),
+                      VK_INHERIT_NONE);
 }
 
 static void show_too_small(int cols)
@@ -268,16 +328,19 @@ void mf_dash_init(void)
 {
     int cols = mf_ui_cols();
     int rows = mf_ui_rows();
-    snprintf(g_caps[0], sizeof(g_caps[0]), "Batteries (0)");
-    snprintf(g_caps[1], sizeof(g_caps[1]), "Chargers (0)");
-    snprintf(g_caps[2], sizeof(g_caps[2]), "Inverters (0)");
+    {
+        int k;
+
+        for (k = 0; k < NCARD; k++)
+            snprintf(g_caps[k], sizeof(g_caps[k]), "%s (0)", g_card_title[k]);
+    }
     g_status = vk_label_create(cols > 0 ? cols : 80);
     vk_widget_set_colors(VK_WIDGET(g_status), COL_TEXT, COL_BG);
     mf_ui_attach(VK_WIDGET(g_status), 0, 1);
     g_hints = vk_label_create(cols > 0 ? cols : 80);
     vk_widget_set_colors(VK_WIDGET(g_hints), COL_TEXT, COL_BG);
     vk_label_set_text(g_hints,
-                      "F10 menu  Arrows select  Enter open  Space active  q quit");
+                      "F10 menu  Arrows select  Enter open  e edit  Space active  q quit");
     mf_ui_attach(VK_WIDGET(g_hints), 0, rows > 0 ? rows - 1 : 24);
     vk_label_update(g_hints);
     mf_dash_on_resize();
@@ -332,7 +395,11 @@ void mf_dash_on_resize(void)
 
             vk_widget_resize(VK_WIDGET(g_body), bw, bh);
             size_system(bw);
-            vk_widget_resize(VK_WIDGET(g_cards_box), bw, ch < 3 ? 3 : ch);
+            if (ch < 6)
+                ch = 6;
+            vk_widget_resize(VK_WIDGET(g_cards_box), bw, ch);
+            vk_widget_resize(VK_WIDGET(g_grid_row[0]), bw, ch / 2);
+            vk_widget_resize(VK_WIDGET(g_grid_row[1]), bw, ch - ch / 2);
         }
         vk_widget_show(VK_WIDGET(g_client));
     }
@@ -451,7 +518,7 @@ static void apply_selection(void)
 
     if (card_count(g_sel_card) == 0)
     {
-        for (i = 0; i < 3; i++)
+        for (i = 0; i < NCARD; i++)
         {
             if (card_count(i) > 0)
             {
@@ -460,7 +527,7 @@ static void apply_selection(void)
             }
         }
     }
-    for (i = 0; i < 3; i++)
+    for (i = 0; i < NCARD; i++)
     {
         n = card_count(i);
         if (g_sel_row[i] >= n)
@@ -608,11 +675,228 @@ void mf_dash_set_visible(int vis)
     }
 }
 
+/* Recomposite the cards up through the client frame. */
+static void repaint_cards(void)
+{
+    int i;
+
+    for (i = 0; i < NCARD; i++)
+        if (g_fr[i])
+            vk_frame_update(g_fr[i]);
+    if (g_info_fr)
+        vk_frame_update(g_info_fr);
+    for (i = 0; i < 2; i++)
+        if (g_grid_row[i])
+            vk_box_update(g_grid_row[i]);
+    if (g_cards_box)
+        vk_box_update(g_cards_box);
+    if (g_body)
+        vk_box_update(g_body);
+    if (g_client)
+        vk_frame_update(g_client);
+}
+
+static void info_line(const char *fmt, ...)
+{
+    char line[64];
+    va_list ap;
+
+    va_start(ap, fmt);
+    vsnprintf(line, sizeof(line), fmt, ap);
+    va_end(ap);
+    vk_listbox_add_item(g_info_lb, line, NULL, NULL);
+}
+
+/* Symbol for a service's neutral weather icon key ("" when unknown). */
+static const char *wx_symbol(const char *key, int is_day)
+{
+    static const struct {
+        const char *key;
+        const char *day;
+        const char *night;
+    } map[] = {
+        { "clear",         "\u2600",      "\U0001F319" },  /* sun / moon */
+        { "partly_cloudy", "\u26C5",      "\u2601" },      /* sun behind cloud / cloud */
+        { "mostly_cloudy", "\U0001F325",  "\u2601" },      /* sun behind big cloud */
+        { "cloudy",        "\u2601",      "\u2601" },
+        { "wind",          "\U0001F32C",  "\U0001F32C" },  /* wind face */
+        { "showers",       "\U0001F326",  "\U0001F327" },  /* sun + rain / rain */
+        { "rain",          "\U0001F327",  "\U0001F327" },
+        { "freezing_rain", "\U0001F327",  "\U0001F327" },
+        { "thunderstorm",  "\u26C8",      "\u26C8" },      /* thunder cloud + rain */
+        { "snow",          "\U0001F328",  "\U0001F328" },
+        { "sleet",         "\U0001F328",  "\U0001F328" },
+        { "blizzard",      "\u2744",      "\u2744" },      /* snowflake */
+        { "fog",           "\U0001F32B",  "\U0001F32B" },
+        { "haze",          "\U0001F32B",  "\U0001F32B" },
+        { "tornado",       "\U0001F32A",  "\U0001F32A" },
+        { "hurricane",     "\U0001F300",  "\U0001F300" },  /* cyclone */
+        { "hot",           "\U0001F525",  "\U0001F525" },  /* fire */
+        { "cold",          "\U0001F976",  "\U0001F976" },  /* cold face */
+    };
+    size_t i;
+
+    for (i = 0; key && i < sizeof(map) / sizeof(map[0]); i++)
+        if (strcmp(key, map[i].key) == 0)
+            return is_day ? map[i].day : map[i].night;
+    return "";
+}
+
+/* Screen columns of a UTF-8 string. */
+static int text_cols(const char *s)
+{
+    wchar_t w[128];
+    size_t n = mbstowcs(w, s, 127);
+    int c;
+
+    if (n == (size_t)-1)
+        return (int)strlen(s);
+    c = wcswidth(w, n);
+    return c < 0 ? (int)n : c;
+}
+
+/* The icon in a fixed 2-column slot.  Many weather symbols are 1 column by
+ * wcwidth() but drawn 2 wide by some terminals; the padding space absorbs
+ * that, so the text after the icon never shifts. */
+static void wx_slot(const cJSON *o, char *out, size_t cap)
+{
+    const cJSON *k = cJSON_GetObjectItemCaseSensitive(o, "icon");
+    const char *sym = wx_symbol(cJSON_IsString(k) ? k->valuestring : NULL,
+        !cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(o, "is_day")));
+    int w = sym[0] ? text_cols(sym) : 0;
+
+    snprintf(out, cap, "%s%s", sym, w >= 2 ? "" : w == 1 ? " " : "  ");
+}
+
+/* Forecast period names made to fit a 24-column card: "Thursday" -> "Thu",
+ * "Thursday Night" -> "Thu Nt", "This Afternoon" -> "Aftn".  Tonight,
+ * Overnight and Today fit as they are; unknown names pass through. */
+static void short_period(const char *name, char *out, size_t cap)
+{
+    static const char *const map[][2] = {
+        { "Tonight", "Tonight" }, { "This Afternoon", "Aftn" },
+        { "Overnight", "Overnight" }, { "Today", "Today" },
+    };
+    size_t i;
+    const char *sp;
+
+    for (i = 0; i < sizeof(map) / sizeof(map[0]); i++)
+        if (strcmp(name, map[i][0]) == 0)
+        {
+            snprintf(out, cap, "%s", map[i][1]);
+            return;
+        }
+    sp = strchr(name, ' ');
+    if (strlen(name) > 3 && (!sp || strcmp(sp, " Night") == 0))
+        snprintf(out, cap, "%.3s%s", name, sp ? " Nt" : "");
+    else
+        snprintf(out, cap, "%s", name);
+}
+
+/* The Info panel shows the first active, online service that publishes a
+ * provider-neutral "weather" object (see the weather service plugins). */
+static void fill_info(const cJSON *services)
+{
+    const cJSON *svc, *wx = NULL;
+    const char *why = NULL;
+    int nsvc = 0;
+
+    if (!g_info_lb)
+        return;
+    vk_listbox_reset(g_info_lb);
+    cJSON_ArrayForEach(svc, services)
+    {
+        const cJSON *w = cJSON_GetObjectItemCaseSensitive(
+            cJSON_GetObjectItemCaseSensitive(svc, "data"), "weather");
+
+        nsvc++;
+        if (!why && cJSON_IsString(cJSON_GetObjectItemCaseSensitive(svc, "last_error")))
+            why = cJSON_GetObjectItemCaseSensitive(svc, "last_error")->valuestring;
+        if (!wx && cJSON_IsObject(w) &&
+            !cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(svc, "active")) &&
+            cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(svc, "online")))
+            wx = w;
+    }
+    if (!wx)
+    {
+        snprintf(g_info_cap, sizeof(g_info_cap), "Info");
+        info_line("%s", nsvc ? "waiting for weather" : "no weather service");
+        if (why)                        /* e.g. "ZIP 12345 not found" */
+            info_line("%s", why);
+        vk_listbox_update(g_info_lb);
+        return;
+    }
+    {
+        const cJSON *t = cJSON_GetObjectItemCaseSensitive(wx, "temp_f");
+        const cJSON *cond = cJSON_GetObjectItemCaseSensitive(wx, "conditions");
+        const cJSON *hum = cJSON_GetObjectItemCaseSensitive(wx, "humidity_pct");
+        const cJSON *ws = cJSON_GetObjectItemCaseSensitive(wx, "wind_mph");
+        const cJSON *wd = cJSON_GetObjectItemCaseSensitive(wx, "wind_dir");
+        const cJSON *st = cJSON_GetObjectItemCaseSensitive(wx, "station");
+        const cJSON *at = cJSON_GetObjectItemCaseSensitive(wx, "observed_local");
+        const cJSON *fc = cJSON_GetObjectItemCaseSensitive(wx, "forecast");
+        const cJSON *p;
+        char wind[24];
+        int nf = 0;
+
+        snprintf(g_info_cap, sizeof(g_info_cap), "Weather");
+        char slot[16];
+        int avail = 22;
+
+        {
+            int lw = 0;
+
+            vk_widget_get_metrics(VK_WIDGET(g_info_lb), &lw, NULL);
+            if (lw > 2)
+                avail = lw - 2;         /* the listbox pads one column each side */
+        }
+        wx_slot(wx, slot, sizeof(slot));
+        if (cJSON_IsNumber(t))
+            info_line("%s %.0fF %s", slot, t->valuedouble,
+                      cJSON_IsString(cond) ? cond->valuestring : "");
+        else
+            info_line("%s %s", slot, cJSON_IsString(cond) ? cond->valuestring : "--");
+        wind[0] = '\0';
+        if (cJSON_IsNumber(ws))
+            snprintf(wind, sizeof(wind), "%s %.0f mph",
+                     cJSON_IsString(wd) ? wd->valuestring : "", ws->valuedouble);
+        if (cJSON_IsNumber(hum))
+            info_line("Hum %.0f%%  %s", hum->valuedouble, wind);
+        else if (wind[0])
+            info_line("Wind %s", wind);
+        cJSON_ArrayForEach(p, fc)
+        {
+            const cJSON *n = cJSON_GetObjectItemCaseSensitive(p, "name");
+            const cJSON *pt = cJSON_GetObjectItemCaseSensitive(p, "temp_f");
+            const cJSON *sh = cJSON_GetObjectItemCaseSensitive(p, "short");
+
+            char nm[16], ps[16], line[96];
+
+            if (nf++ >= 2)
+                break;
+            short_period(cJSON_IsString(n) ? n->valuestring : "", nm, sizeof(nm));
+            wx_slot(p, ps, sizeof(ps));
+            snprintf(line, sizeof(line), "%s %s %.0fF %s", ps, nm,
+                     cJSON_IsNumber(pt) ? pt->valuedouble : 0.0,
+                     cJSON_IsString(sh) ? sh->valuestring : "");
+            /* The icon already says it: drop the words rather than cut them. */
+            if (text_cols(line) > avail)
+                snprintf(line, sizeof(line), "%s %s %.0fF", ps, nm,
+                         cJSON_IsNumber(pt) ? pt->valuedouble : 0.0);
+            info_line("%s", line);
+        }
+        if (cJSON_IsString(st) || cJSON_IsString(at))
+            info_line("%s %s", cJSON_IsString(st) ? st->valuestring : "",
+                      cJSON_IsString(at) ? at->valuestring : "");
+    }
+    vk_listbox_update(g_info_lb);
+}
+
 void mf_dash_update(const char *hostport, const char *tag, const char *json)
 {
     char st[96];
-    cJSON *root, *b, *c, *i;
-    int nb, nc, ni;
+    cJSON *root, *arr[NCARD];
+    int k;
 
     snprintf(g_last_hp, sizeof(g_last_hp), "%s", hostport ? hostport : "");
     snprintf(g_last_tag, sizeof(g_last_tag), "%s", tag ? tag : "");
@@ -628,26 +912,23 @@ void mf_dash_update(const char *hostport, const char *tag, const char *json)
 
     snprintf(g_last_json, sizeof(g_last_json), "%s", json);
     root = cJSON_Parse(json);
-    b = root ? cJSON_GetObjectItemCaseSensitive(root, "batteries") : NULL;
-    c = root ? cJSON_GetObjectItemCaseSensitive(root, "chargers") : NULL;
-    i = root ? cJSON_GetObjectItemCaseSensitive(root, "inverters") : NULL;
-    nb = b && cJSON_IsArray(b) ? cJSON_GetArraySize(b) : 0;
-    nc = c && cJSON_IsArray(c) ? cJSON_GetArraySize(c) : 0;
-    ni = i && cJSON_IsArray(i) ? cJSON_GetArraySize(i) : 0;
     g_ncat = 0;
-    cat_add(b, "battery");
-    cat_add(c, "charger");
-    cat_add(i, "inverter");
+    for (k = 0; k < NCARD; k++)
+    {
+        static const char *const key[NCARD] = {
+            "batteries", "chargers", "inverters", "actuators", "services"
+        };
+        cJSON *a = root ? cJSON_GetObjectItemCaseSensitive(root, key[k]) : NULL;
 
-    snprintf(g_caps[0], sizeof(g_caps[0]), "Batteries (%d)", nb);
-    snprintf(g_caps[1], sizeof(g_caps[1]), "Chargers (%d)", nc);
-    snprintf(g_caps[2], sizeof(g_caps[2]), "Inverters (%d)", ni);
-    if (g_lb[0])
-        fill_lb(g_lb[0], b, 0);
-    if (g_lb[1])
-        fill_lb(g_lb[1], c, 1);
-    if (g_lb[2])
-        fill_lb(g_lb[2], i, 2);
+        arr[k] = cJSON_IsArray(a) ? a : NULL;
+        cat_add(arr[k], g_card_kind[k]);
+        snprintf(g_caps[k], sizeof(g_caps[k]), "%s (%d)", g_card_title[k],
+                 arr[k] ? cJSON_GetArraySize(arr[k]) : 0);
+    }
+    for (k = 0; k < NCARD; k++)
+        if (g_lb[k])
+            fill_lb(g_lb[k], arr[k], k);
+    fill_info(arr[4]);
     apply_selection();
     fill_system(root ? cJSON_GetObjectItemCaseSensitive(root, "system") : NULL);
     if (g_sys_body)
@@ -658,51 +939,47 @@ void mf_dash_update(const char *hostport, const char *tag, const char *json)
             vk_box_update(g_sys_col[r]);
         vk_box_update(g_sys_body);
     }
-    if (g_fr[0])
-        vk_frame_update(g_fr[0]);
-    if (g_fr[1])
-        vk_frame_update(g_fr[1]);
-    if (g_fr[2])
-        vk_frame_update(g_fr[2]);
-    if (g_cards_box)
-        vk_box_update(g_cards_box);
-    if (g_body)
-        vk_box_update(g_body);
-    if (g_client)
-        vk_frame_update(g_client);
+    repaint_cards();
     if (root)
         cJSON_Delete(root);
 }
 
-/* Repaint after a selection move without new data. */
-static void repaint_cards(void)
-{
-    int i;
 
-    for (i = 0; i < 3; i++)
-        if (g_fr[i])
-            vk_frame_update(g_fr[i]);
-    if (g_cards_box)
-        vk_box_update(g_cards_box);
-    if (g_body)
-        vk_box_update(g_body);
-    if (g_client)
-        vk_frame_update(g_client);
-}
 
 static void move_card(int dir)
 {
     int i, c = g_sel_card;
 
-    for (i = 0; i < 3; i++)
+    for (i = 0; i < NCARD; i++)
     {
-        c = (c + dir + 3) % 3;
+        c = (c + dir + NCARD) % NCARD;
         if (card_count(c) > 0)
         {
             g_sel_card = c;
             return;
         }
     }
+}
+
+/* Put the cursor on catalog entry `cat_idx` (e.g. chosen from the menu). */
+void mf_dash_select(int cat_idx)
+{
+    int card, row = 0, k;
+
+    if (cat_idx < 0 || cat_idx >= g_ncat)
+        return;
+    for (card = 0; card < NCARD; card++)
+        if (strcmp(g_card_kind[card], g_cat[cat_idx].kind) == 0)
+            break;
+    if (card == NCARD)
+        return;
+    for (k = 0; k < cat_idx; k++)
+        if (strcmp(g_cat[k].kind, g_card_kind[card]) == 0)
+            row++;
+    g_sel_card = card;
+    g_sel_row[card] = row;
+    apply_selection();
+    repaint_cards();
 }
 
 int mf_dash_key(wint_t c, int *cat_idx)
@@ -733,6 +1010,8 @@ int mf_dash_key(wint_t c, int *cat_idx)
         case '\n':
         case KEY_ENTER:
         case ' ':
+        case 'e':
+        case 'E':
         {
             int k = cat_index(g_sel_card, g_sel_row[g_sel_card]);
 
@@ -740,7 +1019,14 @@ int mf_dash_key(wint_t c, int *cat_idx)
                 return MF_DASH_KEY_HANDLED;
             if (cat_idx)
                 *cat_idx = k;
-            return c == ' ' ? MF_DASH_KEY_TOGGLE : MF_DASH_KEY_OPEN;
+            if (c == ' ')
+                return MF_DASH_KEY_TOGGLE;
+            if (c == 'e' || c == 'E')
+                return MF_DASH_KEY_EDIT;
+            /* Only batteries and chargers have a detail view so far. */
+            if (g_sel_card > 1)
+                return MF_DASH_KEY_HANDLED;
+            return MF_DASH_KEY_OPEN;
         }
         default:
             return MF_DASH_KEY_NONE;
@@ -753,9 +1039,18 @@ int mf_dash_key(wint_t c, int *cat_idx)
 void mf_dash_shutdown(void)
 {
     int i;
+    for (i = 0; i < 2; i++)
+    {
+        int c;
+
+        if (!g_grid_row[i])
+            continue;
+        for (c = 0; c < 3; c++)
+            vk_box_set_widget(g_grid_row[i], c, NULL, VK_INHERIT_NONE);
+    }
     if (g_cards_box)
     {
-        for (i = 0; i < 3; i++)
+        for (i = 0; i < 2; i++)
             vk_box_set_widget(g_cards_box, i, NULL, VK_INHERIT_NONE);
     }
     if (g_body)
@@ -794,13 +1089,27 @@ void mf_dash_shutdown(void)
         vk_box_destroy(g_sys_body);
         g_sys_body = NULL;
     }
-    for (i = 0; i < 3; i++)
+    for (i = 0; i < NCARD; i++)
     {
         if (g_fr[i])
         {
             vk_frame_destroy(g_fr[i]);
             g_fr[i] = NULL;
             g_lb[i] = NULL;
+        }
+    }
+    if (g_info_fr)
+    {
+        vk_frame_destroy(g_info_fr);
+        g_info_fr = NULL;
+        g_info_lb = NULL;
+    }
+    for (i = 0; i < 2; i++)
+    {
+        if (g_grid_row[i])
+        {
+            vk_box_destroy(g_grid_row[i]);
+            g_grid_row[i] = NULL;
         }
     }
     if (g_cards_box)
@@ -846,8 +1155,7 @@ int mf_dash_mouse(int x, int y, mmask_t bstate)
 {
     int i, k, seen, row, ly;
     int fx, fy, fw, fh;
-    int cw, rows, slot;
-    const char *want;
+    int cw, rows, slot, top, ch, rh;
     vk_listbox_t *lb;
 
     if (!(bstate & LEFT))
@@ -864,15 +1172,20 @@ int mf_dash_mouse(int x, int y, mmask_t bstate)
     slot = (cw - 2) / 3;
     if (slot < 1)
         slot = 1;
-    fy = MF_CARD_Y + 1 + MF_SYS_H;   /* card top, below the System panel */
-    fh = rows - MF_CARD_Y - 1 - 2 - MF_SYS_H;
+    top = MF_CARD_Y + 1 + MF_SYS_H;          /* grid top, below the bars */
+    ch = rows - MF_CARD_Y - 1 - 2 - MF_SYS_H; /* grid height */
+    if (ch < 6)
+        ch = 6;
+    rh = ch / 2;
 
-    for (i = 0; i < 2; i++)
+    for (i = 0; i < NCARD; i++)
     {
         if (!g_fr[i] || !g_lb[i])
             continue;
-        fx = 1 + i * slot;           /* inside the client frame's left border */
+        fx = 1 + g_card_col[i] * slot;       /* inside the client frame */
         fw = slot;
+        fy = top + g_card_row[i] * rh;
+        fh = g_card_row[i] ? ch - rh : rh;
         if (x < fx || x >= fx + fw || y < fy || y >= fy + fh)
             continue;
         lb = g_lb[i];
@@ -880,11 +1193,10 @@ int mf_dash_mouse(int x, int y, mmask_t bstate)
         row = vk_listbox_get_scroll_pos(lb) + ly;
         if (row < 0 || row >= vk_listbox_get_item_count(lb))
             return 1;
-        want = (i == 0) ? "battery" : "charger";
         seen = 0;
         for (k = 0; k < g_ncat; k++)
         {
-            if (strcmp(g_cat[k].kind, want) != 0)
+            if (strcmp(g_cat[k].kind, g_card_kind[i]) != 0)
                 continue;
             if (seen == row)
             {
@@ -893,7 +1205,10 @@ int mf_dash_mouse(int x, int y, mmask_t bstate)
                 g_sel_card = i;
                 g_sel_row[i] = row;
                 apply_selection();
-                mf_ui_open_device_view(k);
+                repaint_cards();
+                /* Only batteries and chargers have a detail view so far. */
+                if (i <= 1)
+                    mf_ui_open_device_view(k);
                 return 1;
             }
             seen++;

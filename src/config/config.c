@@ -347,6 +347,42 @@ static int apply_device(mf_config_device_t *dev, const cJSON *obj)
     if ((v = cJSON_GetObjectItem(obj, "bus")) && v->type == cJSON_String)
         strncpy(dev->bus, v->valuestring, sizeof(dev->bus) - 1);
 
+    /* Everything the daemon has no field for belongs to the plugin: keep it
+     * verbatim so it round-trips and reaches open(). */
+    {
+        static const char *const known[] = {
+            "uuid", "name", "kind", "driver", "enabled", "active",
+            "poll_interval_s", "capture_interval_s", "bus",
+            "usb", "ble", "modbus"
+        };
+        cJSON *extra = cJSON_CreateObject();
+        const cJSON *it;
+
+        cJSON_ArrayForEach(it, obj)
+        {
+            size_t k;
+            int is_known = 0;
+
+            for (k = 0; k < sizeof(known) / sizeof(known[0]); k++)
+                if (it->string && strcmp(it->string, known[k]) == 0)
+                    is_known = 1;
+            if (!is_known && it->string && !strchr(it->string, '.'))
+                cJSON_AddItemToObject(extra, it->string, cJSON_Duplicate(it, 1));
+        }
+        if (extra && extra->child)
+        {
+            char *s = cJSON_PrintUnformatted(extra);
+
+            if (s && strlen(s) < sizeof(dev->extra_json))
+                snprintf(dev->extra_json, sizeof(dev->extra_json), "%s", s);
+            else if (s)
+                fprintf(stderr, "config: plugin settings for %s too large; "
+                        "dropped\n", dev->uuid);
+            free(s);
+        }
+        cJSON_Delete(extra);
+    }
+
     /* Nested objects (only applied if present). */
     if ((v = cJSON_GetObjectItem(obj, "usb")) && v->type == cJSON_Object)
         apply_usb(&dev->usb, v);
@@ -530,6 +566,21 @@ static cJSON *device_to_json(const mf_config_device_t *d)
                         d->modbus.unit_device_id);
         cJSON_AddBool(mod, "auto_net", d->modbus.auto_net);
         cJSON_AddItemToObject(dev, "modbus", mod);
+    }
+    if (d->extra_json[0])
+    {
+        cJSON *extra = cJSON_Parse(d->extra_json);
+        cJSON *it;
+
+        while (extra && (it = extra->child) != NULL)
+        {
+            cJSON_DetachItemViaPointer(extra, it);
+            if (it->string && !cJSON_GetObjectItemCaseSensitive(dev, it->string))
+                cJSON_AddItemToObject(dev, it->string, it);
+            else
+                cJSON_Delete(it);
+        }
+        cJSON_Delete(extra);
     }
     return dev;
 }

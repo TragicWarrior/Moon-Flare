@@ -429,12 +429,15 @@ static void test_pr10(void)
         const char *p = resp.body;
         int npoll = 0;
 
-        while (p && (p = strstr(p, "\"poll_interval_s\"")))
+        /* As a key ("...": value); _fields also names it as a value. */
+        while (p && (p = strstr(p, "\"poll_interval_s\":")))
         {
             npoll++;
-            p += 16;
+            p += 17;
         }
         check(npoll == 1, "GET settings poll once");
+        check(strstr(resp.body, "\"_fields\":[") != NULL,
+              "GET settings carries the plugin's field list");
         check(strstr(resp.body, "\"name\"") != NULL, "settings has name");
         check(strstr(resp.body, "\"uuid\"") != NULL, "settings has uuid");
     }

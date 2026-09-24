@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 project(moon-flare
-    VERSION 0.3.0
+    VERSION 0.4.0
     DESCRIPTION "Moon Flare: multi-kind energy dashboard (daemon, REST, plugins, TUI)"
     LANGUAGES C)
 
@@ -199,6 +199,41 @@ set_target_properties(test_xd_plugin PROPERTIES
     BUILD_RPATH ${CMAKE_BINARY_DIR}/xd_plugins)
 add_test(NAME xd_plugin COMMAND test_xd_plugin $<TARGET_FILE:mf_battery_xd>)
 
+# weather.gov service plugin: libcurl (multi interface) + cJSON.  Built only
+# when libcurl's development files are present (libcurl4-openssl-dev).
+find_package(CURL)
+if(CURL_FOUND)
+    set_target_properties(mf_cjson PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    find_package(ZLIB REQUIRED)
+    include(GNUInstallDirs)
+    add_library(mf_service_weathergov SHARED
+        src/plugins/service_weathergov/plugin.c
+        src/plugins/service_weathergov/zcta.c)
+    target_include_directories(mf_service_weathergov PRIVATE
+        ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/third_party/cJSON)
+    target_link_libraries(mf_service_weathergov PRIVATE
+        CURL::libcurl ZLIB::ZLIB mf_cjson m)
+    target_compile_definitions(mf_service_weathergov PRIVATE
+        MF_DATADIR="${CMAKE_INSTALL_FULL_DATADIR}/moon-flare")
+
+    # ZIP table: parsing, unzip and lookup, without the network.
+    add_executable(test_zcta tests/test_zcta.c
+        src/plugins/service_weathergov/zcta.c)
+    target_include_directories(test_zcta PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/plugins/service_weathergov)
+    target_link_libraries(test_zcta PRIVATE ZLIB::ZLIB)
+    target_compile_definitions(test_zcta PRIVATE
+        MF_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    add_test(NAME zcta COMMAND test_zcta)
+    set_target_properties(mf_service_weathergov PROPERTIES
+        PREFIX "lib" OUTPUT_NAME "mf_service_weathergov"
+        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/weather_plugins)
+    target_compile_definitions(mf_service_weathergov PRIVATE _GNU_SOURCE)
+    target_compile_options(mf_service_weathergov PRIVATE ${MF_WARN})
+else()
+    message(STATUS "libcurl not found: skipping the weather.gov plugin")
+endif()
+
 add_library(mf_battery_jk SHARED
     src/plugins/battery_jk/plugin.c
     src/jk/jk_proto.c)
@@ -341,6 +376,10 @@ install(TARGETS mf_gatt RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR})
 # Match KD 20 / example plugin_dir: $prefix/lib/moon-flare, not multiarch LIBDIR.
 install(TARGETS mf_charger_classic mf_battery_xd mf_battery_jk
         LIBRARY DESTINATION lib/moon-flare)
+if(TARGET mf_service_weathergov)
+    install(TARGETS mf_service_weathergov LIBRARY DESTINATION lib/moon-flare)
+    install(FILES data/zcta.txt DESTINATION ${CMAKE_INSTALL_DATADIR}/moon-flare)
+endif()
 # The demo plugin fakes a battery and a charger for development.  Keep it
 # out of production plugin dirs unless asked for.
 option(MF_INSTALL_DEMO "Install the demo plugin (libmf_demo.so)" OFF)

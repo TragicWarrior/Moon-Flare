@@ -393,6 +393,7 @@ static void print_system(const cJSON *sys)
 int cli_render_status(const cJSON *status, int raw)
 {
     const cJSON *batteries, *chargers, *inverters, *phantoms;
+    const cJSON *services, *actuators;
     cJSON *item;
     const cJSON *server;
 
@@ -478,6 +479,37 @@ int cli_render_status(const cJSON *status, int raw)
         cJSON_ArrayForEach(item, phantoms)
         {
             print_device_line("", item);
+            printf("\n");
+        }
+    }
+
+    actuators = cJSON_GetObjectItemCaseSensitive(status, "actuators");
+    if (cJSON_IsArray(actuators) && cJSON_GetArraySize(actuators) > 0)
+    {
+        printf("\nActuators:\n");
+        cJSON_ArrayForEach(item, actuators)
+        {
+            print_device_line("", item);
+            printf("\n");
+        }
+    }
+
+    services = cJSON_GetObjectItemCaseSensitive(status, "services");
+    if (cJSON_IsArray(services) && cJSON_GetArraySize(services) > 0)
+    {
+        printf("\nServices:\n");
+        cJSON_ArrayForEach(item, services)
+        {
+            const cJSON *wx = cJSON_GetObjectItemCaseSensitive(
+                cJSON_GetObjectItemCaseSensitive(item, "data"), "weather");
+            const cJSON *t = cJSON_GetObjectItemCaseSensitive(wx, "temp_f");
+            const cJSON *c = cJSON_GetObjectItemCaseSensitive(wx, "conditions");
+
+            print_device_line("", item);
+            if (cJSON_IsNumber(t))
+                printf("   %.0f F", t->valuedouble);
+            if (cJSON_IsString(c) && c->valuestring[0])
+                printf("   %s", c->valuestring);
             printf("\n");
         }
     }

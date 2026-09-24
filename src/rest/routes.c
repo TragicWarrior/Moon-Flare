@@ -71,6 +71,77 @@ static void cfg_remove_uuid(const char *uuid)
     }
 }
 
+static cJSON *plugin_describe(const mf_plugin_ops_t *ops);
+
+static const mf_plugin_ops_t *device_ops(const char *uuid)
+{
+    mf_devinfo_t info;
+
+    if (mf_devices_find_live(uuid, &info) != 0)
+        return NULL;
+    return mf_plugins_find(mf_devices_registry(), info.kind, info.driver);
+}
+
+/* Keep the plugin-specific settings of an accepted PUT in the device's
+ * extra_json, nested as config files have them ("weather.zip" ->
+ * "weather": {"zip": ...}).  Only keys the plugin's describe() declares
+ * are config; other plugin keys (a JK's BMS registers) are live device
+ * writes and must not be saved.  Struct-backed usb/ble/modbus are skipped. */
+static void cfg_patch_plugin_keys(mf_config_device_t *d, const cJSON *body)
+{
+    cJSON *desc = plugin_describe(device_ops(d->uuid));
+    const cJSON *f;
+    cJSON *extra = d->extra_json[0] ? cJSON_Parse(d->extra_json) : NULL;
+    int changed = 0;
+
+    if (!cJSON_IsObject(extra))
+    {
+        cJSON_Delete(extra);
+        extra = cJSON_CreateObject();
+    }
+    cJSON_ArrayForEach(f, cJSON_GetObjectItemCaseSensitive(desc, "fields"))
+    {
+        const cJSON *k = cJSON_GetObjectItemCaseSensitive(f, "key");
+        const cJSON *v;
+        const char *dot;
+        char ns[32];
+        cJSON *obj;
+
+        if (!cJSON_IsString(k) || !(dot = strchr(k->valuestring, '.')))
+            continue;
+        v = cJSON_GetObjectItemCaseSensitive(body, k->valuestring);
+        if (!v || (size_t)(dot - k->valuestring) >= sizeof(ns))
+            continue;
+        snprintf(ns, sizeof(ns), "%.*s", (int)(dot - k->valuestring),
+                 k->valuestring);
+        if (strcmp(ns, "usb") == 0 || strcmp(ns, "ble") == 0 ||
+            strcmp(ns, "modbus") == 0)
+            continue;
+        obj = cJSON_GetObjectItemCaseSensitive(extra, ns);
+        if (!cJSON_IsObject(obj))
+        {
+            cJSON_DeleteItemFromObjectCaseSensitive(extra, ns);
+            obj = cJSON_AddObjectToObject(extra, ns);
+        }
+        cJSON_DeleteItemFromObjectCaseSensitive(obj, dot + 1);
+        cJSON_AddItemToObject(obj, dot + 1, cJSON_Duplicate(v, 1));
+        changed = 1;
+    }
+    if (changed)
+    {
+        char *str = cJSON_PrintUnformatted(extra);
+
+        if (str && strlen(str) < sizeof(d->extra_json))
+            snprintf(d->extra_json, sizeof(d->extra_json), "%s", str);
+        else
+            mf_log(LOG_WARNING, "plugin settings for %s too large to save",
+                   d->uuid);
+        free(str);
+    }
+    cJSON_Delete(extra);
+    cJSON_Delete(desc);
+}
+
 /* Mirror the daemon-owned settings from an accepted PUT into the config
  * so they are saved and survive a restart. */
 static void cfg_patch_settings(const char *uuid, const cJSON *body)
@@ -108,6 +179,7 @@ static void cfg_patch_settings(const char *uuid, const cJSON *body)
     it = cJSON_GetObjectItemCaseSensitive(body, "active");
     if (cJSON_IsBool(it))
         d->active = cJSON_IsTrue(it);
+    cfg_patch_plugin_keys(d, body);
 }
 
 static void cfg_upsert_from_json(const char *uuid, const cJSON *root)
@@ -238,6 +310,8 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
     cJSON *chargers = cJSON_GetObjectItemCaseSensitive(root, "chargers");
     cJSON *inverters = cJSON_GetObjectItemCaseSensitive(root, "inverters");
     cJSON *phantoms = cJSON_GetObjectItemCaseSensitive(root, "phantoms");
+    cJSON *services = cJSON_GetObjectItemCaseSensitive(root, "services");
+    cJSON *actuators = cJSON_GetObjectItemCaseSensitive(root, "actuators");
     cJSON *row = cJSON_CreateObject();
     cJSON *data = cJSON_Parse(d->reading_json);
 
@@ -247,6 +321,8 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
     cJSON_AddBoolToObject(row, "online", d->online);
     cJSON_AddBoolToObject(row, "active", d->active);
     cJSON_AddNumberToObject(row, "seq", (double)d->seq);
+    if (!d->online && d->last_error && d->last_error[0])
+        cJSON_AddStringToObject(row, "last_error", d->last_error);
 
     if (strcmp(d->kind, "charger") == 0)
     {
@@ -270,6 +346,23 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
     } else if (strcmp(d->kind, "phantom") == 0)
     {
         cJSON_AddItemToArray(phantoms, row);
+    }
+    else if (strcmp(d->kind, "service") == 0 ||
+             strcmp(d->kind, "actuator") == 0)
+    {
+        /* Service/actuator readings are small and kind-specific (weather,
+           relay state): pass the whole data object for the dashboard. */
+        if (data)
+        {
+            cJSON_AddItemToObject(row, "data", data);
+            data = NULL;
+        }
+        cJSON_AddItemToArray(strcmp(d->kind, "service") == 0 ? services
+                                                            : actuators, row);
+    }
+    else if (strcmp(d->kind, "battery") != 0)
+    {
+        cJSON_Delete(row);   /* a kind the dashboard has no place for */
     }
     else
     {
@@ -357,6 +450,8 @@ static int handle_status(mf_rest_response_t *resp)
     cJSON_AddItemToObject(ctx.root, "chargers", cJSON_CreateArray());
     cJSON_AddItemToObject(ctx.root, "inverters", cJSON_CreateArray());
     cJSON_AddItemToObject(ctx.root, "phantoms", cJSON_CreateArray());
+    cJSON_AddItemToObject(ctx.root, "services", cJSON_CreateArray());
+    cJSON_AddItemToObject(ctx.root, "actuators", cJSON_CreateArray());
     mf_devices_visit_live(add_status_row, &ctx);
     mf_system_finish(&ctx.sys);
     cJSON_AddItemToObject(ctx.root, "system", system_json(&ctx.sys));
@@ -707,8 +802,15 @@ static int handle_settings_get(const char *id, mf_rest_response_t *resp)
     }
     {
         cJSON *root = cJSON_Parse(json);
+        cJSON *desc = plugin_describe(device_ops(id));
+
         if (!root)
             root = cJSON_Parse("{}");
+        /* The plugin's field labels, for the settings form (an array, so the
+           form never shows or sends it back). */
+        cJSON_AddItemToObject(root, "_fields",
+            cJSON_DetachItemFromObjectCaseSensitive(desc, "fields"));
+        cJSON_Delete(desc);
         set_json(resp, 200, root, NULL);
     }
     return 0;

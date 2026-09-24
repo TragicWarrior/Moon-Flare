@@ -470,7 +470,8 @@ static cJSON *build_tools_list(void)
     cJSON_AddItemToObject(schema, "properties", props);
     cJSON_AddFalseToObject(schema, "additionalProperties");
     cJSON_AddItemToArray(tools, make_tool("status",
-        "One-shot summary of every device grouped by kind, plus a \"system\" object with "
+        "One-shot summary of every device grouped by kind (batteries, chargers, inverters, "
+        "actuators, services; a weather service carries data.weather), plus a \"system\" object with "
         "totals over the active, online devices: charger input watts, capacity-weighted "
         "SOC, stored/capacity Wh, and battery charge/discharge watts. Devices marked "
         "\"active\": false still report readings but are left out of the totals.",
