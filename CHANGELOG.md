@@ -42,7 +42,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lines up whether the terminal draws a symbol 1 or 2 columns wide. A
   forecast line that does not fit drops its words and keeps the icon.
   Needs libviper 7.6.3 for correct column layout of the symbols.
-- A module that is offline now reports its `last_error` in
+- The weather plugin has a Station setting (blank = nearest). It fetches
+  the five nearest stations; an observation with no temperature or older
+  than two hours, or a station that fails, is skipped for the next nearest
+  one, and if none is good the last good reading stays up.
+- Weather settings can be changed after adding: select the module on the
+  dashboard and press `e`. ZIP, station, table-check days, latitude and
+  longitude, and contact take effect at once (a new place is looked up
+  again) and are saved. The plugin interface already had get/put settings;
+  the daemon now also saves plugin settings that a plugin's `describe()`
+  declares, and `GET .../settings` returns the plugin's field labels as
+  `_fields` so the dialog uses its wording.
+- `e` on the dashboard opens the settings of the selected module, whatever
+  its kind.
+- A module offline now reports its `last_error` in
   `GET /api/v1/status`, and the Info panel shows a weather service's error
   (e.g. "ZIP 00000 not found") under "waiting for weather".
 - Plugin-specific settings, such as the weather location, are now kept in
@@ -52,6 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The Devices menu is now Modules.
+- Choosing a module with no detail view (a weather service, say) from the
+  Modules menu shows the dashboard with it selected, instead of opening an
+  empty battery view.
 - Readings of a module kind the dashboard has no place for are no longer
   shown as batteries.
 

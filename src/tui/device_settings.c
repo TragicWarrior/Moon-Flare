@@ -121,8 +121,8 @@ static void field_caption(const char *key, char *lab, size_t lab_cap,
         hint[0] = '\0';
     if (!key)
         return;
-    /* In the Add Module form the plugin's own wording wins. */
-    for (i = 0; g_add_mode && i < (size_t)g_nplab; i++)
+    /* The plugin's own wording wins (Add Module, and settings via _fields). */
+    for (i = 0; i < (size_t)g_nplab; i++)
     {
         if (strcmp(key, g_plab[i].key) == 0 && g_plab[i].lab[0])
         {
@@ -1188,6 +1188,7 @@ void mf_devset_close(void)
     }
     g_open = 0;
     g_add_mode = 0;
+    g_nplab = 0;
     mf_ui_front_clear();
     mf_ui_refresh();
 }
@@ -1374,15 +1375,11 @@ void mf_devset_show(const char *id, const char *name, const char *json)
     show_form(id, name, json);
 }
 
-void mf_devset_show_add(const char *kind, const char *driver, const char *json,
-                        const char *fields)
+/* Remember the plugin's labels and hints from its field list. */
+static void load_plugin_labels(const cJSON *arr)
 {
-    char cap[40];
-    cJSON *arr = fields ? cJSON_Parse(fields) : NULL;
     const cJSON *f;
 
-    mf_devset_close();
-    g_add_mode = 1;
     g_nplab = 0;
     cJSON_ArrayForEach(f, arr)
     {
@@ -1399,6 +1396,17 @@ void mf_devset_show_add(const char *kind, const char *driver, const char *json,
                  cJSON_IsString(h) ? h->valuestring : "");
         g_nplab++;
     }
+}
+
+void mf_devset_show_add(const char *kind, const char *driver, const char *json,
+                        const char *fields)
+{
+    char cap[40];
+    cJSON *arr = fields ? cJSON_Parse(fields) : NULL;
+
+    mf_devset_close();
+    g_add_mode = 1;
+    load_plugin_labels(arr);
     cJSON_Delete(arr);
     snprintf(g_add_kind, sizeof(g_add_kind), "%s", kind ? kind : "");
     snprintf(g_add_driver, sizeof(g_add_driver), "%s", driver ? driver : "");
@@ -1438,6 +1446,15 @@ static void show_form(const char *id, const char *name, const char *json)
 {
     int x, y, w, h;
     char cap[40];
+
+    /* A settings reply carries the plugin's labels as "_fields". */
+    if (!g_add_mode && json)
+    {
+        cJSON *r = cJSON_Parse(json);
+
+        load_plugin_labels(cJSON_GetObjectItemCaseSensitive(r, "_fields"));
+        cJSON_Delete(r);
+    }
 
     snprintf(g_id, sizeof(g_id), "%s", id ? id : "");
     snprintf(g_name, sizeof(g_name), "%s", name ? name : "device");

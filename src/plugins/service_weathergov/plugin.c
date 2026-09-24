@@ -10,8 +10,13 @@
  * prepare_fds() and step(), so nothing blocks:
  *
  *   /points/{lat},{lon}           -> forecast URL, stations URL, place name
- *   {stations}?limit=1            -> nearest observation station
+ *   {stations}?limit=5            -> the nearest observation stations
  *   /stations/{id}/observations/latest   every poll_interval_s (>= 300 s)
+ *
+ * Observations come from weather.station when set, else the nearest
+ * station.  An observation with no temperature or older than two hours is
+ * skipped for the next nearest station; if none is good the last good
+ * reading stays up.
  *   {forecast}                    every 30 minutes
  *
  * The reading is provider-neutral, so the dashboard's Info panel works with
@@ -38,6 +43,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 
 #define WX_API          "https://api.weather.gov"
@@ -54,6 +60,8 @@
 #define WX_ZCTA_MAX     (8 * 1024 * 1024)
 #define WX_ZCTA_RETRY_S 3600
 #define WX_DAY_S        86400
+#define WX_NST          5               /* nearby stations to fall back on */
+#define WX_OBS_FRESH_S  (2 * 3600)      /* older observations are skipped */
 
 typedef enum {
     WX_NONE, WX_POINTS, WX_STATION, WX_OBS, WX_FORECAST,
@@ -67,6 +75,20 @@ typedef struct {
     char   icon[16];
     int    is_day;
 } wx_period_t;
+
+/* One observation, as shown in the Info panel. */
+typedef struct {
+    double             temp_f;          /* NAN when the station omits it */
+    double             hum;
+    double             wind_mph;
+    char               wind_dir[4];
+    char               cond[48];
+    char               icon[16];
+    int                is_day;
+    char               observed_local[8];
+    char               station[16];
+    long               observed_epoch;
+} wx_obs_t;
 
 typedef struct {
     CURLM             *multi;
@@ -91,12 +113,17 @@ typedef struct {
 
     double             lat;
     double             lon;
+    int                ll_given;        /* lat/lon set by the user, not the ZIP */
     double             obs_every;
+    char               contact[128];
     char               ua[192];
 
     char               forecast_url[256];
     char               stations_url[256];
-    char               station[16];
+    char               want_station[16];  /* weather.station; "" = nearest */
+    char               stations[WX_NST + 1][16];  /* candidates, in order */
+    int                nst;             /* 0 = list not fetched yet */
+    int                st_try;          /* candidate being tried */
     char               place[64];
     double             next_points;
     double             next_station;
@@ -105,14 +132,7 @@ typedef struct {
 
     int                have_obs;
     double             obs_at;          /* mono time of the last observation */
-    double             temp_f;          /* NAN when the station omits it */
-    double             hum;
-    double             wind_mph;
-    char               wind_dir[4];
-    char               cond[48];
-    char               icon[16];
-    int                is_day;
-    char               observed_local[8];
+    wx_obs_t           obs;             /* the reading on display */
     wx_period_t        fc[WX_NFC];
     int                nfc;
 
@@ -145,6 +165,7 @@ static const char *wx_describe(void)
         "{\"key\":\"poll_interval_s\",\"label\":\"Update Every\",\"hint\":\"(>=300 sec)\",\"type\":\"number\",\"default\":600},"
         "{\"key\":\"capture_interval_s\",\"label\":\"Capture Interval\",\"hint\":\"(Sec 0=off)\",\"type\":\"number\",\"default\":0},"
         "{\"key\":\"weather.zip\",\"label\":\"ZIP Code\",\"hint\":\"(5 digits)\",\"type\":\"string\"},"
+        "{\"key\":\"weather.station\",\"label\":\"Station\",\"hint\":\"(blank=near)\",\"type\":\"string\"},"
         "{\"key\":\"weather.zip_update_days\",\"label\":\"ZIP Table Check\",\"hint\":\"(days,0=off)\",\"type\":\"number\",\"default\":7},"
         "{\"key\":\"weather.lat\",\"label\":\"Latitude\",\"hint\":\"(optional)\",\"type\":\"number\"},"
         "{\"key\":\"weather.lon\",\"label\":\"Longitude\",\"hint\":\"(optional)\",\"type\":\"number\"},"
@@ -379,55 +400,101 @@ static int parse_points(wx_ctx_t *c, const cJSON *root)
     if (cJSON_IsString(city) && cJSON_IsString(state))
         snprintf(c->place, sizeof(c->place), "%s, %s",
                  city->valuestring, state->valuestring);
-    c->station[0] = '\0';               /* re-pick the nearest station */
+    c->nst = 0;                         /* re-fetch the nearby stations */
     return 0;
 }
 
+/* Candidates: the chosen station first (if any), then the nearby ones in
+ * weather.gov's order (nearest first). */
 static int parse_station(wx_ctx_t *c, const cJSON *root)
 {
-    const cJSON *f = cJSON_GetArrayItem(
-        cJSON_GetObjectItemCaseSensitive(root, "features"), 0);
-    const cJSON *id = cJSON_GetObjectItemCaseSensitive(props(f),
-                                                       "stationIdentifier");
+    const cJSON *f;
+    int n = 0;
 
-    if (!cJSON_IsString(id))
+    if (c->want_station[0])
+        snprintf(c->stations[n++], sizeof(c->stations[0]), "%s", c->want_station);
+    cJSON_ArrayForEach(f, cJSON_GetObjectItemCaseSensitive(root, "features"))
+    {
+        const cJSON *id = cJSON_GetObjectItemCaseSensitive(props(f),
+                                                           "stationIdentifier");
+
+        if (n > WX_NST || !cJSON_IsString(id) ||
+            strcasecmp(id->valuestring, c->want_station) == 0)
+            continue;
+        snprintf(c->stations[n++], sizeof(c->stations[0]), "%s", id->valuestring);
+    }
+    if (n == 0)
         return -1;
-    snprintf(c->station, sizeof(c->station), "%s", id->valuestring);
+    c->nst = n;
+    c->st_try = 0;
     return 0;
 }
 
-static int parse_obs(wx_ctx_t *c, const cJSON *root)
+/* Parse into *o.  Returns 1 if good (has a temperature and is fresh),
+ * 0 if usable but poor, -1 if not an observation. */
+static int parse_obs(wx_ctx_t *c, const cJSON *root, wx_obs_t *o)
 {
     const cJSON *p = props(root);
     const cJSON *txt = cJSON_GetObjectItemCaseSensitive(p, "textDescription");
     const cJSON *ts = cJSON_GetObjectItemCaseSensitive(p, "timestamp");
+    const cJSON *ic = cJSON_GetObjectItemCaseSensitive(p, "icon");
     double tc = qv(p, "temperature");
     double ws = qv(p, "windSpeed");
     double wd = qv(p, "windDirection");
+    time_t now = time(NULL);
+    struct tm tm;
 
     if (!p)
         return -1;
-    c->temp_f = isnan(tc) ? NAN : tc * 9.0 / 5.0 + 32.0;
-    c->hum = qv(p, "relativeHumidity");
-    c->wind_mph = isnan(ws) ? NAN : ws / 1.609344;
-    snprintf(c->wind_dir, sizeof(c->wind_dir), "%s",
-             isnan(wd) ? "" : compass(wd));
-    snprintf(c->cond, sizeof(c->cond), "%s",
+    memset(o, 0, sizeof(*o));
+    o->temp_f = isnan(tc) ? NAN : tc * 9.0 / 5.0 + 32.0;
+    o->hum = qv(p, "relativeHumidity");
+    o->wind_mph = isnan(ws) ? NAN : ws / 1.609344;
+    snprintf(o->wind_dir, sizeof(o->wind_dir), "%s", isnan(wd) ? "" : compass(wd));
+    snprintf(o->cond, sizeof(o->cond), "%s",
              cJSON_IsString(txt) ? txt->valuestring : "");
-    {
-        const cJSON *ic = cJSON_GetObjectItemCaseSensitive(p, "icon");
-        time_t now = time(NULL);
-        struct tm tm;
-
-        localtime_r(&now, &tm);
-        c->is_day = tm.tm_hour >= 6 && tm.tm_hour < 19;  /* if the URL won't say */
-        parse_icon(cJSON_IsString(ic) ? ic->valuestring : NULL, c->cond,
-                   c->icon, sizeof(c->icon), &c->is_day);
-    }
+    localtime_r(&now, &tm);
+    o->is_day = tm.tm_hour >= 6 && tm.tm_hour < 19;  /* if the URL won't say */
+    parse_icon(cJSON_IsString(ic) ? ic->valuestring : NULL, o->cond,
+               o->icon, sizeof(o->icon), &o->is_day);
     iso_to_local_hhmm(cJSON_IsString(ts) ? ts->valuestring : NULL,
-                      c->observed_local, sizeof(c->observed_local));
-    c->have_obs = 1;
-    c->obs_at = mono_now();
+                      o->observed_local, sizeof(o->observed_local));
+    if (cJSON_IsString(ts))
+    {
+        struct tm u;
+
+        memset(&u, 0, sizeof(u));
+        if (strptime(ts->valuestring, "%Y-%m-%dT%H:%M:%S", &u))
+            o->observed_epoch = (long)timegm(&u);
+    }
+    snprintf(o->station, sizeof(o->station), "%s",
+             c->nst ? c->stations[c->st_try] : "");
+    return !isnan(o->temp_f) && o->observed_epoch &&
+           (long)now - o->observed_epoch < WX_OBS_FRESH_S;
+}
+
+/* Keep a good observation; otherwise try the next nearby station.  With no
+ * good one anywhere, keep what we have (or take the first ever). */
+static int take_obs(wx_ctx_t *c, const cJSON *root)
+{
+    wx_obs_t o;
+    int q = parse_obs(c, root, &o);
+
+    if (q < 0)
+        return -1;
+    if (q == 0 && c->st_try + 1 < c->nst)
+    {
+        c->st_try++;
+        c->next_obs = 0;                /* ask the next station now */
+        return 1;
+    }
+    if (q == 1 || !c->have_obs)
+    {
+        c->obs = o;
+        c->have_obs = 1;
+        c->obs_at = mono_now();
+    }
+    c->st_try = 0;
     return 0;
 }
 
@@ -544,7 +611,14 @@ static void finish(wx_ctx_t *c, CURLcode rc)
     else if (what == WX_STATION)
         ok = parse_station(c, root);
     else if (what == WX_OBS)
-        ok = parse_obs(c, root);
+    {
+        ok = take_obs(c, root);
+        if (ok == 1)                    /* moving on to the next station */
+        {
+            cJSON_Delete(root);
+            return;
+        }
+    }
     else if (what == WX_FORECAST)
         ok = parse_forecast(c, root);
     cJSON_Delete(root);
@@ -566,6 +640,11 @@ static void finish(wx_ctx_t *c, CURLcode rc)
     /* Retry this step later; keep showing the last good data meanwhile. */
     if (what == WX_POINTS)
         c->next_points = now + WX_RETRY_S;
+    else if (what == WX_OBS && c->st_try + 1 < c->nst)
+    {
+        c->st_try++;                    /* this station failed: next one */
+        c->next_obs = 0;
+    }
     else if (what == WX_STATION)
         c->next_station = now + WX_RETRY_S;
     else if (what == WX_OBS)
@@ -589,7 +668,7 @@ static void resolve_zip(wx_ctx_t *c)
         if (lat != c->lat || lon != c->lon)
         {
             c->forecast_url[0] = '\0';  /* new place: look it up again */
-            c->station[0] = '\0';
+            c->nst = 0;
             c->next_points = 0;
         }
         c->lat = lat;
@@ -648,17 +727,17 @@ static void start_next(wx_ctx_t *c)
         snprintf(url, sizeof(url), WX_API "/points/%.4f,%.4f", c->lat, c->lon);
         (void)start_get(c, WX_POINTS, url);
     }
-    else if (!c->station[0])
+    else if (!c->nst)
     {
         if (now < c->next_station)
             return;
-        snprintf(url, sizeof(url), "%s?limit=1", c->stations_url);
+        snprintf(url, sizeof(url), "%s?limit=%d", c->stations_url, WX_NST);
         (void)start_get(c, WX_STATION, url);
     }
     else if (now >= c->next_obs)
     {
         snprintf(url, sizeof(url), WX_API "/stations/%s/observations/latest",
-                 c->station);
+                 c->stations[c->st_try]);
         (void)start_get(c, WX_OBS, url);
     }
     else if (now >= c->next_fc)
@@ -729,6 +808,7 @@ static void *wx_open(const char *spec_json, char *err, size_t errsz)
         c->lat = json_num(w, "lat", 0.0);
         c->lon = json_num(w, "lon", 0.0);
         c->have_loc = 1;
+        c->ll_given = 1;
     }
     else
         snprintf(c->zip, sizeof(c->zip), "%s", zip);
@@ -740,9 +820,16 @@ static void *wx_open(const char *spec_json, char *err, size_t errsz)
     c->obs_every = json_num(spec, "poll_interval_s", 600.0);
     if (c->obs_every < WX_OBS_MIN_S)
         c->obs_every = WX_OBS_MIN_S;
-    snprintf(c->ua, sizeof(c->ua), "moonflare-weathergov/0.1 (%s)",
-             contact->valuestring);
-    c->temp_f = c->hum = c->wind_mph = NAN;
+    snprintf(c->contact, sizeof(c->contact), "%s", contact->valuestring);
+    snprintf(c->ua, sizeof(c->ua), "moonflare-weathergov/0.1 (%s)", c->contact);
+    {
+        const cJSON *st = cJSON_GetObjectItemCaseSensitive(w, "station");
+
+        if (cJSON_IsString(st))
+            snprintf(c->want_station, sizeof(c->want_station), "%s",
+                     st->valuestring);
+    }
+    c->obs.temp_f = c->obs.hum = c->obs.wind_mph = NAN;
     cJSON_Delete(spec);
 
     c->multi = curl_multi_init();
@@ -833,10 +920,163 @@ static mf_step_t wx_step(void *ctx)
     return MF_STEP_IDLE;
 }
 
+/* The settings dialog shows these, flat and dotted like the Add form. */
+static int wx_get_settings(void *ctx, char *json, size_t cap)
+{
+    wx_ctx_t *c = ctx;
+    cJSON *o = cJSON_CreateObject();
+    char *s;
+
+    if (!c || !o)
+        return MF_ERR_INVAL;
+    cJSON_AddStringToObject(o, "weather.zip", c->zip);
+    cJSON_AddStringToObject(o, "weather.station", c->want_station);
+    cJSON_AddNumberToObject(o, "weather.zip_update_days", c->update_days);
+    if (c->ll_given)
+    {
+        cJSON_AddNumberToObject(o, "weather.lat", c->lat);
+        cJSON_AddNumberToObject(o, "weather.lon", c->lon);
+    }
+    else
+    {
+        cJSON_AddStringToObject(o, "weather.lat", "");
+        cJSON_AddStringToObject(o, "weather.lon", "");
+    }
+    cJSON_AddStringToObject(o, "weather.contact", c->contact);
+    s = cJSON_PrintUnformatted(o);
+    cJSON_Delete(o);
+    if (!s || strlen(s) >= cap)
+    {
+        free(s);
+        return MF_ERR_INVAL;
+    }
+    memcpy(json, s, strlen(s) + 1);
+    free(s);
+    return MF_OK;
+}
+
+static int bad(char *err, size_t errsz, const char *msg)
+{
+    if (err && errsz)
+        snprintf(err, errsz, "%s", msg);
+    return MF_ERR_INVAL;
+}
+
+/* A number from a settings value, or NAN when it is blank or absent. */
+static double num_or_nan(const cJSON *v)
+{
+    if (cJSON_IsNumber(v))
+        return v->valuedouble;
+    if (cJSON_IsString(v) && v->valuestring[0])
+        return atof(v->valuestring);
+    return NAN;
+}
+
+/* Change location, station, table checks or contact on a running module.
+ * Validates everything first, then applies; a new place or station makes
+ * the plugin look everything up again. */
+static int wx_put_settings(void *ctx, const char *json, char *err, size_t errsz)
+{
+    wx_ctx_t *c = ctx;
+    cJSON *b = json ? cJSON_Parse(json) : NULL;
+    const cJSON *zj, *sj, *dj, *cj;
+    char zip[8], station[16], contact[128];
+    double lat, lon, days;
+    int ll, changed_place, changed_station, rc = MF_OK;
+
+    if (!c || !cJSON_IsObject(b))
+    {
+        cJSON_Delete(b);
+        return bad(err, errsz, "settings are not a JSON object");
+    }
+    zj = cJSON_GetObjectItemCaseSensitive(b, "weather.zip");
+    sj = cJSON_GetObjectItemCaseSensitive(b, "weather.station");
+    dj = cJSON_GetObjectItemCaseSensitive(b, "weather.zip_update_days");
+    cj = cJSON_GetObjectItemCaseSensitive(b, "weather.contact");
+    snprintf(zip, sizeof(zip), "%s", c->zip);
+    if (cJSON_IsNumber(zj))
+        snprintf(zip, sizeof(zip), "%05d", (int)zj->valuedouble);
+    else if (cJSON_IsString(zj))
+        snprintf(zip, sizeof(zip), "%.7s", zj->valuestring);
+    snprintf(station, sizeof(station), "%s",
+             cJSON_IsString(sj) ? sj->valuestring : c->want_station);
+    snprintf(contact, sizeof(contact), "%s",
+             cJSON_IsString(cj) ? cj->valuestring : c->contact);
+    days = dj ? num_or_nan(dj) : c->update_days;
+    {
+        /* The daemon keeps poll_interval_s too; honour a new one here. */
+        double pi = num_or_nan(cJSON_GetObjectItemCaseSensitive(b, "poll_interval_s"));
+
+        if (!isnan(pi))
+            c->obs_every = pi < WX_OBS_MIN_S ? WX_OBS_MIN_S : pi;
+    }
+    lat = cJSON_GetObjectItemCaseSensitive(b, "weather.lat") ?
+          num_or_nan(cJSON_GetObjectItemCaseSensitive(b, "weather.lat")) :
+          (c->ll_given ? c->lat : NAN);
+    lon = cJSON_GetObjectItemCaseSensitive(b, "weather.lon") ?
+          num_or_nan(cJSON_GetObjectItemCaseSensitive(b, "weather.lon")) :
+          (c->ll_given ? c->lon : NAN);
+    ll = !isnan(lat) && !isnan(lon);
+    cJSON_Delete(b);
+
+    if (zip[0] && (strlen(zip) != 5 || strspn(zip, "0123456789") != 5))
+        rc = bad(err, errsz, "weather.zip must be 5 digits");
+    else if (!zip[0] && !ll)
+        rc = bad(err, errsz, "set weather.zip (or weather.lat and weather.lon)");
+    else if (strlen(station) > 8 ||
+             strspn(station, "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                             "abcdefghijklmnopqrstuvwxyz0123456789") != strlen(station))
+        rc = bad(err, errsz, "weather.station is a station ID like KIAH");
+    else if (isnan(days) || days < 0)
+        rc = bad(err, errsz, "weather.zip_update_days must be 0 or more");
+    else if (!contact[0])
+        rc = bad(err, errsz, "weather.contact (an email) is required");
+    if (rc != MF_OK)
+        return rc;
+
+    changed_place = strcmp(zip, c->zip) != 0 || ll != c->ll_given ||
+                    (ll && (lat != c->lat || lon != c->lon));
+    changed_station = strcasecmp(station, c->want_station) != 0;
+    snprintf(c->zip, sizeof(c->zip), "%s", ll ? "" : zip);
+    snprintf(c->want_station, sizeof(c->want_station), "%s", station);
+    snprintf(c->contact, sizeof(c->contact), "%s", contact);
+    snprintf(c->ua, sizeof(c->ua), "moonflare-weathergov/0.1 (%s)", c->contact);
+    if (days != c->update_days)
+    {
+        c->update_days = days;
+        c->next_zcta = zcta_meta_checked(c->zcta_meta) +
+                       (long)(c->update_days * WX_DAY_S);
+    }
+    if (changed_place)
+    {
+        c->ll_given = ll;
+        c->have_loc = ll;
+        c->zip_missing = 0;
+        if (ll)
+        {
+            c->lat = lat;
+            c->lon = lon;
+        }
+        c->forecast_url[0] = '\0';      /* look the new place up */
+        c->nst = 0;
+        c->next_points = 0;
+        c->next_obs = 0;
+        c->next_fc = 0;
+    }
+    else if (changed_station)
+    {
+        c->nst = 0;                     /* rebuild the candidate list */
+        c->next_station = 0;
+        c->next_obs = 0;
+    }
+    c->err[0] = '\0';
+    return MF_OK;
+}
+
 static unsigned wx_caps(void *ctx)
 {
     (void)ctx;
-    return MF_CAP_READ;
+    return MF_CAP_READ | MF_CAP_WRITE_SETTINGS;
 }
 
 static const char *wx_last_error(void *ctx)
@@ -866,18 +1106,18 @@ static int wx_get_reading(void *ctx, char *json, size_t cap)
     root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "provider", "weather.gov");
     wx = cJSON_AddObjectToObject(root, "weather");
-    add_num_or_null(wx, "temp_f", c->temp_f);
-    cJSON_AddStringToObject(wx, "conditions", c->cond);
-    cJSON_AddStringToObject(wx, "icon", c->icon);
-    cJSON_AddBoolToObject(wx, "is_day", c->is_day);
-    add_num_or_null(wx, "humidity_pct", c->hum);
-    add_num_or_null(wx, "wind_mph", c->wind_mph);
-    cJSON_AddStringToObject(wx, "wind_dir", c->wind_dir);
-    cJSON_AddStringToObject(wx, "station", c->station);
+    add_num_or_null(wx, "temp_f", c->obs.temp_f);
+    cJSON_AddStringToObject(wx, "conditions", c->obs.cond);
+    cJSON_AddStringToObject(wx, "icon", c->obs.icon);
+    cJSON_AddBoolToObject(wx, "is_day", c->obs.is_day);
+    add_num_or_null(wx, "humidity_pct", c->obs.hum);
+    add_num_or_null(wx, "wind_mph", c->obs.wind_mph);
+    cJSON_AddStringToObject(wx, "wind_dir", c->obs.wind_dir);
+    cJSON_AddStringToObject(wx, "station", c->obs.station);
     cJSON_AddStringToObject(wx, "place", c->place);
     if (c->zip[0])
         cJSON_AddStringToObject(wx, "zip", c->zip);
-    cJSON_AddStringToObject(wx, "observed_local", c->observed_local);
+    cJSON_AddStringToObject(wx, "observed_local", c->obs.observed_local);
     fc = cJSON_AddArrayToObject(wx, "forecast");
     for (i = 0; i < c->nfc; i++)
     {
@@ -917,6 +1157,8 @@ static const mf_plugin_ops_t g_ops = {
     .caps = wx_caps,
     .last_error = wx_last_error,
     .get_reading = wx_get_reading,
+    .get_settings = wx_get_settings,
+    .put_settings = wx_put_settings,
     .describe = wx_describe,
 };
 

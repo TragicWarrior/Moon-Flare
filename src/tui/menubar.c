@@ -18,7 +18,7 @@
 #define COL_DROP_HI_FG COLOR_WHITE
 #define COL_DROP_HI_BG COLOR_BLACK
 
-enum { MB_FILE = 0, MB_DEVICES, MB_HELP, MB_COUNT };
+enum { MB_FILE = 0, MB_MODULES, MB_HELP, MB_COUNT };
 
 struct mb_item {
     const char *label;
@@ -111,7 +111,7 @@ static const struct mb_item *const tables[MB_COUNT] = {
     file_items, devices_items, help_items
 };
 static const char *const titles[MB_COUNT] = {
-    "File", "Devices", "Help"
+    "File", "Modules", "Help"
 };
 
 /* One pad, "HH:MM:SS", and the space before the throbber. Moon emoji
@@ -210,7 +210,7 @@ static void open_dropdown(int idx)
         return;
     close_dropdown();
     t = tables[idx];
-    if (idx == MB_DEVICES)
+    if (idx == MB_MODULES)
     {
         static struct mb_item dyn[40];
         int nd = 0, c;

@@ -130,7 +130,7 @@ void mf_tui_paint_dashboard(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
 {
     char t1[32], t2[32], t3[32], st[81];
     fill_blank(grid);
-    put_str(grid, 0, 1, "File  Settings  Devices  View  Help");
+    put_str(grid, 0, 1, "File  Modules  Help");
     snprintf(st, sizeof(st), "%s  [%s]",
              hostport ? hostport : "127.0.0.1:5250",
              conn_tag ? conn_tag : "WAIT");
@@ -145,7 +145,7 @@ void mf_tui_paint_dashboard(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
     fill_card_at(grid, 1, 0, t3, ninv, inv, "not connected");
     fill_card_at(grid, 1, 27, "Actuators (0)", 0, NULL, "not connected");
     fill_card_at(grid, 1, 54, "Services (0)", 0, NULL, "not connected");
-    put_str(grid, 24, 0, "F10 menu  Arrows select  Enter open  Space active  q quit");
+    put_str(grid, 24, 0, "F10 menu  Arrows select  Enter open  e edit  Space active  q quit");
 }
 
 void mf_tui_paint_settings(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
@@ -201,7 +201,7 @@ void mf_tui_paint_pack(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1], int has_switch)
     int r, c, i;
     char cell[20];
     fill_blank(grid);
-    put_str(grid, 0, 1, "File  Settings  Devices  View  Help");
+    put_str(grid, 0, 1, "File  Modules  Help");
     put_str(grid, 1, 0, "pack-jk  battery/demo  streaming  seq 44");
     put_str(grid, 2, 0, "interface: bluetooth  28:D4:1E:A7:23:39");
     draw_box(grid, 3, 0, 80, 6, "Pack");
@@ -229,7 +229,7 @@ void mf_tui_paint_pack(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1], int has_switch)
 void mf_tui_paint_charger(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1])
 {
     fill_blank(grid);
-    put_str(grid, 0, 1, "File  Settings  Devices  View  Help");
+    put_str(grid, 0, 1, "File  Modules  Help");
     put_str(grid, 1, 0, "classic-1  charger/classic  streaming  seq 4");
     put_str(grid, 2, 0, "interface: tcp  172.16.0.20:502");
     draw_box(grid, 3, 0, 80, 13, "Classic");

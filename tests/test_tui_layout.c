@@ -24,9 +24,9 @@ int main(void)
     mf_tui_paint_dashboard(grid, "127.0.0.1:5250", "UP", 0, NULL, 0, NULL, 0, NULL);
     for (r = 0; r < MF_TUI_ROWS; r++)
         CHECK(strlen(grid[r]) == 80, "row width 80");
-    CHECK(strstr(grid[0], "File") && strstr(grid[0], "Settings") &&
-          strstr(grid[0], "Devices") && strstr(grid[0], "View") &&
-          strstr(grid[0], "Help"), "menubar labels");
+    CHECK(strstr(grid[0], "File") && strstr(grid[0], "Modules") &&
+          strstr(grid[0], "Help") && !strstr(grid[0], "Devices"),
+          "menubar labels");
     CHECK(strstr(grid[1], "127.0.0.1:5250") && strstr(grid[1], "[UP]"),
           "status line");
     {

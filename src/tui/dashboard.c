@@ -340,7 +340,7 @@ void mf_dash_init(void)
     g_hints = vk_label_create(cols > 0 ? cols : 80);
     vk_widget_set_colors(VK_WIDGET(g_hints), COL_TEXT, COL_BG);
     vk_label_set_text(g_hints,
-                      "F10 menu  Arrows select  Enter open  Space active  q quit");
+                      "F10 menu  Arrows select  Enter open  e edit  Space active  q quit");
     mf_ui_attach(VK_WIDGET(g_hints), 0, rows > 0 ? rows - 1 : 24);
     vk_label_update(g_hints);
     mf_dash_on_resize();
@@ -961,6 +961,27 @@ static void move_card(int dir)
     }
 }
 
+/* Put the cursor on catalog entry `cat_idx` (e.g. chosen from the menu). */
+void mf_dash_select(int cat_idx)
+{
+    int card, row = 0, k;
+
+    if (cat_idx < 0 || cat_idx >= g_ncat)
+        return;
+    for (card = 0; card < NCARD; card++)
+        if (strcmp(g_card_kind[card], g_cat[cat_idx].kind) == 0)
+            break;
+    if (card == NCARD)
+        return;
+    for (k = 0; k < cat_idx; k++)
+        if (strcmp(g_cat[k].kind, g_card_kind[card]) == 0)
+            row++;
+    g_sel_card = card;
+    g_sel_row[card] = row;
+    apply_selection();
+    repaint_cards();
+}
+
 int mf_dash_key(wint_t c, int *cat_idx)
 {
     int n;
@@ -989,6 +1010,8 @@ int mf_dash_key(wint_t c, int *cat_idx)
         case '\n':
         case KEY_ENTER:
         case ' ':
+        case 'e':
+        case 'E':
         {
             int k = cat_index(g_sel_card, g_sel_row[g_sel_card]);
 
@@ -998,6 +1021,8 @@ int mf_dash_key(wint_t c, int *cat_idx)
                 *cat_idx = k;
             if (c == ' ')
                 return MF_DASH_KEY_TOGGLE;
+            if (c == 'e' || c == 'E')
+                return MF_DASH_KEY_EDIT;
             /* Only batteries and chargers have a detail view so far. */
             if (g_sel_card > 1)
                 return MF_DASH_KEY_HANDLED;
