@@ -3,51 +3,6 @@
 #include <stdio.h>
 #include <string.h>
 
-double mf_tui_display_soc(double bms_soc, double rem_ah, double full_ah,
-                          double avg_cell_v, double current_a)
-{
-    static const double pt[][2] = {
-        {2.80, 0}, {3.00, 5}, {3.20, 10}, {3.25, 20}, {3.28, 30},
-        {3.30, 40}, {3.33, 50}, {3.35, 60}, {3.37, 70}, {3.40, 85},
-        {3.45, 95}, {3.50, 99}, {3.60, 100}
-    };
-    double soc = bms_soc;
-    int n = (int)(sizeof(pt) / sizeof(pt[0]));
-    int i;
-    double vsoc;
-
-    if (full_ah > 0 && rem_ah >= 0)
-        soc = rem_ah / full_ah * 100.0;
-    if (avg_cell_v <= 0 || current_a <= -0.5 || current_a >= 0.5)
-        goto clamp;
-    if (avg_cell_v <= pt[0][0])
-        vsoc = pt[0][1];
-    else if (avg_cell_v >= pt[n - 1][0])
-        vsoc = pt[n - 1][1];
-    else
-    {
-        vsoc = 100;
-        for (i = 1; i < n; i++)
-        {
-            if (avg_cell_v <= pt[i][0])
-            {
-                double span = pt[i][0] - pt[i - 1][0];
-                double t = span > 0 ? (avg_cell_v - pt[i - 1][0]) / span : 0;
-                vsoc = pt[i - 1][1] + t * (pt[i][1] - pt[i - 1][1]);
-                break;
-            }
-        }
-    }
-    if (soc - vsoc > 20.0 || vsoc - soc > 20.0)
-        soc = vsoc;
-clamp:
-    if (soc < 0)
-        soc = 0;
-    if (soc > 100)
-        soc = 100;
-    return soc;
-}
-
 int mf_tui_dropdown_max_h(int lines)
 {
     int h = lines - 4;
@@ -122,17 +77,40 @@ static void draw_box(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
     put_str(grid, y, x + 2, cap);
 }
 
+/* Cards sit below the System panel. */
+#define CARD_TOP (MF_CARD_Y + MF_SYS_H)
+#define CARD_H   (MF_CARD_H - MF_SYS_H)
+
 static void fill_card(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
                       int x, const char *title, int n, const char *const *lines)
 {
     int i;
-    draw_box(grid, MF_CARD_Y, x, MF_CARD_W, MF_CARD_H, title);
+    draw_box(grid, CARD_TOP, x, MF_CARD_W, CARD_H, title);
     if (n <= 0)
-        put_str(grid, MF_CARD_Y + 1, x + 2, "not connected");
+        put_str(grid, CARD_TOP + 1, x + 2, "not connected");
     else
     {
-        for (i = 0; i < n && i < MF_CARD_H - 2; i++)
-            put_str(grid, MF_CARD_Y + 1 + i, x + 2, lines[i]);
+        for (i = 0; i < n && i < CARD_H - 2; i++)
+            put_str(grid, CARD_TOP + 1 + i, x + 2, lines[i]);
+    }
+}
+
+static void fill_system(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1])
+{
+    static const char *const names[3] = { "Input", "Capacity", "Discharge" };
+    static const char *const bars[3] = {
+        "########################       840 W / 3500 W       ................",
+        "#########################################  77%  8.2 / 10.7 kWh  ....",
+        "#######.....................  120 W / 3000 W  ....................."
+    };
+    int i;
+
+    /* No frame: three solid 1-row bars (fill '#', empty '.'), reading
+     * inside, a blank row under each. */
+    for (i = 0; i < 3; i++)
+    {
+        put_str(grid, MF_CARD_Y + 1 + i * 2, 1, names[i]);
+        put_str(grid, MF_CARD_Y + 1 + i * 2, 12, bars[i]);
     }
 }
 
@@ -152,10 +130,11 @@ void mf_tui_paint_dashboard(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
     snprintf(t1, sizeof(t1), "Batteries (%d)", nbatt);
     snprintf(t2, sizeof(t2), "Chargers (%d)", nchg);
     snprintf(t3, sizeof(t3), "Inverters (%d)", ninv);
+    fill_system(grid);
     fill_card(grid, 0, t1, nbatt, batt);
     fill_card(grid, 27, t2, nchg, chg);
     fill_card(grid, 54, t3, ninv, inv);
-    put_str(grid, 24, 0, "F10 menu  Enter open  q quit");
+    put_str(grid, 24, 0, "F10 menu  Arrows select  Enter open  Space active  q quit");
 }
 
 void mf_tui_paint_settings(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],

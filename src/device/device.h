@@ -22,6 +22,7 @@ typedef struct mf_devinfo {
     const char *driver;
     const char *endpoint;
     bool        online;
+    bool        active;         /* counts toward system totals */
     bool        dying;          /* in_use && stop */
     uint64_t    seq;
     unsigned    caps;

@@ -1,5 +1,6 @@
 #include "ui_screen.h"
 #include "layout.h"
+#include "system/system.h"
 
 #include <cJSON.h>
 #include <stdio.h>
@@ -1214,8 +1215,8 @@ void mf_pack_update(const char *json)
                 double full = jnum(data, "full_capacity_ah", 0);
                 double rem = jnum(data, "remaining_capacity_ah", -1);
                 double avg = nv > 0 ? vsum / (double)nv : 0;
-                soc = mf_tui_display_soc(jnum(data, "soc_pct", soc),
-                                         rem, full, avg, cur);
+                soc = mf_display_soc(jnum(data, "soc_pct", soc),
+                                     rem, full, avg, cur);
             }
         }
         vk_progress_set_value(VK_PROGRESS(g_mt_soc), soc);

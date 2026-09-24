@@ -50,6 +50,8 @@ void mf_config_defaults(mf_daemon_config_t *cfg)
     strncpy(cfg->history.path, "/var/lib/moonflare/history.sqlite",
             sizeof(cfg->history.path) - 1);
     cfg->history.enabled = true;
+    cfg->system.input_max_w     = MF_SYSTEM_INPUT_MAX_W_DEFAULT;
+    cfg->system.discharge_max_w = MF_SYSTEM_DISCHARGE_MAX_W_DEFAULT;
     cfg->n_devices     = 0;
     cfg->config_gen    = 1;
 }
@@ -235,6 +237,18 @@ static void apply_history(mf_config_history_t *h, const cJSON *obj)
         h->enabled = true;
 }
 
+static void apply_system(mf_config_system_t *sys, const cJSON *obj)
+{
+    if (!obj) return;
+    cJSON *v;
+    if ((v = cJSON_GetObjectItem(obj, "input_max_w")) &&
+        v->type == cJSON_Number && v->valuedouble > 0.0)
+        sys->input_max_w = v->valuedouble;
+    if ((v = cJSON_GetObjectItem(obj, "discharge_max_w")) &&
+        v->type == cJSON_Number && v->valuedouble > 0.0)
+        sys->discharge_max_w = v->valuedouble;
+}
+
 static void apply_usb(mf_config_usb_t *u, const cJSON *obj)
 {
     if (!obj) return;
@@ -274,8 +288,13 @@ static void apply_ble(mf_config_ble_t *b, const cJSON *obj)
 static void apply_modbus(mf_config_modbus_t *m, const cJSON *obj)
 {
     if (!obj) return;
-    /* Initialize to -1 (sentinel = not set). */
-    memset(m, 0xff, sizeof(*m));
+    /* Numbers start at -1 (sentinel = not set). Strings and auto_net start
+     * empty/false: a byte-fill would leave ip/mac as non-empty 0xff garbage
+     * and auto_net true, so every re-loaded device shared one bogus endpoint. */
+    memset(m, 0, sizeof(*m));
+    m->port = -1;
+    m->unit_id = -1;
+    m->unit_device_id = -1;
     cJSON *v;
     if ((v = cJSON_GetObjectItem(obj, "ip")) && v->type == cJSON_String)
         strncpy(m->ip, v->valuestring, sizeof(m->ip) - 1);
@@ -315,6 +334,9 @@ static int apply_device(mf_config_device_t *dev, const cJSON *obj)
         strncpy(dev->driver, v->valuestring, sizeof(dev->driver) - 1);
     if ((v = cJSON_GetObjectItem(obj, "enabled")) && v->type == cJSON_True)
         dev->enabled = true;
+    dev->active = true;
+    if ((v = cJSON_GetObjectItem(obj, "active")) && v->type == cJSON_False)
+        dev->active = false;
     if ((v = cJSON_GetObjectItem(obj, "poll_interval_s")) &&
         v->type == cJSON_Number)
         dev->poll_interval_s = v->valuedouble;
@@ -354,6 +376,8 @@ void mf_config_apply_json(mf_daemon_config_t *cfg, const cJSON *root)
         strncpy(cfg->gatt_bin, v->valuestring, sizeof(cfg->gatt_bin) - 1);
     if ((v = cJSON_GetObjectItem(root, "history")) && v->type == cJSON_Object)
         apply_history(&cfg->history, v);
+    if ((v = cJSON_GetObjectItem(root, "system")) && v->type == cJSON_Object)
+        apply_system(&cfg->system, v);
 
     /* devices array — unknown keys at root level are silently ignored. */
     if ((v = cJSON_GetObjectItem(root, "devices")) &&
@@ -471,6 +495,7 @@ static cJSON *device_to_json(const mf_config_device_t *d)
     cJSON_AddStringOrNull(dev, "kind", d->kind);
     cJSON_AddStringOrNull(dev, "driver", d->driver);
     cJSON_AddBool(dev, "enabled", d->enabled);
+    cJSON_AddBool(dev, "active", d->active);
     cJSON_AddNumber(dev, "poll_interval_s", d->poll_interval_s);
     cJSON_AddNumber(dev, "capture_interval_s", d->capture_interval_s);
     cJSON_AddStringOrNull(dev, "bus", d->bus);
@@ -539,6 +564,14 @@ char *mf_config_serialize(const mf_daemon_config_t *cfg)
         cJSON_AddStringOrNull(h, "path", cfg->history.path);
         cJSON_AddBool(h, "enabled", cfg->history.enabled);
         cJSON_AddItemToObject(root, "history", h);
+    }
+
+    /* system meters */
+    {
+        cJSON *sys = cJSON_CreateObject();
+        cJSON_AddNumber(sys, "input_max_w", cfg->system.input_max_w);
+        cJSON_AddNumber(sys, "discharge_max_w", cfg->system.discharge_max_w);
+        cJSON_AddItemToObject(root, "system", sys);
     }
 
     /* devices */
@@ -731,6 +764,10 @@ void mf_config_overlay_merge(mf_daemon_config_t *base_cfg,
             base->enabled = true;
         if (ov->poll_interval_s > 0)
             base->poll_interval_s = ov->poll_interval_s;
+        /* The overlay always carries these two; mf_config_load_overlay
+         * copies base values into entries written before they existed. */
+        base->capture_interval_s = ov->capture_interval_s;
+        base->active = ov->active;
 
         /* USB overlay: only patch fields that are non-zero / non-empty in
          * overlay. */
@@ -815,6 +852,7 @@ int mf_config_save_overlay(const mf_daemon_config_t *cfg)
         if (d->poll_interval_s > 0.0)
             cJSON_AddNumberToObject(o, "poll_interval_s", d->poll_interval_s);
         cJSON_AddNumberToObject(o, "capture_interval_s", d->capture_interval_s);
+        cJSON_AddBoolToObject(o, "active", d->active);
         cJSON_AddItemToArray(arr, o);
     }
     json = cJSON_PrintUnformatted(root);
@@ -824,6 +862,40 @@ int mf_config_save_overlay(const mf_daemon_config_t *cfg)
     rc = write_atomic(mf_config_overlay_path(), json);
     free(json);
     return rc;
+}
+
+/* An overlay written by an older daemon may lack "active" or
+ * "capture_interval_s". apply_device() fills those with defaults, which
+ * would clobber the base config on merge, so keep the base value instead. */
+static void keep_base_if_absent(const mf_daemon_config_t *base,
+                                mf_daemon_config_t *ov, const cJSON *devs)
+{
+    for (int i = 0; i < ov->n_devices; i++)
+    {
+        const cJSON *obj = NULL;
+        const cJSON *it;
+        int idx = find_device_by_uuid(base, ov->devices[i].uuid);
+
+        if (idx < 0)
+            continue;
+        cJSON_ArrayForEach(it, devs)
+        {
+            const cJSON *u = cJSON_GetObjectItem(it, "uuid");
+            if (cJSON_IsString(u) &&
+                strcmp(u->valuestring, ov->devices[i].uuid) == 0)
+            {
+                obj = it;
+                break;
+            }
+        }
+        if (!obj)
+            continue;
+        if (!cJSON_GetObjectItem(obj, "active"))
+            ov->devices[i].active = base->devices[idx].active;
+        if (!cJSON_GetObjectItem(obj, "capture_interval_s"))
+            ov->devices[i].capture_interval_s =
+                base->devices[idx].capture_interval_s;
+    }
 }
 
 int mf_config_load_overlay(mf_daemon_config_t *cfg)
@@ -848,6 +920,7 @@ int mf_config_load_overlay(mf_daemon_config_t *cfg)
         return -1;
     mf_config_defaults(&ov);
     mf_config_apply_json(&ov, root);
+    keep_base_if_absent(cfg, &ov, cJSON_GetObjectItem(root, "devices"));
     cJSON_Delete(root);
     mf_config_overlay_merge(cfg, &ov);
     return 0;

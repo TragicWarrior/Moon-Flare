@@ -314,7 +314,7 @@ int main(int argc, char **argv)
             FAIL("health missing Content-Length");
         else if (!strstr(resp, "\"ok\":true"))
             FAIL("health body missing ok");
-        else if (!strstr(resp, "moonflared/0.1.0"))
+        else if (!strstr(resp, "moonflared/" MF_VERSION))
             FAIL("health body missing server id");
         close(fd);
     }

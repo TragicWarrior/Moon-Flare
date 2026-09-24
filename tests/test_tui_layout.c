@@ -49,6 +49,14 @@ int main(void)
         CHECK(!found_small, "no 72x22 too-small path");
     }
     CHECK(strstr(grid[24], "F10"), "hints on row 24");
+    CHECK(strstr(grid[24], "Space active"), "hints name the Space toggle");
+    CHECK(strstr(grid[MF_CARD_Y + 1], "Input") &&
+          strstr(grid[MF_CARD_Y + 3], "Capacity") &&
+          strstr(grid[MF_CARD_Y + 5], "Discharge"), "three System bars, gap rows");
+    CHECK(strstr(grid[MF_CARD_Y + MF_SYS_H], "Batteries"),
+          "cards start below the System panel");
+    CHECK(grid[MF_CARD_Y + MF_CARD_H - 1][0] == '+',
+          "cards end above the hints row");
 
     mf_tui_paint_settings(grid, "127.0.0.1", 5250, 1.0);
     CHECK(strstr(grid[y], "General"), "settings title");

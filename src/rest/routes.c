@@ -6,6 +6,7 @@
 #include "device.h"
 #include "discover.h"
 #include "history.h"
+#include "system/system.h"
 
 #include <cJSON.h>
 #include <stdio.h>
@@ -64,24 +65,43 @@ static void cfg_remove_uuid(const char *uuid)
     }
 }
 
-static void cfg_patch_name_poll(const char *uuid, const char *name, double poll)
+/* Mirror the daemon-owned settings from an accepted PUT into the config
+ * so they are saved and survive a restart. */
+static void cfg_patch_settings(const char *uuid, const cJSON *body)
 {
     mf_daemon_config_t *cfg = live_cfg();
+    mf_config_device_t *d = NULL;
+    const cJSON *it;
     int i;
 
-    if (!uuid || !uuid[0] || !cfg)
+    if (!uuid || !uuid[0] || !cfg || !body)
         return;
     for (i = 0; i < cfg->n_devices; i++)
     {
-        if (strcmp(cfg->devices[i].uuid, uuid) != 0)
-            continue;
-        if (name && name[0])
-            snprintf(cfg->devices[i].name, sizeof(cfg->devices[i].name),
-                     "%s", name);
-        if (poll > 0.0)
-            cfg->devices[i].poll_interval_s = poll;
-        return;
+        if (strcmp(cfg->devices[i].uuid, uuid) == 0)
+        {
+            d = &cfg->devices[i];
+            break;
+        }
     }
+    if (!d)
+        return;
+    it = cJSON_GetObjectItemCaseSensitive(body, "name");
+    if (cJSON_IsString(it) && it->valuestring && it->valuestring[0])
+        snprintf(d->name, sizeof(d->name), "%s", it->valuestring);
+    it = cJSON_GetObjectItemCaseSensitive(body, "poll_interval_s");
+    if (cJSON_IsNumber(it) && it->valuedouble > 0.0)
+        d->poll_interval_s = it->valuedouble;
+    else if (cJSON_IsString(it) && it->valuestring && atof(it->valuestring) > 0.0)
+        d->poll_interval_s = atof(it->valuestring);
+    it = cJSON_GetObjectItemCaseSensitive(body, "capture_interval_s");
+    if (cJSON_IsNumber(it))
+        d->capture_interval_s = it->valuedouble;
+    else if (cJSON_IsString(it) && it->valuestring)
+        d->capture_interval_s = atof(it->valuestring);
+    it = cJSON_GetObjectItemCaseSensitive(body, "active");
+    if (cJSON_IsBool(it))
+        d->active = cJSON_IsTrue(it);
 }
 
 static void cfg_upsert_from_json(const char *uuid, const cJSON *root)
@@ -194,9 +214,20 @@ static cJSON *str_or_null(cJSON *obj, const char *key)
     return (it && cJSON_IsString(it)) ? it : NULL;
 }
 
+typedef struct {
+    cJSON              *root;
+    mf_system_totals_t  sys;
+} status_ctx_t;
+
+static double num_or(const cJSON *n, double dflt)
+{
+    return n ? n->valuedouble : dflt;
+}
+
 static int add_status_row(const mf_devinfo_t *d, void *arg)
 {
-    cJSON *root = arg;
+    status_ctx_t *ctx = arg;
+    cJSON *root = ctx->root;
     cJSON *batteries = cJSON_GetObjectItemCaseSensitive(root, "batteries");
     cJSON *chargers = cJSON_GetObjectItemCaseSensitive(root, "chargers");
     cJSON *inverters = cJSON_GetObjectItemCaseSensitive(root, "inverters");
@@ -208,6 +239,7 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
     cJSON_AddStringToObject(row, "name", d->name);
     cJSON_AddStringToObject(row, "driver", d->driver);
     cJSON_AddBoolToObject(row, "online", d->online);
+    cJSON_AddBoolToObject(row, "active", d->active);
     cJSON_AddNumberToObject(row, "seq", (double)d->seq);
 
     if (strcmp(d->kind, "charger") == 0)
@@ -224,6 +256,7 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
             cJSON_AddNumberToObject(row, "kwh_today", k->valuedouble);
         if (st)
             cJSON_AddStringToObject(row, "charge_stage", st->valuestring);
+        mf_system_add_charger(&ctx->sys, d->active, d->online, num_or(w, 0.0));
         cJSON_AddItemToArray(chargers, row);
     } else if (strcmp(d->kind, "inverter") == 0)
     {
@@ -253,6 +286,10 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
         if (rem)
             cJSON_AddNumberToObject(row, "remaining_capacity_ah",
                                     rem->valuedouble);
+        mf_system_add_battery(&ctx->sys, d->active, d->online,
+                              num_or(v, 0.0), num_or(c, 0.0), num_or(s, 0.0),
+                              num_or(rem, -1.0), num_or(full, 0.0),
+                              (int)num_or(n, 0.0));
         cJSON_AddItemToArray(batteries, row);
     }
     if (data)
@@ -278,17 +315,46 @@ static void add_caps(cJSON *arr, unsigned caps)
         cJSON_AddItemToArray(arr, cJSON_CreateString("auto_net"));
 }
 
+static cJSON *system_json(const mf_system_totals_t *t)
+{
+    cJSON *o = cJSON_CreateObject();
+
+    cJSON_AddNumberToObject(o, "input_w", t->input_w);
+    cJSON_AddNumberToObject(o, "input_max_w", t->input_max_w);
+    if (t->soc_pct >= 0.0)
+        cJSON_AddNumberToObject(o, "soc_pct", t->soc_pct);
+    else
+        cJSON_AddNullToObject(o, "soc_pct");
+    cJSON_AddNumberToObject(o, "stored_wh", t->stored_wh);
+    cJSON_AddNumberToObject(o, "capacity_wh", t->capacity_wh);
+    cJSON_AddNumberToObject(o, "charge_w", t->charge_w);
+    cJSON_AddNumberToObject(o, "discharge_w", t->discharge_w);
+    cJSON_AddNumberToObject(o, "discharge_max_w", t->discharge_max_w);
+    cJSON_AddNumberToObject(o, "chargers_counted", t->chargers_counted);
+    cJSON_AddNumberToObject(o, "chargers_total", t->chargers_total);
+    cJSON_AddNumberToObject(o, "batteries_counted", t->batteries_counted);
+    cJSON_AddNumberToObject(o, "batteries_total", t->batteries_total);
+    return o;
+}
+
 static int handle_status(mf_rest_response_t *resp)
 {
-    cJSON *root = cJSON_CreateObject();
-    cJSON_AddStringToObject(root, "server", "moonflared/0.1.0");
-    cJSON_AddNumberToObject(root, "ts", (double)time(NULL));
-    cJSON_AddItemToObject(root, "batteries", cJSON_CreateArray());
-    cJSON_AddItemToObject(root, "chargers", cJSON_CreateArray());
-    cJSON_AddItemToObject(root, "inverters", cJSON_CreateArray());
-    cJSON_AddItemToObject(root, "phantoms", cJSON_CreateArray());
-    mf_devices_visit_live(add_status_row, root);
-    set_json(resp, 200, root, NULL);
+    status_ctx_t ctx;
+    const mf_daemon_config_t *cfg = live_cfg();
+
+    ctx.root = cJSON_CreateObject();
+    mf_system_init(&ctx.sys, cfg->system.input_max_w,
+                   cfg->system.discharge_max_w);
+    cJSON_AddStringToObject(ctx.root, "server", "moonflared/" MF_VERSION);
+    cJSON_AddNumberToObject(ctx.root, "ts", (double)time(NULL));
+    cJSON_AddItemToObject(ctx.root, "batteries", cJSON_CreateArray());
+    cJSON_AddItemToObject(ctx.root, "chargers", cJSON_CreateArray());
+    cJSON_AddItemToObject(ctx.root, "inverters", cJSON_CreateArray());
+    cJSON_AddItemToObject(ctx.root, "phantoms", cJSON_CreateArray());
+    mf_devices_visit_live(add_status_row, &ctx);
+    mf_system_finish(&ctx.sys);
+    cJSON_AddItemToObject(ctx.root, "system", system_json(&ctx.sys));
+    set_json(resp, 200, ctx.root, NULL);
     return 0;
 }
 
@@ -343,6 +409,7 @@ static int add_list_row(const mf_devinfo_t *d, void *arg)
     cJSON_AddStringToObject(o, "kind", d->kind);
     cJSON_AddStringToObject(o, "driver", d->driver);
     cJSON_AddBoolToObject(o, "online", d->online);
+    cJSON_AddBoolToObject(o, "active", d->active);
     cJSON_AddItemToArray(arr, o);
     return 0;
 }
@@ -454,6 +521,7 @@ static int handle_device_get(const char *id, mf_rest_response_t *resp)
     if (info.endpoint && info.endpoint[0])
         cJSON_AddStringToObject(obj, "endpoint", info.endpoint);
     cJSON_AddBoolToObject(obj, "online", info.online);
+    cJSON_AddBoolToObject(obj, "active", info.active);
     cJSON_AddStringToObject(obj, "state", info.online ? "streaming" : "offline");
     cJSON_AddNumberToObject(obj, "seq", (double)info.seq);
     {
@@ -572,21 +640,10 @@ static int handle_settings_put(const char *id, const mf_rest_request_t *req,
     }
     {
         cJSON *b = cJSON_Parse(body);
-        const char *nm = NULL;
-        double poll = -1.0;
 
         if (b)
         {
-            cJSON *n = cJSON_GetObjectItemCaseSensitive(b, "name");
-            cJSON *p = cJSON_GetObjectItemCaseSensitive(b, "poll_interval_s");
-
-            if (cJSON_IsString(n) && n->valuestring)
-                nm = n->valuestring;
-            if (cJSON_IsNumber(p))
-                poll = p->valuedouble;
-            else if (cJSON_IsString(p) && p->valuestring)
-                poll = atof(p->valuestring);
-            cfg_patch_name_poll(id, nm, poll);
+            cfg_patch_settings(id, b);
             cJSON_Delete(b);
         }
         if (g_cfg_path[0])
@@ -906,7 +963,7 @@ int mf_rest_dispatch(const mf_rest_request_t *req, mf_rest_response_t *resp)
             }
             root = cJSON_CreateObject();
             cJSON_AddBoolToObject(root, "ok", 1);
-            cJSON_AddStringToObject(root, "server", "moonflared/0.1.0");
+            cJSON_AddStringToObject(root, "server", "moonflared/" MF_VERSION);
             set_json(resp, 200, root, NULL);
             return 0;
         }

@@ -1,5 +1,6 @@
 #include "ui_screen.h"
 #include "layout.h"
+#include "system/system.h"
 
 #include <cJSON.h>
 #include <stdio.h>
@@ -12,15 +13,31 @@
 #define MAX_LINE 32
 #define MAX_CAT  32
 
+/* System panel columns: names | bars.  Three solid 1-row bars, each followed
+ * by a blank row (the last one keeps the cards off the bottom bar); each
+ * reading is centred inside its bar.  The bars take what the names leave. */
+#define SYS_ROWS       3
+#define SYS_LINES      (SYS_ROWS * 2)
+#define SYS_NAME_W     11
+#define SYS_PAD_W      1              /* blank column right of the bars */
+#define SYS_METER_MIN  10
+#define SYS_FILL       COLOR_GREEN
+#define SYS_TROUGH     COLOR_WHITE    /* not bold: light gray */
+
 typedef struct {
     char id[40];
     char name[32];
     char kind[16];
+    bool active;
 } cat_dev_t;
+
+static const char *const g_card_kind[3] = { "battery", "charger", "inverter" };
 
 static cat_dev_t g_cat[MAX_CAT];
 static int g_ncat;
 static int g_dash_visible = 1;
+static int g_sel_card;
+static int g_sel_row[3];
 
 static vk_frame_t   *g_fr[3];
 static vk_listbox_t *g_lb[3];
@@ -28,7 +45,14 @@ static vk_label_t   *g_status;
 static vk_label_t   *g_hints;
 static vk_label_t   *g_small;
 static vk_frame_t   *g_client;      /* flat cyan/blue client-area frame */
+static vk_box_t     *g_body;        /* vertical: System panel over the cards */
 static vk_box_t     *g_cards_box;   /* horizontal box holding the 3 cards */
+static vk_box_t     *g_sys_body;            /* names | bars | pad */
+static vk_label_t   *g_sys_pad;
+static vk_box_t     *g_sys_col[2];
+static vk_label_t   *g_sys_name[SYS_LINES];
+static vk_progress_t *g_sys_mt[SYS_ROWS];
+static vk_label_t   *g_sys_gap[SYS_ROWS];       /* blank row under each bar */
 static char          g_caps[3][32];
 static char          g_last_hp[128];
 static char          g_last_tag[24];
@@ -75,6 +99,10 @@ static vk_frame_t *mk_card(int idx, char *cap)
     vk_widget_set_expand(VK_WIDGET(lb));
     vk_widget_set_colors(VK_WIDGET(lb), COL_TEXT, COL_BG);
     vk_listbox_set_wrap(lb, true);
+    /* Only the selected card shows its cursor. */
+    vk_listbox_set_highlight(lb, COLOR_BLACK, COLOR_CYAN);
+    vk_listbox_set_unfocused(lb, COL_TEXT, COL_BG);
+    vk_listbox_set_focused(lb, idx == g_sel_card);
     vk_frame_set_child(f, VK_WIDGET(lb), VK_INHERIT_NONE);
     vk_object_register_event(VK_OBJECT(f), VK_EVENT_ON_FINALIZE,
                              frame_caption, cap);
@@ -83,25 +111,137 @@ static vk_frame_t *mk_card(int idx, char *cap)
     return f;
 }
 
+static int sys_meter_w(int iw)
+{
+    int mw = iw - SYS_NAME_W - SYS_PAD_W;
+    return mw < SYS_METER_MIN ? SYS_METER_MIN : mw;
+}
+
+/* Bars run 0-100 (percent of full scale).  Solid: light gray where empty,
+ * green where filled.  The in-bar reading is reverse video of the cell under
+ * it, so its colour is that cell's *background*: black over both. */
+static vk_progress_t *mk_sys_bar(int len)
+{
+    vk_progress_t *p = vk_progress_create(VK_PROGRESS_HORIZONTAL, len, 1);
+    vk_widget_set_colors(VK_WIDGET(p), COL_TEXT, COL_BG);
+    vk_progress_set_range(p, 0.0, 100.0);
+    vk_progress_set_colors(p, SYS_FILL, COLOR_BLACK);
+    vk_progress_set_trough(p, VK_TROUGH_SOLID, SYS_TROUGH, COLOR_BLACK);
+    return p;
+}
+
+static vk_label_t *mk_sys_label(int w, const char *text)
+{
+    vk_label_t *l = vk_label_create(w);
+    vk_widget_set_colors(VK_WIDGET(l), COL_TEXT, COL_BG);
+    if (text)
+        vk_label_set_text(l, text);
+    return l;
+}
+
+/* The name column: SYS_LINES one-row labels, text only beside each bar.
+ * The blank ones paint the blue background.  Colours are set on each label
+ * because the column has none of its own yet when they attach, so
+ * inheriting would leave them grey. */
+static vk_box_t *mk_sys_name_col(const char *const *text)
+{
+    vk_box_t *col = vk_box_create(SYS_NAME_W, SYS_LINES, VK_BOX_VERTICAL,
+                                  SYS_LINES);
+    int i;
+
+    vk_box_set_homogeneous(col, false);
+    vk_widget_set_colors(VK_WIDGET(col), COL_TEXT, COL_BG);
+    for (i = 0; i < SYS_LINES; i++)
+    {
+        g_sys_name[i] = mk_sys_label(SYS_NAME_W, i % 2 == 0 ? text[i / 2] : NULL);
+        if (i % 2 == 0)   /* bold white reads bright white */
+            vk_widget_set_attrs(VK_WIDGET(g_sys_name[i]), A_BOLD);
+        vk_box_set_widget(col, i, VK_WIDGET(g_sys_name[i]), VK_INHERIT_NONE);
+        vk_label_update(g_sys_name[i]);
+    }
+    return col;
+}
+
+static void mk_system(int w)
+{
+    static const char *const names[SYS_ROWS] = { " Input", " Capacity", " Discharge" };
+    int iw = w;
+    int i;
+
+    g_sys_body = vk_box_create(iw, SYS_LINES, VK_BOX_HORIZONTAL, 3);
+    vk_box_set_homogeneous(g_sys_body, false);
+    vk_widget_set_colors(VK_WIDGET(g_sys_body), COL_TEXT, COL_BG);
+    g_sys_col[0] = mk_sys_name_col(names);
+    g_sys_col[1] = vk_box_create(sys_meter_w(iw), SYS_LINES,
+                                 VK_BOX_VERTICAL, SYS_LINES);
+    vk_box_set_homogeneous(g_sys_col[1], false);
+    vk_widget_set_colors(VK_WIDGET(g_sys_col[1]), COL_TEXT, COL_BG);
+    for (i = 0; i < 2; i++)
+        vk_box_set_widget(g_sys_body, i, VK_WIDGET(g_sys_col[i]), VK_INHERIT_NONE);
+    /* One blank label spans the pad column; a label fills its whole canvas. */
+    g_sys_pad = mk_sys_label(SYS_PAD_W, NULL);
+    vk_widget_resize(VK_WIDGET(g_sys_pad), SYS_PAD_W, SYS_LINES);
+    vk_box_set_widget(g_sys_body, 2, VK_WIDGET(g_sys_pad), VK_INHERIT_NONE);
+    vk_label_update(g_sys_pad);
+    for (i = 0; i < SYS_ROWS; i++)
+    {
+        g_sys_mt[i] = mk_sys_bar(sys_meter_w(iw));
+        vk_box_set_widget(g_sys_col[1], i * 2, VK_WIDGET(g_sys_mt[i]),
+                          VK_INHERIT_NONE);
+        g_sys_gap[i] = mk_sys_label(sys_meter_w(iw), NULL);
+        vk_box_set_widget(g_sys_col[1], i * 2 + 1, VK_WIDGET(g_sys_gap[i]),
+                          VK_INHERIT_NONE);
+        vk_label_update(g_sys_gap[i]);
+    }
+}
+
+/* The System panel, its columns and meters are fixed-size box children, so
+ * the layout never resizes them; size them from the body width by hand. */
+static void size_system(int w)
+{
+    int iw = w;
+    int i;
+
+    vk_widget_resize(VK_WIDGET(g_sys_body), iw, SYS_LINES);
+    vk_widget_resize(VK_WIDGET(g_sys_col[1]), sys_meter_w(iw), SYS_LINES);
+    vk_widget_resize(VK_WIDGET(g_sys_pad), SYS_PAD_W, SYS_LINES);
+    vk_label_update(g_sys_pad);
+    for (i = 0; i < SYS_ROWS; i++)
+    {
+        vk_widget_resize(VK_WIDGET(g_sys_mt[i]), sys_meter_w(iw), 1);
+        vk_progress_update(g_sys_mt[i]);
+        vk_widget_resize(VK_WIDGET(g_sys_gap[i]), sys_meter_w(iw), 1);
+        vk_label_update(g_sys_gap[i]);
+    }
+}
+
 static void ensure_cards(void)
 {
     int i;
     if (g_fr[0])
         return;
     g_client = mf_ui_make_client_frame(MF_CARD_W * 3, MF_CARD_H);
-    g_cards_box = vk_box_create(MF_CARD_W * 3 - 2, MF_CARD_H - 2,
+    g_body = vk_box_create(MF_CARD_W * 3 - 2, MF_CARD_H - 2,
+                           VK_BOX_VERTICAL, 2);
+    vk_box_set_homogeneous(g_body, false);
+    vk_widget_set_expand(VK_WIDGET(g_body));
+    mk_system(MF_CARD_W * 3 - 2);
+    g_cards_box = vk_box_create(MF_CARD_W * 3 - 2, MF_CARD_H - 2 - MF_SYS_H,
                                 VK_BOX_HORIZONTAL, 3);
     vk_box_set_homogeneous(g_cards_box, false);
     vk_widget_set_expand(VK_WIDGET(g_cards_box));
     g_fr[0] = mk_card(0, g_caps[0]);
     g_fr[1] = mk_card(1, g_caps[1]);
     g_fr[2] = mk_card(2, g_caps[2]);
-    /* Top-down attach: frame -> box -> cards.  The box is EXPAND so the frame
-       resizes it to fill; it inherits the frame's cyan/blue so any bare gap is
-       blue; the cards are EXPAND too (the box splits its width across them) and
-       keep their own white-on-blue (INHERIT_NONE). */
+    /* Top-down attach: frame -> body -> System panel over the cards box ->
+       cards.  Body and cards box are EXPAND and inherit the frame's cyan/blue
+       so any bare gap is blue; the System frame is fixed height and sized by
+       size_system(); the cards are EXPAND too (the box splits its width
+       across them) and keep their own white-on-blue (INHERIT_NONE). */
     mf_ui_attach(VK_WIDGET(g_client), 0, MF_CARD_Y);
-    vk_frame_set_child(g_client, VK_WIDGET(g_cards_box), VK_INHERIT_COLOR);
+    vk_frame_set_child(g_client, VK_WIDGET(g_body), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_body, 0, VK_WIDGET(g_sys_body), VK_INHERIT_NONE);
+    vk_box_set_widget(g_body, 1, VK_WIDGET(g_cards_box), VK_INHERIT_COLOR);
     for (i = 0; i < 3; i++)
         vk_box_set_widget(g_cards_box, i, VK_WIDGET(g_fr[i]), VK_INHERIT_NONE);
 }
@@ -136,7 +276,8 @@ void mf_dash_init(void)
     mf_ui_attach(VK_WIDGET(g_status), 0, 1);
     g_hints = vk_label_create(cols > 0 ? cols : 80);
     vk_widget_set_colors(VK_WIDGET(g_hints), COL_TEXT, COL_BG);
-    vk_label_set_text(g_hints, "F10 menu  Enter open  q quit");
+    vk_label_set_text(g_hints,
+                      "F10 menu  Arrows select  Enter open  Space active  q quit");
     mf_ui_attach(VK_WIDGET(g_hints), 0, rows > 0 ? rows - 1 : 24);
     vk_label_update(g_hints);
     mf_dash_on_resize();
@@ -155,6 +296,8 @@ void mf_dash_on_resize(void)
     {
         vk_widget_resize(VK_WIDGET(g_hints), cw, 1);
         vk_widget_move(VK_WIDGET(g_hints), 0, rows > 0 ? rows - 1 : 24);
+        /* A resize keeps the old pixels; the new columns stay black. */
+        vk_label_update(g_hints);
     }
     if (!g_dash_visible)
     {
@@ -181,6 +324,16 @@ void mf_dash_on_resize(void)
             fh = 3;
         vk_widget_resize(VK_WIDGET(g_client), cw, fh);
         vk_widget_move(VK_WIDGET(g_client), 0, MF_CARD_Y);
+        /* Two levels below the client frame, so size them explicitly. */
+        {
+            int bw = cw - 2;
+            int bh = fh - 2;
+            int ch = bh - MF_SYS_H;
+
+            vk_widget_resize(VK_WIDGET(g_body), bw, bh);
+            size_system(bw);
+            vk_widget_resize(VK_WIDGET(g_cards_box), bw, ch < 3 ? 3 : ch);
+        }
         vk_widget_show(VK_WIDGET(g_client));
     }
     mf_dash_update(g_last_hp[0] ? g_last_hp : "127.0.0.1:5250",
@@ -188,8 +341,34 @@ void mf_dash_on_resize(void)
                    g_last_json[0] ? g_last_json : NULL);
 }
 
-static void fill_lb(vk_listbox_t *lb, cJSON *arr, const char *kind)
+static int cat_index(int card, int row)
 {
+    int k, seen = 0;
+
+    for (k = 0; k < g_ncat; k++)
+    {
+        if (strcmp(g_cat[k].kind, g_card_kind[card]) != 0)
+            continue;
+        if (seen == row)
+            return k;
+        seen++;
+    }
+    return -1;
+}
+
+static int card_count(int card)
+{
+    int k, n = 0;
+
+    for (k = 0; k < g_ncat; k++)
+        if (strcmp(g_cat[k].kind, g_card_kind[card]) == 0)
+            n++;
+    return n;
+}
+
+static void fill_lb(vk_listbox_t *lb, cJSON *arr, int card)
+{
+    const char *kind = g_card_kind[card];
     int n, i;
     vk_listbox_reset(lb);
     n = arr ? cJSON_GetArraySize(arr) : 0;
@@ -203,8 +382,12 @@ static void fill_lb(vk_listbox_t *lb, cJSON *arr, const char *kind)
     {
         cJSON *o = cJSON_GetArrayItem(arr, i);
         cJSON *name = cJSON_GetObjectItemCaseSensitive(o, "name");
-        char line[40], nm[20];
+        int ci = cat_index(card, i);
+        /* [x] counts toward the System totals; [ ] is inactive. */
+        const char *mark = (ci < 0 || g_cat[ci].active) ? "[x] " : "[ ] ";
+        char line[40], nm[20], row[48], rd[24];
         nm[0] = '\0';
+        rd[0] = '\0';
         if (cJSON_IsString(name) && name->valuestring)
             snprintf(nm, sizeof(nm), "%.16s", name->valuestring);
         if (strcmp(kind, "battery") == 0)
@@ -218,29 +401,141 @@ static void fill_lb(vk_listbox_t *lb, cJSON *arr, const char *kind)
             double pack = v && cJSON_IsNumber(v) ? v->valuedouble : 0;
             double ncell = ns && cJSON_IsNumber(ns) ? ns->valuedouble : 0;
             double avg = ncell > 0 ? pack / ncell : 0;
-            double soc = mf_tui_display_soc(
+            double soc = mf_display_soc(
                 s && cJSON_IsNumber(s) ? s->valuedouble : 0,
                 rem && cJSON_IsNumber(rem) ? rem->valuedouble : -1,
                 full && cJSON_IsNumber(full) ? full->valuedouble : 0,
                 avg,
                 cur && cJSON_IsNumber(cur) ? cur->valuedouble : 0);
-            snprintf(line, sizeof(line), "%s %.1fV %.0f%%",
-                     nm[0] ? nm : "pack", pack, soc);
+            snprintf(rd, sizeof(rd), "%.1fV %.0f%%", pack, soc);
+            if (!nm[0])
+                snprintf(nm, sizeof(nm), "pack");
         }
         else if (strcmp(kind, "charger") == 0)
         {
             cJSON *w = cJSON_GetObjectItemCaseSensitive(o, "charging_watts");
-            snprintf(line, sizeof(line), "%s %.0fW",
-                     nm[0] ? nm : "chg",
+            snprintf(rd, sizeof(rd), "%.0fW",
                      w && cJSON_IsNumber(w) ? w->valuedouble : 0);
+            if (!nm[0])
+                snprintf(nm, sizeof(nm), "chg");
         }
-        else
+        else if (!nm[0])
+            snprintf(nm, sizeof(nm), "inv");
+        /* Shorten the name, not the reading, when the row is too narrow. */
         {
-            snprintf(line, sizeof(line), "%s", nm[0] ? nm : "inv");
+            int lw = 0;
+            int room;
+
+            vk_widget_get_metrics(VK_WIDGET(lb), &lw, NULL);
+            room = lw - 2 - (int)strlen(mark) - (rd[0] ? (int)strlen(rd) + 1 : 0);
+            if (room < 4)
+                room = 4;
+            if ((int)strlen(nm) > room)
+                nm[room] = '\0';
         }
-        vk_listbox_add_item(lb, line, NULL, NULL);
+        if (rd[0])
+            snprintf(line, sizeof(line), "%s %s", nm, rd);
+        else
+            snprintf(line, sizeof(line), "%s", nm);
+        snprintf(row, sizeof(row), "%s%s", mark, line);
+        vk_listbox_add_item(lb, row, NULL, NULL);
     }
     vk_listbox_update(lb);
+}
+
+/* Keep the cursor on a real row; hop off an empty card when another has
+ * devices.  fill_lb() resets each list, so re-apply every refresh. */
+static void apply_selection(void)
+{
+    int i, n;
+
+    if (card_count(g_sel_card) == 0)
+    {
+        for (i = 0; i < 3; i++)
+        {
+            if (card_count(i) > 0)
+            {
+                g_sel_card = i;
+                break;
+            }
+        }
+    }
+    for (i = 0; i < 3; i++)
+    {
+        n = card_count(i);
+        if (g_sel_row[i] >= n)
+            g_sel_row[i] = n > 0 ? n - 1 : 0;
+        if (g_sel_row[i] < 0)
+            g_sel_row[i] = 0;
+        if (!g_lb[i])
+            continue;
+        vk_listbox_set_focused(g_lb[i], i == g_sel_card);
+        vk_listbox_set_curr(g_lb[i], g_sel_row[i]);
+        vk_listbox_update(g_lb[i]);
+    }
+}
+
+static void set_sys_row(int i, double pct, const char *val)
+{
+    if (pct < 0)
+        pct = 0;
+    if (pct > 100)
+        pct = 100;
+    vk_progress_set_value(g_sys_mt[i], pct);
+    vk_progress_set_value_text(g_sys_mt[i], val);
+    vk_progress_update(g_sys_mt[i]);
+}
+
+static double jnum_or(const cJSON *o, const char *key, double dflt)
+{
+    const cJSON *n = cJSON_GetObjectItemCaseSensitive(o, key);
+    return cJSON_IsNumber(n) ? n->valuedouble : dflt;
+}
+
+/* Totals come from the daemon so the TUI, CLI and MCP agree. */
+static void fill_system(const cJSON *sys)
+{
+    char val[48];
+    double in_w, in_max, dis_w, dis_max, chg_w, stored, cap;
+    const cJSON *soc;
+
+    if (!g_sys_body)
+        return;
+    if (!cJSON_IsObject(sys))
+    {
+        set_sys_row(0, 0, "--");
+        set_sys_row(1, 0, "--");
+        set_sys_row(2, 0, "--");
+        return;
+    }
+    in_w = jnum_or(sys, "input_w", 0);
+    in_max = jnum_or(sys, "input_max_w", 0);
+    snprintf(val, sizeof(val), "%.0f W / %.0f W", in_w, in_max);
+    set_sys_row(0, in_max > 0 ? in_w / in_max * 100.0 : 0, val);
+
+    soc = cJSON_GetObjectItemCaseSensitive(sys, "soc_pct");
+    stored = jnum_or(sys, "stored_wh", 0) / 1000.0;
+    cap = jnum_or(sys, "capacity_wh", 0) / 1000.0;
+    if (!cJSON_IsNumber(soc))
+        set_sys_row(1, 0, "no data");
+    else
+    {
+        if (cap > 0)
+            snprintf(val, sizeof(val), "%.0f%%  %.1f / %.1f kWh",
+                     soc->valuedouble, stored, cap);
+        else
+            snprintf(val, sizeof(val), "%.0f%%", soc->valuedouble);
+        set_sys_row(1, soc->valuedouble, val);
+    }
+
+    dis_w = jnum_or(sys, "discharge_w", 0);
+    dis_max = jnum_or(sys, "discharge_max_w", 0);
+    chg_w = jnum_or(sys, "charge_w", 0);
+    if (dis_w <= 0 && chg_w > 0)
+        snprintf(val, sizeof(val), "0 W  (charging %.0f W)", chg_w);
+    else
+        snprintf(val, sizeof(val), "%.0f W / %.0f W", dis_w, dis_max);
+    set_sys_row(2, dis_max > 0 ? dis_w / dis_max * 100.0 : 0, val);
 }
 
 static void cat_add(cJSON *arr, const char *kind)
@@ -256,6 +551,8 @@ static void cat_add(cJSON *arr, const char *kind)
         cJSON *name = cJSON_GetObjectItemCaseSensitive(o, "name");
         cat_dev_t *d = &g_cat[g_ncat++];
         memset(d, 0, sizeof(*d));
+        /* Older daemons send no "active": treat every device as counted. */
+        d->active = !cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(o, "active"));
         snprintf(d->kind, sizeof(d->kind), "%s", kind);
         if (cJSON_IsString(id) && id->valuestring)
             snprintf(d->id, sizeof(d->id), "%s", id->valuestring);
@@ -279,6 +576,10 @@ const char *mf_dash_catalog_name(int i)
 const char *mf_dash_catalog_kind(int i)
 {
     return (i >= 0 && i < g_ncat) ? g_cat[i].kind : "";
+}
+int mf_dash_catalog_active(int i)
+{
+    return (i >= 0 && i < g_ncat) ? g_cat[i].active : 1;
 }
 
 void mf_dash_set_visible(int vis)
@@ -342,11 +643,21 @@ void mf_dash_update(const char *hostport, const char *tag, const char *json)
     snprintf(g_caps[1], sizeof(g_caps[1]), "Chargers (%d)", nc);
     snprintf(g_caps[2], sizeof(g_caps[2]), "Inverters (%d)", ni);
     if (g_lb[0])
-        fill_lb(g_lb[0], b, "battery");
+        fill_lb(g_lb[0], b, 0);
     if (g_lb[1])
-        fill_lb(g_lb[1], c, "charger");
+        fill_lb(g_lb[1], c, 1);
     if (g_lb[2])
-        fill_lb(g_lb[2], i, "inverter");
+        fill_lb(g_lb[2], i, 2);
+    apply_selection();
+    fill_system(root ? cJSON_GetObjectItemCaseSensitive(root, "system") : NULL);
+    if (g_sys_body)
+    {
+        int r;
+
+        for (r = 0; r < 2; r++)
+            vk_box_update(g_sys_col[r]);
+        vk_box_update(g_sys_body);
+    }
     if (g_fr[0])
         vk_frame_update(g_fr[0]);
     if (g_fr[1])
@@ -355,10 +666,88 @@ void mf_dash_update(const char *hostport, const char *tag, const char *json)
         vk_frame_update(g_fr[2]);
     if (g_cards_box)
         vk_box_update(g_cards_box);
+    if (g_body)
+        vk_box_update(g_body);
     if (g_client)
         vk_frame_update(g_client);
     if (root)
         cJSON_Delete(root);
+}
+
+/* Repaint after a selection move without new data. */
+static void repaint_cards(void)
+{
+    int i;
+
+    for (i = 0; i < 3; i++)
+        if (g_fr[i])
+            vk_frame_update(g_fr[i]);
+    if (g_cards_box)
+        vk_box_update(g_cards_box);
+    if (g_body)
+        vk_box_update(g_body);
+    if (g_client)
+        vk_frame_update(g_client);
+}
+
+static void move_card(int dir)
+{
+    int i, c = g_sel_card;
+
+    for (i = 0; i < 3; i++)
+    {
+        c = (c + dir + 3) % 3;
+        if (card_count(c) > 0)
+        {
+            g_sel_card = c;
+            return;
+        }
+    }
+}
+
+int mf_dash_key(wint_t c, int *cat_idx)
+{
+    int n;
+
+    if (!g_dash_visible || !g_client || mf_pack_visible())
+        return MF_DASH_KEY_NONE;
+    n = card_count(g_sel_card);
+    switch (c)
+    {
+        case KEY_UP:
+            if (g_sel_row[g_sel_card] > 0)
+                g_sel_row[g_sel_card]--;
+            break;
+        case KEY_DOWN:
+            if (g_sel_row[g_sel_card] < n - 1)
+                g_sel_row[g_sel_card]++;
+            break;
+        case KEY_LEFT:
+        case KEY_BTAB:
+            move_card(-1);
+            break;
+        case KEY_RIGHT:
+        case '\t':
+            move_card(1);
+            break;
+        case '\n':
+        case KEY_ENTER:
+        case ' ':
+        {
+            int k = cat_index(g_sel_card, g_sel_row[g_sel_card]);
+
+            if (k < 0 || !g_cat[k].id[0])
+                return MF_DASH_KEY_HANDLED;
+            if (cat_idx)
+                *cat_idx = k;
+            return c == ' ' ? MF_DASH_KEY_TOGGLE : MF_DASH_KEY_OPEN;
+        }
+        default:
+            return MF_DASH_KEY_NONE;
+    }
+    apply_selection();
+    repaint_cards();
+    return MF_DASH_KEY_HANDLED;
 }
 
 void mf_dash_shutdown(void)
@@ -369,8 +758,42 @@ void mf_dash_shutdown(void)
         for (i = 0; i < 3; i++)
             vk_box_set_widget(g_cards_box, i, NULL, VK_INHERIT_NONE);
     }
+    if (g_body)
+    {
+        vk_box_set_widget(g_body, 0, NULL, VK_INHERIT_NONE);
+        vk_box_set_widget(g_body, 1, NULL, VK_INHERIT_NONE);
+    }
     if (g_client)
         vk_frame_set_child(g_client, NULL, VK_INHERIT_NONE);
+    if (g_sys_body)
+    {
+        for (i = 0; i < SYS_LINES; i++)
+        {
+            vk_box_set_widget(g_sys_col[0], i, NULL, VK_INHERIT_NONE);
+            vk_label_destroy(g_sys_name[i]);
+            g_sys_name[i] = NULL;
+        }
+        for (i = 0; i < SYS_LINES; i++)
+            vk_box_set_widget(g_sys_col[1], i, NULL, VK_INHERIT_NONE);
+        for (i = 0; i < SYS_ROWS; i++)
+        {
+            vk_progress_destroy(g_sys_mt[i]);
+            g_sys_mt[i] = NULL;
+            vk_label_destroy(g_sys_gap[i]);
+            g_sys_gap[i] = NULL;
+        }
+        for (i = 0; i < 2; i++)
+        {
+            vk_box_set_widget(g_sys_body, i, NULL, VK_INHERIT_NONE);
+            vk_box_destroy(g_sys_col[i]);
+            g_sys_col[i] = NULL;
+        }
+        vk_box_set_widget(g_sys_body, 2, NULL, VK_INHERIT_NONE);
+        vk_label_destroy(g_sys_pad);
+        g_sys_pad = NULL;
+        vk_box_destroy(g_sys_body);
+        g_sys_body = NULL;
+    }
     for (i = 0; i < 3; i++)
     {
         if (g_fr[i])
@@ -384,6 +807,11 @@ void mf_dash_shutdown(void)
     {
         vk_box_destroy(g_cards_box);
         g_cards_box = NULL;
+    }
+    if (g_body)
+    {
+        vk_box_destroy(g_body);
+        g_body = NULL;
     }
     if (g_client)
     {
@@ -436,8 +864,8 @@ int mf_dash_mouse(int x, int y, mmask_t bstate)
     slot = (cw - 2) / 3;
     if (slot < 1)
         slot = 1;
-    fy = MF_CARD_Y + 1;              /* inside the client frame's top border */
-    fh = rows - MF_CARD_Y - 1 - 2;   /* client frame interior height */
+    fy = MF_CARD_Y + 1 + MF_SYS_H;   /* card top, below the System panel */
+    fh = rows - MF_CARD_Y - 1 - 2 - MF_SYS_H;
 
     for (i = 0; i < 2; i++)
     {
@@ -462,6 +890,9 @@ int mf_dash_mouse(int x, int y, mmask_t bstate)
             {
                 if (!g_cat[k].id[0])
                     return 1;
+                g_sel_card = i;
+                g_sel_row[i] = row;
+                apply_selection();
                 mf_ui_open_device_view(k);
                 return 1;
             }

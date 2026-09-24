@@ -658,7 +658,7 @@ void mf_ui_show_help(int about)
     vk_widget_set_colors(VK_WIDGET(lb), COL_TEXT, COL_MENU);
     if (about)
     {
-        vk_listbox_add_item(lb, "Moon Flare TUI 0.1.0", NULL, NULL);
+        vk_listbox_add_item(lb, "Moon Flare TUI " MF_VERSION, NULL, NULL);
         vk_listbox_add_item(lb, "libviper/VDK  80x25", NULL, NULL);
     }
     else
@@ -2208,6 +2208,30 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
                 if (key == 'b' || key == 'B')
                 {
                     post_switch("balance", !mf_pack_switch_on("balance"));
+                    continue;
+                }
+            }
+            if (!mf_pack_visible())
+            {
+                int k = -1;
+                int dr = mf_dash_key((wint_t)key, &k);
+
+                if (dr == MF_DASH_KEY_OPEN)
+                    mf_ui_open_device_view(k);
+                else if (dr == MF_DASH_KEY_TOGGLE)
+                {
+                    char path[192], payload[32];
+
+                    snprintf(path, sizeof(path), "/api/v1/devices/%s/settings",
+                             mf_dash_catalog_id(k));
+                    snprintf(payload, sizeof(payload), "{\"active\":%s}",
+                             mf_dash_catalog_active(k) ? "false" : "true");
+                    (void)mf_http_cli_put(&g_cli, path, payload);
+                    g_last_get = 0;   /* show the new totals right away */
+                }
+                if (dr != MF_DASH_KEY_NONE)
+                {
+                    mf_ui_refresh();
                     continue;
                 }
             }

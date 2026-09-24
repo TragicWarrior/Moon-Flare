@@ -454,7 +454,7 @@ int main(int argc, char **argv)
 
     if (do_version)
     {
-        printf("moonflare-cli/0.1.0\n");
+        printf("moonflare-cli/" MF_VERSION "\n");
         return 0;
     }
 
