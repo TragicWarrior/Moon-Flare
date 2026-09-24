@@ -86,6 +86,9 @@ const char *mf_devset_add_kind(void);
 const char *mf_devset_add_driver(void);
 void mf_devset_set_error(const char *msg);
 void mf_devset_apply_json(const char *json);
+/* The daemon's reply to a settings PUT: "Settings saved." or its error. */
+void mf_devset_put_result(const char *json);
+int  mf_devset_saving(void);          /* a PUT is out, reply pending */
 void mf_devset_close(void);
 int  mf_devset_open(void);
 int  mf_devset_touched(void);

@@ -1,3 +1,13 @@
+/*
+ * Module settings dialog, in the style of vwm's Settings: every setting is
+ * one row of a list ("Label ........ [value]") in a sunken frame, with
+ * Modify / Save / Close below.  Modify (or Enter) edits the selected row
+ * in a popup; Left/Right flips a true/false row in place.  Rows that
+ * cannot be changed stay in the list, drawn in gray.  Save asks first and
+ * reports the daemon's answer ("Settings saved." or the error); closing
+ * with unsaved changes asks whether to discard them.
+ */
+
 #include "ui_screen.h"
 #include "layout.h"
 
@@ -12,32 +22,54 @@
 
 #define COL_TEXT COLOR_BLACK
 #define COL_MENU COLOR_CYAN
-#define MAX_FIELDS 16
-#define LAB_W 22
-#define HINT_W 13
 
-static vk_window_t *g_win;
-static vk_box_t    *g_vbox, *g_mid, *g_inner, *g_form, *g_bar;
-static vk_scroller_t *g_vscroll;
-static vk_grid_t   *g_row[MAX_FIELDS];
-static vk_grid_t   *g_fields[MAX_FIELDS];
-static vk_label_t  *g_lab[MAX_FIELDS];
-static vk_label_t  *g_hint[MAX_FIELDS];
-static vk_input_t  *g_in[MAX_FIELDS];
-static vk_button_t *g_btn_save, *g_btn_exit;
-static vk_filler_t *g_fill, *g_form_fill;
-static vk_filler_t *g_pad_top, *g_pad_bot, *g_pad_left, *g_pad_right;
-static int          g_nfields;
-static int          g_nedit;
-static int          g_edit[MAX_FIELDS];
-static int          g_ro[MAX_FIELDS];
-static int          g_focus;
-static int          g_open;
-static int          g_touched;
-static int          g_scroll;
-static int          g_form_h;
-static int          g_row_h[MAX_FIELDS];
-static int          g_shown[MAX_FIELDS];
+/* Read-only rows: bold black, which terminals show as dark gray. */
+#define RO_FG    COLOR_BLACK
+#define RO_ATTRS A_BOLD
+
+#define MAX_ROWS 32
+
+enum { ROW_TEXT = 0, ROW_NUM, ROW_BOOL };
+
+typedef struct {
+    char key[48];
+    char value[160];
+    char orig[160];
+    int  ro;
+    int  type;
+} row_t;
+
+enum { FOCUS_LIST = 0, FOCUS_MODIFY, FOCUS_SAVE, FOCUS_CLOSE, FOCUS_MAX };
+
+/* Popups over the dialog: one editor/confirm, plus a message on top. */
+enum { POP_NONE = 0, POP_MODIFY, POP_DISCARD, POP_SAVE };
+
+static row_t          g_rows[MAX_ROWS];
+static int            g_nrows;
+
+static vk_window_t   *g_win;
+static vk_box_t      *g_vbox, *g_bar;
+static vk_frame_t    *g_frame;
+static vk_listbox_t  *g_list;
+static vk_scroller_t *g_scroll;
+static vk_button_t   *g_btn[3];         /* Modify, Save/Add, Close/Cancel */
+static vk_filler_t   *g_fill;
+static int            g_focus;
+static int            g_open;
+static int            g_saving;         /* a PUT is out; waiting for reply */
+
+static vk_popup_t    *g_pop;
+static int            g_pop_kind;
+static int            g_pop_row;        /* row being modified */
+static int            g_pop_focus;      /* 0 = input/list, 1 = buttons */
+static int            g_pop_btn;
+static vk_box_t      *g_pop_client;
+static vk_input_t    *g_pop_in;
+static vk_listbox_t  *g_pop_lb;
+
+static vk_popup_t    *g_msg;
+static vk_box_t      *g_msg_client;
+
 static char         g_name[32];
 static char         g_id[40];
 /* Add Module mode: every field editable, no device-only extras. */
@@ -47,37 +79,77 @@ static int          g_add_mode;
 static char         g_kind[16];
 static char         g_add_kind[16];
 static char         g_add_driver[16];
-/* Labels and hints the plugin supplied for its Add Module fields. */
+/* Labels, hints and types the plugin supplied for its fields. */
 #define MAX_PLAB 24
 static struct {
     char key[48];
     char lab[32];
     char hint[32];
+    char type[12];
 } g_plab[MAX_PLAB];
 static int          g_nplab;
-static char         g_keys[MAX_FIELDS][40];
 static char         g_payload[2048];
+
+/* Containers only detach their children when destroyed, so each part of
+ * the dialog remembers the widgets it built and frees them itself:
+ * containers are emptied first, then everything is destroyed. */
+typedef enum { W_BOX, W_LABEL, W_FILLER, W_INPUT, W_LISTBOX, W_FRAME,
+               W_BUTTON } wkind_t;
+typedef struct {
+    struct { void *w; wkind_t k; } w[16];
+    int n;
+} owned_t;
+static owned_t g_own_dlg, g_own_pop, g_own_msg;
+
+static void *own(owned_t *o, void *w, wkind_t k)
+{
+    if (w && o->n < 16)
+    {
+        o->w[o->n].w = w;
+        o->w[o->n].k = k;
+        o->n++;
+    }
+    return w;
+}
+
+static void free_owned(owned_t *o)
+{
+    int i;
+
+    for (i = 0; i < o->n; i++)
+    {
+        if (o->w[i].k == W_BOX)
+        {
+            int j, n = vk_box_get_slot_count(o->w[i].w);
+
+            for (j = 0; j < n; j++)
+                vk_box_set_widget(o->w[i].w, j, NULL, VK_INHERIT_NONE);
+        }
+        else if (o->w[i].k == W_FRAME)
+            vk_frame_set_child(o->w[i].w, NULL, VK_INHERIT_NONE);
+    }
+    for (i = o->n - 1; i >= 0; i--)
+    {
+        void *w = o->w[i].w;
+
+        switch (o->w[i].k)
+        {
+        case W_BOX:     vk_box_destroy(w);     break;
+        case W_LABEL:   vk_label_destroy(w);   break;
+        case W_FILLER:  vk_filler_destroy(w);  break;
+        case W_INPUT:   vk_input_destroy(w);   break;
+        case W_LISTBOX: vk_listbox_destroy(w); break;
+        case W_FRAME:   vk_frame_destroy(w);   break;
+        case W_BUTTON:  vk_button_destroy(w);  break;
+        }
+    }
+    o->n = 0;
+}
 
 static vk_window_t *g_cf_win;
 static vk_label_t  *g_cf_l1, *g_cf_l2;
 static int          g_cf_open;
 static char         g_cf_key[16];
-
-static void style_menu(vk_widget_t *w)
-{
-    vk_widget_set_colors(w, COL_TEXT, COL_MENU);
-}
-
-static vk_filler_t *mk_pad(int w, int h)
-{
-    vk_filler_t *f = vk_filler_create();
-    uint32_t st = vk_widget_get_state(VK_WIDGET(f));
-
-    vk_widget_set_state(VK_WIDGET(f), st & ~(uint32_t)VK_STATE_EXPAND);
-    style_menu(VK_WIDGET(f));
-    vk_widget_resize(VK_WIDGET(f), w, h);
-    return f;
-}
 
 static void field_caption(const char *key, char *lab, size_t lab_cap,
                           char *hint, size_t hint_cap)
@@ -218,264 +290,6 @@ static void field_caption(const char *key, char *lab, size_t lab_cap,
         snprintf(lab, lab_cap, "%s", key);
 }
 
-static void style_input(vk_input_t *in, int focused, int readonly)
-{
-    if (!in)
-        return;
-    if (readonly)
-    {
-        /* A_DIM + black is a darker gray than COLOR_WHITE on 8-color. */
-        vk_widget_set_colors(VK_WIDGET(in), COLOR_BLACK, COL_MENU);
-        vk_widget_set_attrs(VK_WIDGET(in), A_DIM);
-        vk_input_show_cursor(in, false);
-    }
-    else if (focused)
-    {
-        vk_widget_set_colors(VK_WIDGET(in), COLOR_WHITE, COL_MENU);
-        vk_widget_set_attrs(VK_WIDGET(in), A_BOLD);
-        vk_input_show_cursor(in, true);
-    }
-    else
-    {
-        vk_widget_set_colors(VK_WIDGET(in), COL_TEXT, COL_MENU);
-        vk_widget_set_attrs(VK_WIDGET(in), A_NORMAL);
-        vk_input_show_cursor(in, false);
-    }
-    vk_widget_set_relief_colors(VK_WIDGET(in), COLOR_WHITE, COLOR_BLACK);
-    vk_input_update(in);
-}
-
-/* Read-only captions use the same dim black as the value. */
-static void style_caption(vk_label_t *lab, int readonly)
-{
-    if (!lab)
-        return;
-    if (readonly)
-    {
-        vk_widget_set_colors(VK_WIDGET(lab), COLOR_BLACK, COL_MENU);
-        vk_widget_set_attrs(VK_WIDGET(lab), A_DIM);
-    }
-    else
-    {
-        vk_widget_set_colors(VK_WIDGET(lab), COL_TEXT, COL_MENU);
-        vk_widget_set_attrs(VK_WIDGET(lab), A_NORMAL);
-    }
-    vk_label_update(lab);
-}
-
-static int on_save_btn(vk_widget_t *w, void *a)
-{
-    (void)w;
-    (void)a;
-    return 2;
-}
-
-static int on_exit_btn(vk_widget_t *w, void *a)
-{
-    (void)w;
-    (void)a;
-    mf_devset_close();
-    return 1;
-}
-
-static void highlight_buttons(void)
-{
-    int save_hi = (g_focus == g_nedit);
-    int exit_hi = (g_focus == g_nedit + 1);
-
-    if (g_btn_save)
-    {
-        vk_widget_set_colors(VK_WIDGET(g_btn_save),
-                             save_hi ? COLOR_YELLOW : COL_TEXT, COL_MENU);
-        vk_widget_set_attrs(VK_WIDGET(g_btn_save), A_BOLD);
-        vk_button_release(g_btn_save);
-        vk_button_update(g_btn_save);
-    }
-    if (g_btn_exit)
-    {
-        vk_widget_set_colors(VK_WIDGET(g_btn_exit),
-                             exit_hi ? COLOR_YELLOW : COL_TEXT, COL_MENU);
-        vk_widget_set_attrs(VK_WIDGET(g_btn_exit), A_BOLD);
-        vk_button_release(g_btn_exit);
-        vk_button_update(g_btn_exit);
-    }
-}
-
-static void set_field_focus(int idx)
-{
-    int i, fi;
-
-    g_focus = idx;
-    fi = (idx >= 0 && idx < g_nedit) ? g_edit[idx] : -1;
-    for (i = 0; i < g_nfields; i++)
-    {
-        if (!g_in[i])
-            continue;
-        vk_input_show_cursor(g_in[i], !g_ro[i] && i == fi);
-    }
-}
-
-static vk_button_t *mk_btn(const char *txt, VkWidgetFunc fn)
-{
-    vk_button_t *b = vk_button_create(txt);
-
-    if (!b)
-        return NULL;
-
-    vk_button_set_border_style(b, VK_BORDER_SINGLE);
-    vk_widget_set_colors(VK_WIDGET(b), COL_TEXT, COL_MENU);
-    vk_widget_set_attrs(VK_WIDGET(b), A_BOLD);
-    vk_button_set_pressed_colors(b, COLOR_WHITE, COLOR_BLUE);
-    vk_widget_set_relief_colors(VK_WIDGET(b), COLOR_WHITE, COLOR_BLACK);
-    vk_button_set_on_press(b, fn, NULL);
-    return b;
-}
-
-static void box_vacate(vk_box_t *box)
-{
-    int i, n;
-
-    if (!box)
-        return;
-    n = vk_box_get_slot_count(box);
-    for (i = 0; i < n; i++)
-        vk_box_set_widget(box, i, NULL, VK_INHERIT_NONE);
-}
-
-static void destroy_form(void)
-{
-    int i;
-
-    if (g_vscroll)
-    {
-        if (g_form)
-            vk_widget_detach_scroller(VK_WIDGET(g_form), g_vscroll);
-        vk_scroller_destroy(g_vscroll);
-        g_vscroll = NULL;
-    }
-
-    /* Unparent before free: box/grid dtors list_del children still slotted. */
-    box_vacate(g_vbox);
-    box_vacate(g_mid);
-    box_vacate(g_inner);
-    box_vacate(g_form);
-    box_vacate(g_bar);
-
-    for (i = 0; i < MAX_FIELDS; i++)
-    {
-        if (g_row[i])
-        {
-            vk_grid_destroy(g_row[i]);
-            g_row[i] = NULL;
-        }
-        if (g_fields[i])
-        {
-            vk_grid_destroy(g_fields[i]);
-            g_fields[i] = NULL;
-        }
-        if (g_in[i])
-        {
-            vk_input_destroy(g_in[i]);
-            g_in[i] = NULL;
-        }
-        if (g_lab[i])
-        {
-            vk_label_destroy(g_lab[i]);
-            g_lab[i] = NULL;
-        }
-        if (g_hint[i])
-        {
-            vk_label_destroy(g_hint[i]);
-            g_hint[i] = NULL;
-        }
-        g_keys[i][0] = '\0';
-        g_row_h[i] = 0;
-        g_shown[i] = 0;
-    }
-    if (g_btn_save)
-    {
-        vk_button_destroy(g_btn_save);
-        g_btn_save = NULL;
-    }
-    if (g_btn_exit)
-    {
-        vk_button_destroy(g_btn_exit);
-        g_btn_exit = NULL;
-    }
-    if (g_fill)
-    {
-        vk_filler_destroy(g_fill);
-        g_fill = NULL;
-    }
-    if (g_form_fill)
-    {
-        vk_filler_destroy(g_form_fill);
-        g_form_fill = NULL;
-    }
-    if (g_bar)
-    {
-        vk_box_destroy(g_bar);
-        g_bar = NULL;
-    }
-    if (g_form)
-    {
-        vk_box_destroy(g_form);
-        g_form = NULL;
-    }
-    if (g_inner)
-    {
-        vk_box_destroy(g_inner);
-        g_inner = NULL;
-    }
-    if (g_pad_left)
-    {
-        vk_filler_destroy(g_pad_left);
-        g_pad_left = NULL;
-    }
-    if (g_pad_right)
-    {
-        vk_filler_destroy(g_pad_right);
-        g_pad_right = NULL;
-    }
-    if (g_mid)
-    {
-        vk_box_destroy(g_mid);
-        g_mid = NULL;
-    }
-    if (g_pad_top)
-    {
-        vk_filler_destroy(g_pad_top);
-        g_pad_top = NULL;
-    }
-    if (g_pad_bot)
-    {
-        vk_filler_destroy(g_pad_bot);
-        g_pad_bot = NULL;
-    }
-    if (g_vbox)
-    {
-        vk_box_destroy(g_vbox);
-        g_vbox = NULL;
-    }
-    g_nfields = 0;
-    g_nedit = 0;
-    g_touched = 0;
-    g_scroll = 0;
-    g_form_h = 0;
-}
-
-static int key_already(const char *key)
-{
-    int i;
-
-    for (i = 0; i < g_nfields; i++)
-    {
-        if (strcmp(g_keys[i], key) == 0)
-            return 1;
-    }
-    return 0;
-}
-
 static int skip_form_key(const char *k)
 {
     /* Added by hand below: graph interval is TUI-only, RCV and the
@@ -516,108 +330,6 @@ static int field_readonly(const char *key)
     return 0;
 }
 
-static void add_field(const char *key, const char *val, int row_h, int iw)
-{
-    int i = g_nfields;
-    vk_grid_t *row, *fields;
-    vk_label_t *lab, *hint;
-    vk_input_t *in;
-    int in_w, fields_w, ro;
-    char pretty[40], hint_txt[16];
-
-    if (i >= MAX_FIELDS || !key || !key[0] || key_already(key))
-        return;
-    ro = field_readonly(key);
-    if (ro)
-        row_h = 1;
-    fields_w = iw - HINT_W;
-    if (fields_w < LAB_W + 8)
-        fields_w = LAB_W + 8;
-    in_w = fields_w - LAB_W;
-    if (in_w < 8)
-        in_w = 8;
-
-    /* Inner 2-col grid (label | input) — this is the layout that paints. */
-    fields = vk_grid_create(fields_w, row_h, 2, 1);
-    if (!fields)
-        return;
-    vk_grid_set_homogeneous(fields, false);
-    vk_grid_set_gap(fields, 0);
-    vk_grid_set_col_width(fields, 0, LAB_W);
-    vk_grid_set_col_width(fields, 1, in_w);
-    vk_grid_set_row_height(fields, 0, row_h);
-    style_menu(VK_WIDGET(fields));
-    vk_widget_set_expand(VK_WIDGET(fields));
-
-    field_caption(key, pretty, sizeof(pretty), hint_txt, sizeof(hint_txt));
-    lab = vk_label_create(LAB_W);
-    style_menu(VK_WIDGET(lab));
-    vk_label_set_text(lab, pretty);
-    vk_label_update(lab);
-
-    in = vk_input_create(in_w);
-    if (!in)
-    {
-        vk_label_destroy(lab);
-        vk_grid_destroy(fields);
-        return;
-    }
-    if (row_h < 3)
-    {
-        /* 1-row SINGLE relief paints text on row 1 (off-canvas). BASIC is [value]. */
-        vk_input_set_border_style(in, VK_BUTTON_BASIC);
-        vk_widget_resize(VK_WIDGET(in), in_w, 1);
-    }
-    else
-    {
-        vk_input_set_border_style(in, VK_BORDER_SINGLE);
-        vk_widget_set_relief_colors(VK_WIDGET(in), COLOR_WHITE, COLOR_BLACK);
-    }
-    vk_input_set_text(in, val ? val : "");
-    style_input(in, 0, ro);
-    vk_grid_set_widget(fields, 0, 0, VK_WIDGET(lab), VK_INHERIT_NONE);
-    vk_grid_set_widget(fields, 1, 0, VK_WIDGET(in), VK_INHERIT_NONE);
-
-    hint = vk_label_create(HINT_W);
-    style_menu(VK_WIDGET(hint));
-    vk_label_set_text(hint, hint_txt[0] ? hint_txt : "");
-    vk_label_update(hint);
-
-    /* Outer 2-col grid: fields | hint. Hint is 1-row so the grid vcenters it. */
-    row = vk_grid_create(iw, row_h, 2, 1);
-    if (!row)
-    {
-        vk_label_destroy(hint);
-        vk_input_destroy(in);
-        vk_label_destroy(lab);
-        vk_grid_destroy(fields);
-        return;
-    }
-    vk_grid_set_homogeneous(row, false);
-    vk_grid_set_gap(row, 0);
-    vk_grid_set_col_width(row, 0, fields_w);
-    vk_grid_set_col_expand(row, 0, true);
-    vk_grid_set_col_width(row, 1, HINT_W);
-    vk_grid_set_row_height(row, 0, row_h);
-    style_menu(VK_WIDGET(row));
-    vk_grid_set_widget(row, 0, 0, VK_WIDGET(fields), VK_INHERIT_NONE);
-    vk_grid_set_widget(row, 1, 0, VK_WIDGET(hint), VK_INHERIT_NONE);
-
-    g_row[i] = row;
-    g_fields[i] = fields;
-    g_lab[i] = lab;
-    g_hint[i] = hint;
-    g_in[i] = in;
-    g_ro[i] = ro;
-    g_row_h[i] = row_h;
-    style_caption(lab, ro);
-    style_caption(hint, ro);
-    snprintf(g_keys[i], sizeof(g_keys[i]), "%s", key);
-    if (!ro && g_nedit < MAX_FIELDS)
-        g_edit[g_nedit++] = i;
-    g_nfields++;
-}
-
 static void json_scalar(const cJSON *it, char *buf, size_t cap)
 {
     if (!buf || cap == 0)
@@ -633,8 +345,6 @@ static void json_scalar(const cJSON *it, char *buf, size_t cap)
         snprintf(buf, cap, "%s", cJSON_IsTrue(it) ? "true" : "false");
 }
 
-/* Volt fields keep two decimals so 3.60 is not shown as 3.6.
- * Balance trigger is a millivolt gap, not a cell voltage. */
 static void json_field_text(const char *key, const cJSON *it,
                             char *buf, size_t cap)
 {
@@ -676,622 +386,6 @@ static int json_key_dup(const cJSON *root, const cJSON *cur)
     return 0;
 }
 
-static void add_json_group(cJSON *root, int want_ro, int row_h, int iw, int n)
-{
-    cJSON *it;
-    char buf[160];
-
-    if (!root || !cJSON_IsObject(root))
-        return;
-    for (it = root->child; it && g_nfields < n; it = it->next)
-    {
-        int ro;
-
-        if (!it->string || !it->string[0])
-            continue;
-        if (cJSON_IsObject(it) || cJSON_IsArray(it))
-            continue;
-        if (strcmp(it->string, "name") == 0 ||
-            strcmp(it->string, "uuid") == 0 ||
-            strcmp(it->string, "poll_interval_s") == 0 ||
-            strcmp(it->string, "capture_interval_s") == 0 ||
-            strcmp(it->string, "retention_days") == 0)
-            continue;
-        if (json_key_dup(root, it))
-            continue;
-        if (skip_form_key(it->string))
-            continue;
-        ro = field_readonly(it->string);
-        if ((want_ro && !ro) || (!want_ro && ro))
-            continue;
-        json_field_text(it->string, it, buf, sizeof(buf));
-        add_field(it->string, buf, row_h, iw);
-    }
-}
-
-/*
- * vk_box stacks every child and does not scroll. vk_widget_draw also
- * cannot show the bottom of a row whose top sits above the canvas, so
- * the scroll offset stays on a field boundary. vk_scroller draws the
- * bar; apply slots only the rows that fit.
- */
-static int form_row_h(int i)
-{
-    if (i < 0 || i >= g_nfields)
-        return 1;
-    return g_row_h[i] > 0 ? g_row_h[i] : 1;
-}
-
-static int form_scroll_limit(void)
-{
-    int i;
-    int y = 0;
-    int content = 0;
-
-    for (i = 0; i < g_nfields; i++)
-        content += form_row_h(i);
-    if (g_form_h < 1 || content <= g_form_h)
-        return 0;
-    for (i = 0; i < g_nfields; i++)
-    {
-        if (content - y <= g_form_h)
-            return y;
-        y += form_row_h(i);
-    }
-    return 0;
-}
-
-static int snap_back(int y)
-{
-    int i;
-    int top = 0;
-    int best = 0;
-    int limit = form_scroll_limit();
-
-    if (y > limit)
-        y = limit;
-    if (y < 0)
-        y = 0;
-    for (i = 0; i < g_nfields; i++)
-    {
-        if (top > y)
-            break;
-        best = top;
-        top += form_row_h(i);
-    }
-    return best;
-}
-
-static int snap_forward(int y)
-{
-    int i;
-    int top = 0;
-    int limit = form_scroll_limit();
-
-    if (y > limit)
-        y = limit;
-    if (y < 0)
-        y = 0;
-    for (i = 0; i < g_nfields; i++)
-    {
-        if (top >= y)
-            return top > limit ? limit : top;
-        top += form_row_h(i);
-    }
-    return limit;
-}
-
-static void form_slot_visible(void)
-{
-    int i;
-    int y;
-    int slot;
-    int used;
-    int nslots;
-    int limit;
-
-    if (!g_form)
-        return;
-    limit = form_scroll_limit();
-    if (g_scroll > limit)
-        g_scroll = limit;
-    if (g_scroll < 0)
-        g_scroll = 0;
-    g_scroll = snap_back(g_scroll);
-
-    nslots = vk_box_get_slot_count(g_form);
-    for (i = 0; i < nslots; i++)
-        vk_box_set_widget(g_form, i, NULL, VK_INHERIT_NONE);
-
-    y = 0;
-    slot = 0;
-    used = 0;
-    for (i = 0; i < g_nfields; i++)
-    {
-        int h = form_row_h(i);
-        int vis = (y >= g_scroll && y + h <= g_scroll + g_form_h);
-
-        g_shown[i] = vis;
-        if (vis && g_row[i] && slot < nslots)
-        {
-            vk_box_set_widget(g_form, slot, VK_WIDGET(g_row[i]),
-                              VK_INHERIT_NONE);
-            slot++;
-            used += h;
-        }
-        y += h;
-    }
-    if (g_form_fill && slot < nslots && used < g_form_h)
-    {
-        int slack = g_form_h - used;
-        int fw = 1;
-        int fh = 1;
-
-        vk_widget_get_metrics(VK_WIDGET(g_form), &fw, &fh);
-        if (slack < 1)
-            slack = 1;
-        if (fw < 1)
-            fw = 1;
-        vk_widget_resize(VK_WIDGET(g_form_fill), fw, slack);
-        vk_box_set_widget(g_form, slot, VK_WIDGET(g_form_fill),
-                          VK_INHERIT_NONE);
-    }
-}
-
-static void form_scroll_info(vk_widget_t *child,
-                             int *content_h, int *content_w,
-                             int *scroll_y, int *scroll_x)
-{
-    int visible = g_form_h > 0 ? g_form_h : 1;
-    int limit = form_scroll_limit();
-
-    (void)child;
-    if (content_h)
-        *content_h = visible + limit;
-    if (content_w)
-        *content_w = 0;
-    if (scroll_y)
-        *scroll_y = g_scroll;
-    if (scroll_x)
-        *scroll_x = 0;
-}
-
-static int form_scroll_apply(vk_widget_t *source, int scroll_y, int scroll_x)
-{
-    int y;
-
-    (void)scroll_x;
-    if (scroll_y > g_scroll)
-        y = snap_forward(scroll_y);
-    else if (scroll_y < g_scroll)
-        y = snap_back(scroll_y);
-    else
-        return 1;
-    if (y == g_scroll)
-        return 1;
-    g_scroll = y;
-    form_slot_visible();
-    if (source)
-        vk_object_emit(VK_OBJECT(source), VK_EVENT_ON_SCROLL);
-    return 0;
-}
-
-static int form_nudge(int dy)
-{
-    if (!g_vscroll || dy == 0)
-        return 0;
-    return vk_scroller_nudge(g_vscroll, dy, 0) == 0;
-}
-
-static void scroll_focus_into_view(void)
-{
-    int fi;
-    int i;
-    int top;
-    int start;
-    int end;
-    int y;
-
-    if (!g_vscroll || g_focus < 0 || g_focus >= g_nedit)
-        return;
-    fi = g_edit[g_focus];
-    if (fi < 0 || fi >= g_nfields)
-        return;
-    start = 0;
-    for (i = 0; i < fi; i++)
-        start += form_row_h(i);
-    end = start + form_row_h(fi);
-    if (start >= g_scroll && end <= g_scroll + g_form_h)
-        return;
-    if (start < g_scroll)
-    {
-        y = start;
-    }
-    else
-    {
-        y = start;
-        top = 0;
-        for (i = 0; i < g_nfields; i++)
-        {
-            int h = form_row_h(i);
-
-            if (top > start)
-                break;
-            if (end <= top + g_form_h)
-                y = top;
-            top += h;
-        }
-    }
-    if (g_form)
-        (void)form_scroll_apply(VK_WIDGET(g_form), y, 0);
-}
-
-static void paint_form_scroller(void)
-{
-    vk_widget_t *host;
-    vk_widget_t *sw;
-    int h;
-    int x;
-
-    if (!g_vscroll || !g_form)
-        return;
-    host = VK_WIDGET(g_form);
-    sw = VK_WIDGET(g_vscroll);
-    if (!vk_widget_get_canvas(host))
-        return;
-    vk_widget_get_metrics(host, &x, &h);
-    if (h < 1 || x < 1)
-        return;
-    x -= 1;
-    vk_widget_set_surface(sw, vk_widget_get_canvas(host));
-    vk_widget_resize(sw, 1, h);
-    vk_widget_move(sw, x, 0);
-    if (vk_scroller_update(g_vscroll) > 0)
-        vk_widget_draw(sw);
-}
-
-/*
- * Leave the scrollbar column and one blank column to its left.
- * Resizing the row already shrinks its expand child (the label|input
- * grid) through the grid's resize handler. Shrinking that grid again
- * clips the input's right border.
- */
-static void narrow_rows(int delta)
-{
-    int i;
-
-    if (delta < 1)
-        return;
-    for (i = 0; i < g_nfields; i++)
-    {
-        int w = 0;
-        int h = 0;
-        int in_w = 0;
-        int in_h = 0;
-
-        if (!g_row[i])
-            continue;
-        vk_widget_get_metrics(VK_WIDGET(g_row[i]), &w, &h);
-        if (w - delta < LAB_W + HINT_W + 8)
-            continue;
-        vk_widget_resize(VK_WIDGET(g_row[i]), w - delta, h);
-        if (!g_in[i] || !g_fields[i])
-            continue;
-        vk_widget_get_metrics(VK_WIDGET(g_in[i]), &in_w, &in_h);
-        if (in_w <= delta)
-            continue;
-        vk_widget_resize(VK_WIDGET(g_in[i]), in_w - delta, in_h);
-        vk_grid_set_col_width(g_fields[i], 1, in_w - delta);
-    }
-}
-
-static void attach_form_scroller(void)
-{
-    if (form_scroll_limit() <= 0 || !g_form)
-        return;
-    g_vscroll = vk_scroller_create(VK_SCROLLBAR_VERTICAL);
-    if (!g_vscroll)
-        return;
-    vk_scroller_set_border_style(g_vscroll, VK_BORDER_SINGLE);
-    vk_scroller_set_border_colors(g_vscroll, COL_TEXT, COL_MENU);
-    vk_scroller_set_scroll_source(g_vscroll, VK_WIDGET(g_form));
-    vk_scroller_set_scroll_info(g_vscroll, form_scroll_info);
-    vk_scroller_set_scroll_apply(g_vscroll, form_scroll_apply);
-    vk_widget_attach_scroller(VK_WIDGET(g_form), g_vscroll);
-}
-
-static void build_form(int iw, int ih, const char *json)
-{
-    cJSON *root = NULL, *it;
-    int n = 0, nedit = 1, nro = 1, row_h;
-    char buf[160];
-    int form_h;
-
-    destroy_form();
-    if (json && json[0])
-        root = cJSON_Parse(json);
-    if (root && cJSON_IsObject(root))
-    {
-        nedit = 0;
-        nro = 0;
-        for (it = root->child; it; it = it->next)
-        {
-            cJSON *prev;
-            int dup = 0;
-
-            if (!it->string || !it->string[0])
-                continue;
-            if (cJSON_IsObject(it) || cJSON_IsArray(it))
-                continue;
-            if (strcmp(it->string, "name") == 0 ||
-                strcmp(it->string, "uuid") == 0)
-                continue;
-            for (prev = root->child; prev != it; prev = prev->next)
-            {
-                if (prev->string && strcmp(prev->string, it->string) == 0)
-                    dup = 1;
-            }
-            if (dup)
-                continue;
-            if (skip_form_key(it->string))
-                continue;
-            if (field_readonly(it->string))
-                nro++;
-            else
-                nedit++;
-        }
-        nedit++; /* name */
-        if (!g_add_mode)
-            nro++;   /* uuid */
-    }
-    n = nedit + nro;
-    if (n < 2)
-        n = 2;
-    if (n > MAX_FIELDS)
-        n = MAX_FIELDS;
-    /* Top pad, one blank row above the buttons, and the 3-row button bar. */
-    form_h = ih - 5;
-    if (form_h < 1)
-        form_h = 1;
-    /* Editable knobs stay 3-row sunken whenever they fit; identity is 1-row. */
-    row_h = (nedit * 3 <= form_h) ? 3 : 1;
-
-    g_form = vk_box_create(iw - 2, form_h, VK_BOX_VERTICAL, MAX_FIELDS + 1);
-    vk_box_set_homogeneous(g_form, false);
-    style_menu(VK_WIDGET(g_form));
-    vk_widget_set_expand(VK_WIDGET(g_form));
-
-    buf[0] = '\0';
-    if (root)
-        json_scalar(cJSON_GetObjectItemCaseSensitive(root, "name"),
-                    buf, sizeof(buf));
-    add_field("name", buf[0] || g_add_mode ? buf : g_name, row_h, iw - 2);
-
-    buf[0] = '\0';
-    if (root)
-        json_scalar(cJSON_GetObjectItemCaseSensitive(root, "poll_interval_s"),
-                    buf, sizeof(buf));
-    add_field("poll_interval_s", buf[0] ? buf : "2.0", row_h, iw - 2);
-
-    /* Only modules that capture history have an interval to set. */
-    it = root ? cJSON_GetObjectItemCaseSensitive(root, "capture_interval_s")
-              : NULL;
-    if (it)
-    {
-        buf[0] = '\0';
-        json_scalar(it, buf, sizeof(buf));
-        add_field("capture_interval_s", buf[0] ? buf : "0", row_h, iw - 2);
-    }
-    /* ...and a pruning policy, which every capturing module has. */
-    it = root ? cJSON_GetObjectItemCaseSensitive(root, "retention_days") : NULL;
-    if (it)
-    {
-        buf[0] = '\0';
-        json_scalar(it, buf, sizeof(buf));
-        add_field("retention_days", buf[0] ? buf : "0", row_h, iw - 2);
-    }
-
-    if (!g_add_mode && (!g_kind[0] || strcmp(g_kind, "battery") == 0 ||
-                        strcmp(g_kind, "charger") == 0))
-        add_field("graph_interval_min", "30", row_h, iw - 2);
-
-    add_json_group(root, 0, row_h, iw - 2, MAX_FIELDS);
-
-    buf[0] = '\0';
-    if (root)
-        json_field_text("cell_rcv_v",
-                        cJSON_GetObjectItemCaseSensitive(root, "cell_rcv_v"),
-                        buf, sizeof(buf));
-    if (buf[0])
-        add_field("cell_rcv_v", buf, 1, iw - 2);
-
-    if (root && !g_add_mode &&
-        (cJSON_GetObjectItemCaseSensitive(root, "cell_ovp_v") ||
-                 cJSON_GetObjectItemCaseSensitive(root, "ble.address") ||
-                 cJSON_GetObjectItemCaseSensitive(root, "balance_trigger_v") ||
-                 cJSON_GetObjectItemCaseSensitive(root, "start_balance_v")))
-    {
-        buf[0] = '\0';
-        json_field_text("balance_trigger_v",
-                        cJSON_GetObjectItemCaseSensitive(root, "balance_trigger_v"),
-                        buf, sizeof(buf));
-        add_field("balance_trigger_v", buf[0] ? buf : "--", 1, iw - 2);
-        buf[0] = '\0';
-        json_field_text("start_balance_v",
-                        cJSON_GetObjectItemCaseSensitive(root, "start_balance_v"),
-                        buf, sizeof(buf));
-        add_field("start_balance_v", buf[0] ? buf : "--", 1, iw - 2);
-    }
-
-    add_json_group(root, 1, row_h, iw - 2, MAX_FIELDS);
-
-    buf[0] = '\0';
-    if (root)
-        json_scalar(cJSON_GetObjectItemCaseSensitive(root, "uuid"),
-                    buf, sizeof(buf));
-    if (!g_add_mode)
-        add_field("uuid", buf[0] ? buf : g_id, 1, iw - 2);
-
-    if (root)
-        cJSON_Delete(root);
-
-    g_form_h = form_h;
-    g_scroll = 0;
-    if (form_scroll_limit() > 0)
-        narrow_rows(2);
-    g_form_fill = vk_filler_create();
-    if (g_form_fill)
-    {
-        uint32_t st = vk_widget_get_state(VK_WIDGET(g_form_fill));
-
-        vk_widget_set_state(VK_WIDGET(g_form_fill),
-                            st & ~(uint32_t)VK_STATE_EXPAND);
-        style_menu(VK_WIDGET(g_form_fill));
-        vk_widget_resize(VK_WIDGET(g_form_fill), iw - 2, 1);
-    }
-    form_slot_visible();
-    attach_form_scroller();
-
-    g_bar = vk_box_create(iw - 2, 3, VK_BOX_HORIZONTAL, 3);
-    vk_box_set_homogeneous(g_bar, false);
-    style_menu(VK_WIDGET(g_bar));
-    g_btn_save = mk_btn(g_add_mode ? "Add" : "Save", on_save_btn);
-    g_btn_exit = mk_btn(g_add_mode ? "Cancel" : "Exit", on_exit_btn);
-    g_fill = vk_filler_create();
-    style_menu(VK_WIDGET(g_fill));
-    vk_widget_set_expand(VK_WIDGET(g_fill));
-    vk_box_set_widget(g_bar, 0, VK_WIDGET(g_btn_save), VK_INHERIT_NONE);
-    vk_box_set_widget(g_bar, 1, VK_WIDGET(g_fill), VK_INHERIT_NONE);
-    vk_box_set_widget(g_bar, 2, VK_WIDGET(g_btn_exit), VK_INHERIT_NONE);
-
-    g_pad_bot = mk_pad(iw - 2, 1);
-    g_inner = vk_box_create(iw - 2, ih - 1, VK_BOX_VERTICAL, 3);
-    vk_box_set_homogeneous(g_inner, false);
-    style_menu(VK_WIDGET(g_inner));
-    vk_widget_set_expand(VK_WIDGET(g_inner));
-    vk_box_set_widget(g_inner, 0, VK_WIDGET(g_form), VK_INHERIT_NONE);
-    vk_box_set_widget(g_inner, 1, VK_WIDGET(g_pad_bot), VK_INHERIT_NONE);
-    vk_box_set_widget(g_inner, 2, VK_WIDGET(g_bar), VK_INHERIT_NONE);
-
-    g_pad_left = mk_pad(1, ih - 1);
-    g_pad_right = mk_pad(1, ih - 1);
-    g_mid = vk_box_create(iw, ih - 1, VK_BOX_HORIZONTAL, 3);
-    vk_box_set_homogeneous(g_mid, false);
-    style_menu(VK_WIDGET(g_mid));
-    vk_widget_set_expand(VK_WIDGET(g_mid));
-    vk_box_set_widget(g_mid, 0, VK_WIDGET(g_pad_left), VK_INHERIT_NONE);
-    vk_box_set_widget(g_mid, 1, VK_WIDGET(g_inner), VK_INHERIT_NONE);
-    vk_box_set_widget(g_mid, 2, VK_WIDGET(g_pad_right), VK_INHERIT_NONE);
-
-    g_pad_top = mk_pad(iw, 1);
-    g_vbox = vk_box_create(iw, ih, VK_BOX_VERTICAL, 2);
-    vk_box_set_homogeneous(g_vbox, false);
-    style_menu(VK_WIDGET(g_vbox));
-    vk_widget_set_expand(VK_WIDGET(g_vbox));
-    vk_box_set_widget(g_vbox, 0, VK_WIDGET(g_pad_top), VK_INHERIT_NONE);
-    vk_box_set_widget(g_vbox, 1, VK_WIDGET(g_mid), VK_INHERIT_NONE);
-}
-
-void mf_devset_close(void)
-{
-    if (!g_open)
-        return;
-    if (g_win)
-        vk_window_set_child(g_win, NULL, VK_INHERIT_NONE);
-    destroy_form();
-    if (g_win)
-    {
-        vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_win));
-        vk_window_destroy(g_win);
-        g_win = NULL;
-    }
-    g_open = 0;
-    g_add_mode = 0;
-    g_nplab = 0;
-    mf_ui_front_clear();
-    mf_ui_refresh();
-}
-
-int mf_devset_open(void)
-{
-    return g_open;
-}
-int mf_devset_touched(void)
-{
-    return g_touched;
-}
-
-int mf_devset_has_key(const char *key)
-{
-    int i;
-
-    if (!key || !key[0])
-        return 0;
-    for (i = 0; i < g_nfields; i++)
-    {
-        if (strcmp(g_keys[i], key) == 0)
-            return 1;
-    }
-    return 0;
-}
-
-const char *mf_devset_id(void)
-{
-    return g_id;
-}
-
-const char *mf_devset_poll_text(void)
-{
-    int i;
-
-    for (i = 0; i < g_nfields; i++)
-    {
-        if (strcmp(g_keys[i], "poll_interval_s") == 0 && g_in[i])
-            return vk_input_get_text(g_in[i]);
-    }
-    return g_nfields && g_in[0] ? vk_input_get_text(g_in[0]) : "2.0";
-}
-
-int mf_devset_get_graph_interval(void)
-{
-    int i;
-    for (i = 0; i < g_nfields; i++)
-    {
-        if (strcmp(g_keys[i], "graph_interval_min") == 0 && g_in[i])
-        {
-            const char *v = vk_input_get_text(g_in[i]);
-            int val = atoi(v);
-            if (val < 1)
-                val = 1;
-            return val;
-        }
-    }
-    return 0;                           /* not shown for this module */
-}
-
-void mf_devset_set_kind(const char *kind)
-{
-    snprintf(g_kind, sizeof(g_kind), "%s", kind ? kind : "");
-}
-
-void mf_devset_set_graph_interval(int minutes)
-{
-    char buf[16];
-    int i;
-    if (minutes < 1)
-        minutes = 1;
-    snprintf(buf, sizeof(buf), "%d", minutes);
-    for (i = 0; i < g_nfields; i++)
-    {
-        if (strcmp(g_keys[i], "graph_interval_min") == 0 && g_in[i])
-        {
-            vk_input_set_text(g_in[i], buf);
-            vk_input_update(g_in[i]);
-            return;
-        }
-    }
-}
-
 static int json_bare(const char *s)
 {
     char *end;
@@ -1305,33 +399,1053 @@ static int json_bare(const char *s)
     return end != s && *end == '\0';
 }
 
+/* ---- rows ---------------------------------------------------------- */
+
+static int row_find(const char *key)
+{
+    int i;
+
+    for (i = 0; key && i < g_nrows; i++)
+        if (strcmp(g_rows[i].key, key) == 0)
+            return i;
+    return -1;
+}
+
+static const char *plugin_type(const char *key)
+{
+    int i;
+
+    for (i = 0; i < g_nplab; i++)
+        if (strcmp(g_plab[i].key, key) == 0 && g_plab[i].type[0])
+            return g_plab[i].type;
+    return NULL;
+}
+
+static int row_type(const char *key, const cJSON *it)
+{
+    const char *pt = plugin_type(key);
+
+    if (pt && strcmp(pt, "bool") == 0)
+        return ROW_BOOL;
+    if (pt && strcmp(pt, "number") == 0)
+        return ROW_NUM;
+    if (cJSON_IsBool(it))
+        return ROW_BOOL;
+    if (cJSON_IsNumber(it))
+        return ROW_NUM;
+    if (strcmp(key, "active") == 0)
+        return ROW_BOOL;
+    if (strcmp(key, "poll_interval_s") == 0 ||
+        strcmp(key, "capture_interval_s") == 0 ||
+        strcmp(key, "retention_days") == 0 ||
+        strcmp(key, "graph_interval_min") == 0)
+        return ROW_NUM;
+    return ROW_TEXT;
+}
+
+static void add_row(const char *key, const char *val, const cJSON *it)
+{
+    row_t *r;
+
+    if (g_nrows >= MAX_ROWS || !key || !key[0] || row_find(key) >= 0)
+        return;
+    r = &g_rows[g_nrows++];
+    memset(r, 0, sizeof(*r));
+    snprintf(r->key, sizeof(r->key), "%s", key);
+    snprintf(r->value, sizeof(r->value), "%s", val ? val : "");
+    memcpy(r->orig, r->value, sizeof(r->orig));
+    r->ro = field_readonly(key);
+    r->type = row_type(key, it);
+}
+
+static void add_json_rows(cJSON *root, int want_ro)
+{
+    cJSON *it;
+    char buf[160];
+
+    if (!root || !cJSON_IsObject(root))
+        return;
+    for (it = root->child; it; it = it->next)
+    {
+        int ro;
+
+        if (!it->string || !it->string[0] || it->string[0] == '_')
+            continue;
+        if (cJSON_IsObject(it) || cJSON_IsArray(it))
+            continue;
+        if (strcmp(it->string, "name") == 0 ||
+            strcmp(it->string, "uuid") == 0 ||
+            strcmp(it->string, "poll_interval_s") == 0 ||
+            strcmp(it->string, "capture_interval_s") == 0 ||
+            strcmp(it->string, "retention_days") == 0)
+            continue;
+        if (json_key_dup(root, it) || skip_form_key(it->string))
+            continue;
+        ro = field_readonly(it->string);
+        if ((want_ro && !ro) || (!want_ro && ro))
+            continue;
+        json_field_text(it->string, it, buf, sizeof(buf));
+        add_row(it->string, buf, it);
+    }
+}
+
+/* Editable settings first (the daemon's, then the plugin's), then the
+ * read-only ones, UUID last. */
+static void build_rows(const char *json)
+{
+    cJSON *root = json && json[0] ? cJSON_Parse(json) : NULL;
+    cJSON *it;
+    char buf[160];
+
+    g_nrows = 0;
+    if (root && !cJSON_IsObject(root))
+    {
+        cJSON_Delete(root);
+        root = NULL;
+    }
+
+    buf[0] = '\0';
+    json_scalar(cJSON_GetObjectItemCaseSensitive(root, "name"), buf, sizeof(buf));
+    add_row("name", buf[0] || g_add_mode ? buf : g_name, NULL);
+
+    it = cJSON_GetObjectItemCaseSensitive(root, "poll_interval_s");
+    json_scalar(it, buf, sizeof(buf));
+    add_row("poll_interval_s", buf[0] ? buf : "2", it);
+
+    /* Only modules that capture history have an interval and a policy. */
+    if ((it = cJSON_GetObjectItemCaseSensitive(root, "capture_interval_s")))
+    {
+        json_scalar(it, buf, sizeof(buf));
+        add_row("capture_interval_s", buf, it);
+    }
+    if ((it = cJSON_GetObjectItemCaseSensitive(root, "retention_days")))
+    {
+        json_scalar(it, buf, sizeof(buf));
+        add_row("retention_days", buf, it);
+    }
+
+    if (!g_add_mode && (!g_kind[0] || strcmp(g_kind, "battery") == 0 ||
+                        strcmp(g_kind, "charger") == 0))
+        add_row("graph_interval_min", "30", NULL);
+
+    add_json_rows(root, 0);
+
+    json_field_text("cell_rcv_v",
+                    cJSON_GetObjectItemCaseSensitive(root, "cell_rcv_v"),
+                    buf, sizeof(buf));
+    if (buf[0])
+        add_row("cell_rcv_v", buf, NULL);
+
+    if (root && !g_add_mode &&
+        (cJSON_GetObjectItemCaseSensitive(root, "cell_ovp_v") ||
+         cJSON_GetObjectItemCaseSensitive(root, "ble.address") ||
+         cJSON_GetObjectItemCaseSensitive(root, "balance_trigger_v") ||
+         cJSON_GetObjectItemCaseSensitive(root, "start_balance_v")))
+    {
+        json_field_text("balance_trigger_v",
+                        cJSON_GetObjectItemCaseSensitive(root, "balance_trigger_v"),
+                        buf, sizeof(buf));
+        add_row("balance_trigger_v", buf[0] ? buf : "--", NULL);
+        json_field_text("start_balance_v",
+                        cJSON_GetObjectItemCaseSensitive(root, "start_balance_v"),
+                        buf, sizeof(buf));
+        add_row("start_balance_v", buf[0] ? buf : "--", NULL);
+    }
+
+    add_json_rows(root, 1);
+
+    if (!g_add_mode)
+    {
+        json_scalar(cJSON_GetObjectItemCaseSensitive(root, "uuid"),
+                    buf, sizeof(buf));
+        add_row("uuid", buf[0] ? buf : g_id, NULL);
+    }
+    cJSON_Delete(root);
+}
+
+static int dirty(void)
+{
+    int i;
+
+    for (i = 0; i < g_nrows; i++)
+        if (!g_rows[i].ro && strcmp(g_rows[i].value, g_rows[i].orig) != 0)
+            return 1;
+    return 0;
+}
+
+/* ---- the main dialog ----------------------------------------------- */
+
+static int list_text_w(void)
+{
+    int w = 0;
+
+    if (g_list)
+        vk_widget_get_metrics(VK_WIDGET(g_list), &w, NULL);
+    return w - 3;                       /* side pads + scrollbar */
+}
+
+/* "Label ........ [value]", the value cut with an ellipsis to fit. */
+static void row_text(const row_t *r, char *out, size_t cap)
+{
+    char lab[40], val[160];
+    int w = list_text_w(), lw, vw, dots;
+
+    field_caption(r->key, lab, sizeof(lab), NULL, 0);
+    snprintf(val, sizeof(val), "%s", r->value);
+    lw = (int)strlen(lab);
+    vw = (int)strlen(val);
+    if (lw + vw + 6 > w)                /* " .. [" + "]" at least */
+    {
+        int keep = w - lw - 7;
+
+        if (keep < 1)
+            keep = 1;
+        if (keep < vw)
+        {
+            val[keep] = '\0';
+            strncat(val, "\xe2\x80\xa6", sizeof(val) - strlen(val) - 1);
+            vw = keep + 1;
+        }
+    }
+    dots = w - lw - vw - 4;
+    if (dots < 2)
+        dots = 2;
+    snprintf(out, cap, "%s %.*s [%s]", lab, dots,
+             "........................................................"
+             "........................................................", val);
+}
+
+static void rebuild_list(void)
+{
+    int i, cur;
+    char text[256];
+
+    if (!g_list)
+        return;
+    cur = vk_listbox_get_curr(g_list);
+    vk_listbox_reset(g_list);
+    for (i = 0; i < g_nrows; i++)
+    {
+        row_text(&g_rows[i], text, sizeof(text));
+        vk_listbox_add_item(g_list, text, NULL, NULL);
+        if (g_rows[i].ro)
+            vk_listbox_set_item_colors(g_list, i, RO_FG, -1, RO_ATTRS);
+    }
+    if (cur < 0)
+        cur = 0;
+    if (cur >= g_nrows)
+        cur = g_nrows - 1;
+    if (cur >= 0)
+        vk_listbox_set_curr(g_list, cur);
+}
+
+static void set_title(void)
+{
+    char cap[72];
+
+    if (!g_win)
+        return;
+    if (g_saving)
+        snprintf(cap, sizeof(cap), " %s - saving ", g_name);
+    else if (dirty())
+        snprintf(cap, sizeof(cap), " %s (modified) ", g_name);
+    else
+        snprintf(cap, sizeof(cap), " %s ", g_name);
+    vk_window_set_title(g_win, cap);
+}
+
+static void highlight_buttons(void)
+{
+    int i;
+
+    for (i = 0; i < 3; i++)
+    {
+        if (!g_btn[i])
+            continue;
+        vk_widget_set_colors(VK_WIDGET(g_btn[i]),
+                             g_focus == FOCUS_MODIFY + i ? COLOR_YELLOW
+                                                         : COL_TEXT,
+                             COL_MENU);
+        vk_widget_set_attrs(VK_WIDGET(g_btn[i]), A_BOLD);
+        vk_button_release(g_btn[i]);
+        vk_button_update(g_btn[i]);
+    }
+    if (g_frame)
+    {
+        vk_frame_set_border_colors(g_frame,
+                                   g_focus == FOCUS_LIST ? COLOR_YELLOW
+                                                         : COL_TEXT,
+                                   COL_MENU);
+        vk_frame_set_border_attrs(g_frame,
+                                  g_focus == FOCUS_LIST ? A_BOLD : A_NORMAL);
+    }
+    if (g_list)
+        vk_listbox_set_focused(g_list, g_focus == FOCUS_LIST);
+}
+
+static void paint_popups(void);
+
+static void paint_dialog(void)
+{
+    if (!g_win)
+        return;
+    set_title();
+    highlight_buttons();
+    vk_listbox_update(g_list);
+    if (g_scroll)
+        vk_scroller_update(g_scroll);
+    vk_frame_update(g_frame);
+    vk_box_update(g_bar);
+    vk_box_update(g_vbox);
+    vk_window_update(g_win);
+    paint_popups();
+    mf_ui_refresh();
+}
+
+static void list_scroll_info(vk_widget_t *child, int *content_h,
+                             int *content_w, int *scroll_y, int *scroll_x)
+{
+    vk_listbox_t *lb = VK_LISTBOX(child);
+    int mw = 0;
+
+    vk_listbox_get_metrics(lb, &mw, NULL);
+    if (content_h)
+        *content_h = vk_listbox_get_item_count(lb);
+    if (content_w)
+        *content_w = mw;
+    if (scroll_y)
+        *scroll_y = vk_listbox_get_curr(lb);
+    if (scroll_x)
+        *scroll_x = 0;
+}
+
+static vk_button_t *mk_btn(const char *txt)
+{
+    vk_button_t *b = vk_button_create(txt);
+
+    if (!b)
+        return NULL;
+    vk_button_set_border_style(b, VK_BORDER_SINGLE);
+    vk_widget_set_colors(VK_WIDGET(b), COL_TEXT, COL_MENU);
+    vk_widget_set_attrs(VK_WIDGET(b), A_BOLD);
+    vk_button_set_pressed_colors(b, COLOR_WHITE, COLOR_BLUE);
+    return b;
+}
+
+static void build_dialog(int w, int h)
+{
+    int iw = w - 2, ih = h - 2;
+    int lb_h = ih - 3 - 2;
+
+    g_win = vk_window_create(w, h);
+    vk_window_set_border_style(g_win, VK_BORDER_SINGLE);
+    vk_window_set_border_colors(g_win, COLOR_WHITE, COL_MENU);
+    vk_window_set_border_attrs(g_win, A_BOLD);
+    vk_widget_set_colors(VK_WIDGET(g_win), COL_TEXT, COL_MENU);
+
+    g_own_dlg.n = 0;
+    g_vbox = own(&g_own_dlg, vk_box_create(iw, ih, VK_BOX_VERTICAL, 2), W_BOX);
+    vk_box_set_homogeneous(g_vbox, false);
+    vk_widget_set_colors(VK_WIDGET(g_vbox), COL_TEXT, COL_MENU);
+
+    g_list = own(&g_own_dlg, vk_listbox_create(iw - 2, lb_h), W_LISTBOX);
+    vk_listbox_set_wrap(g_list, false);
+    vk_listbox_set_highlight(g_list, COLOR_BLACK, COLOR_RED);
+    vk_listbox_set_unfocused(g_list, COLOR_BLACK, COLOR_WHITE);
+    vk_widget_set_colors(VK_WIDGET(g_list), COL_TEXT, COL_MENU);
+
+    g_frame = own(&g_own_dlg, vk_frame_create(iw, lb_h + 2), W_FRAME);
+    vk_frame_set_border_style(g_frame, VK_BORDER_SINGLE | VK_RELIEF_SUNKEN);
+    vk_frame_set_border_colors(g_frame, COLOR_YELLOW, COL_MENU);
+    vk_frame_set_border_attrs(g_frame, A_BOLD);
+    vk_frame_set_child(g_frame, VK_WIDGET(g_list), VK_INHERIT_NONE);
+    vk_widget_set_expand(VK_WIDGET(g_frame));
+
+    g_scroll = vk_scroller_create(VK_SCROLLBAR_VERTICAL);
+    vk_scroller_set_border_style(g_scroll, VK_BORDER_SINGLE);
+    vk_scroller_set_border_colors(g_scroll, COL_TEXT, COL_MENU);
+    vk_scroller_set_scroll_source(g_scroll, VK_WIDGET(g_list));
+    vk_scroller_set_scroll_info(g_scroll, list_scroll_info);
+    vk_widget_attach_scroller(VK_WIDGET(g_list), g_scroll);
+
+    g_bar = own(&g_own_dlg, vk_box_create(iw, 3, VK_BOX_HORIZONTAL, 4), W_BOX);
+    vk_box_set_homogeneous(g_bar, false);
+    vk_widget_set_colors(VK_WIDGET(g_bar), COL_TEXT, COL_MENU);
+    g_btn[0] = own(&g_own_dlg, mk_btn("Modify"), W_BUTTON);
+    g_btn[1] = own(&g_own_dlg, mk_btn(g_add_mode ? "Add" : "Save"), W_BUTTON);
+    g_btn[2] = own(&g_own_dlg, mk_btn(g_add_mode ? "Cancel" : "Close"),
+                   W_BUTTON);
+    g_fill = own(&g_own_dlg, vk_filler_create(), W_FILLER);
+    vk_widget_set_colors(VK_WIDGET(g_fill), COL_TEXT, COL_MENU);
+    vk_widget_set_expand(VK_WIDGET(g_fill));
+    vk_box_set_widget(g_bar, 0, VK_WIDGET(g_btn[0]), VK_INHERIT_NONE);
+    vk_box_set_widget(g_bar, 1, VK_WIDGET(g_fill), VK_INHERIT_NONE);
+    vk_box_set_widget(g_bar, 2, VK_WIDGET(g_btn[1]), VK_INHERIT_NONE);
+    vk_box_set_widget(g_bar, 3, VK_WIDGET(g_btn[2]), VK_INHERIT_NONE);
+
+    vk_box_set_widget(g_vbox, 0, VK_WIDGET(g_frame), VK_INHERIT_NONE);
+    vk_box_set_widget(g_vbox, 1, VK_WIDGET(g_bar), VK_INHERIT_NONE);
+    vk_window_set_child(g_win, VK_WIDGET(g_vbox), VK_INHERIT_NONE);
+}
+
+static void destroy_dialog(void)
+{
+    if (g_list && g_scroll)
+        vk_widget_attach_scroller(VK_WIDGET(g_list), NULL);
+    if (g_scroll)
+        vk_scroller_destroy(g_scroll);
+    if (g_win)
+    {
+        vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_win));
+        vk_window_set_child(g_win, NULL, VK_INHERIT_NONE);
+        vk_window_destroy(g_win);
+    }
+    free_owned(&g_own_dlg);
+    g_win = NULL;
+    g_vbox = g_bar = NULL;
+    g_frame = NULL;
+    g_list = NULL;
+    g_scroll = NULL;
+    g_btn[0] = g_btn[1] = g_btn[2] = NULL;
+    g_fill = NULL;
+}
+
+/* ---- popups -------------------------------------------------------- */
+
+static void front_restack(void)
+{
+    mf_ui_front_clear();
+    if (g_win)
+        mf_ui_front_push(VK_WIDGET(g_win));
+    if (g_pop)
+        mf_ui_front_push(VK_WIDGET(g_pop));
+    if (g_msg)
+        mf_ui_front_push(VK_WIDGET(g_msg));
+}
+
+static void center(int w, int h, int *x, int *y)
+{
+    *x = (mf_ui_cols() - w) / 2;
+    *y = (mf_ui_rows() - h) / 2;
+    if (*x < 0)
+        *x = 0;
+    if (*y < 1)
+        *y = 1;
+}
+
+/* A popup in one color scheme, its button bar painted to match. */
+static vk_popup_t *pop_new(int w, int h, const char *title, int fg, int bg,
+                           const char *b1, const char *b2)
+{
+    vk_popup_t *p = b2 ? vk_popup_create(w, h, VK_BORDER_SINGLE, b1, b2, NULL)
+                       : vk_popup_create(w, h, VK_BORDER_SINGLE, b1, NULL);
+    vk_box_t *bar;
+
+    if (!p)
+        return NULL;
+    vk_popup_set_title(p, title);
+    vk_popup_set_border_colors(p, (short)fg, (short)bg);
+    vk_popup_set_border_attrs(p, A_BOLD);
+    vk_popup_set_colors(p, (short)fg, (short)bg);
+    vk_popup_set_button_colors(p, (short)fg, (short)bg);
+    vk_popup_set_button_attrs(p, A_BOLD);
+    bar = vk_popup_get_button_bar(p);
+    if (bar)
+    {
+        vk_widget_set_colors(VK_WIDGET(bar), fg, bg);
+        vk_widget_fill(VK_WIDGET(bar),
+                       ' ' | COLOR_PAIR(vdk_color_pair((short)fg, (short)bg)));
+    }
+    return p;
+}
+
+/* The active button in yellow; focus 0 (the client) lights none. */
+static void pop_buttons(vk_popup_t *p, int lit, int fg, int bg)
+{
+    int i, n;
+
+    if (!p)
+        return;
+    n = vk_popup_get_button_count(p);
+    for (i = 0; i < n; i++)
+    {
+        vk_button_t *b = vk_popup_get_button(p, i);
+
+        vk_button_release(b);
+        vk_widget_set_colors(VK_WIDGET(b), i == lit ? COLOR_YELLOW : fg, bg);
+        vk_widget_set_attrs(VK_WIDGET(b), A_BOLD);
+        vk_button_update(b);
+    }
+}
+
+/* Top pad, one centred label per line, bottom pad. */
+static vk_box_t *pop_lines(owned_t *o, int w, int fg, int bg, const char *l1,
+                           const char *l2)
+{
+    int n = l2 ? 4 : 3, i = 0;
+    vk_box_t *box = own(o, vk_box_create(w, n, VK_BOX_VERTICAL, n), W_BOX);
+    const char *lines[2] = { l1, l2 };
+    int k;
+
+    vk_box_set_homogeneous(box, true);
+    vk_widget_set_colors(VK_WIDGET(box), fg, bg);
+    {
+        vk_filler_t *pad = own(o, vk_filler_create(), W_FILLER);
+
+        vk_widget_set_colors(VK_WIDGET(pad), fg, bg);
+        vk_box_set_widget(box, i++, VK_WIDGET(pad), VK_INHERIT_NONE);
+    }
+    for (k = 0; k < (l2 ? 2 : 1); k++)
+    {
+        vk_label_t *lab = own(o, vk_label_create(w), W_LABEL);
+
+        vk_label_set_justify(lab, VK_JUSTIFY_CENTER);
+        vk_label_set_text(lab, lines[k]);
+        vk_widget_set_colors(VK_WIDGET(lab), fg, bg);
+        vk_label_update(lab);
+        vk_box_set_widget(box, i++, VK_WIDGET(lab), VK_INHERIT_NONE);
+    }
+    {
+        vk_filler_t *pad = own(o, vk_filler_create(), W_FILLER);
+
+        vk_widget_set_colors(VK_WIDGET(pad), fg, bg);
+        vk_box_set_widget(box, i, VK_WIDGET(pad), VK_INHERIT_NONE);
+    }
+    return box;
+}
+
+static void pop_show(vk_popup_t *p, vk_box_t *client, int w, int h)
+{
+    int x, y;
+    uint32_t st;
+
+    vk_popup_set_client(p, VK_WIDGET(client));
+    st = vk_widget_get_state(VK_WIDGET(client));
+    vk_widget_set_state(VK_WIDGET(client), st & ~(uint32_t)VK_STATE_EXPAND);
+    center(w, h, &x, &y);
+    mf_ui_attach(VK_WIDGET(p), x, y);
+}
+
+static void msg_close(void)
+{
+    if (!g_msg)
+        return;
+    vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_msg));
+    vk_popup_destroy(g_msg);
+    free_owned(&g_own_msg);
+    g_msg = NULL;
+    g_msg_client = NULL;
+    front_restack();
+    paint_dialog();
+}
+
+/* "Saved" (blue) or an error (red on white); OK closes it. */
+static void msg_show(const char *title, const char *l1, const char *l2,
+                     int error)
+{
+    int fg = error ? COLOR_RED : COLOR_WHITE;
+    int bg = error ? COLOR_WHITE : COLOR_BLUE;
+    int w = 44, h = l2 ? 9 : 8;
+    size_t n1 = l1 ? strlen(l1) : 0, n2 = l2 ? strlen(l2) : 0;
+
+    if ((int)n1 + 6 > w)
+        w = (int)n1 + 6;
+    if ((int)n2 + 6 > w)
+        w = (int)n2 + 6;
+    if (w > mf_ui_cols() - 2)
+        w = mf_ui_cols() - 2;
+    if (g_msg)
+        msg_close();
+    g_msg = pop_new(w, h, title, fg, bg, "OK", NULL);
+    if (!g_msg)
+        return;
+    g_own_msg.n = 0;
+    g_msg_client = pop_lines(&g_own_msg, w - 2, fg, bg, l1 ? l1 : "", l2);
+    pop_buttons(g_msg, 0, fg, bg);
+    pop_show(g_msg, g_msg_client, w, h);
+    vk_widget_fill(VK_WIDGET(g_msg_client),
+                   ' ' | COLOR_PAIR(vdk_color_pair((short)fg, (short)bg)));
+    front_restack();
+    paint_dialog();
+}
+
+static void pop_close(void)
+{
+    if (!g_pop)
+        return;
+    vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_pop));
+    vk_popup_destroy(g_pop);
+    free_owned(&g_own_pop);
+    g_pop = NULL;
+    g_pop_client = NULL;
+    g_pop_in = NULL;
+    g_pop_lb = NULL;
+    g_pop_kind = POP_NONE;
+    front_restack();
+    paint_dialog();
+}
+
+static void pop_colors(int *fg, int *bg)
+{
+    if (g_pop_kind == POP_MODIFY)
+    {
+        *fg = COLOR_WHITE;
+        *bg = COLOR_BLUE;
+    }
+    else
+    {
+        *fg = COLOR_RED;
+        *bg = COLOR_WHITE;
+    }
+}
+
+static void paint_popups(void)
+{
+    int fg, bg;
+
+    if (g_pop)
+    {
+        pop_colors(&fg, &bg);
+        if (g_pop_in)
+        {
+            vk_widget_set_colors(VK_WIDGET(g_pop_in),
+                                 g_pop_focus == 0 ? COLOR_CYAN : COLOR_WHITE,
+                                 COLOR_BLUE);
+            vk_input_show_cursor(g_pop_in, g_pop_focus == 0);
+            vk_input_update(g_pop_in);
+        }
+        if (g_pop_lb)
+        {
+            vk_listbox_set_focused(g_pop_lb, g_pop_focus == 0);
+            vk_listbox_update(g_pop_lb);
+        }
+        pop_buttons(g_pop, g_pop_focus == 1 ? g_pop_btn : -1, fg, bg);
+        if (g_pop_client)
+            vk_box_update(g_pop_client);
+        vk_popup_update(g_pop);
+    }
+    if (g_msg)
+    {
+        if (g_msg_client)
+            vk_box_update(g_msg_client);
+        vk_popup_update(g_msg);
+    }
+}
+
+static void modify_open(int ri)
+{
+    row_t *r;
+    char title[64], prompt[80], lab[40], hint[32];
+    int w, h;
+
+    if (ri < 0 || ri >= g_nrows)
+        return;
+    r = &g_rows[ri];
+    field_caption(r->key, lab, sizeof(lab), hint, sizeof(hint));
+    if (r->ro)
+    {
+        char l1[96];
+
+        snprintf(l1, sizeof(l1), "%s is read-only.", lab);
+        msg_show(" Read-only ", l1, "It can't be changed here.", 0);
+        return;
+    }
+    snprintf(title, sizeof(title), " Modify: %s ", lab);
+    g_pop_row = ri;
+    g_pop_focus = 0;
+    g_pop_btn = 0;
+    g_pop_kind = POP_MODIFY;
+    g_own_pop.n = 0;
+    if (r->type == ROW_BOOL)
+    {
+        w = 36;
+        h = 9;
+        g_pop = pop_new(w, h, title, COLOR_WHITE, COLOR_BLUE, "Apply", "Cancel");
+        g_pop_client = own(&g_own_pop,
+                           vk_box_create(w - 2, h - 5, VK_BOX_VERTICAL, 1), W_BOX);
+        vk_box_set_homogeneous(g_pop_client, false);
+        vk_widget_set_colors(VK_WIDGET(g_pop_client), COLOR_WHITE, COLOR_BLUE);
+        g_pop_lb = own(&g_own_pop, vk_listbox_create(w - 2, h - 5), W_LISTBOX);
+        vk_listbox_set_wrap(g_pop_lb, false);
+        vk_listbox_set_highlight(g_pop_lb, COLOR_BLACK, COLOR_RED);
+        vk_listbox_set_unfocused(g_pop_lb, COLOR_BLACK, COLOR_WHITE);
+        vk_widget_set_colors(VK_WIDGET(g_pop_lb), COLOR_WHITE, COLOR_BLUE);
+        vk_listbox_add_item(g_pop_lb, "true", NULL, NULL);
+        vk_listbox_add_item(g_pop_lb, "false", NULL, NULL);
+        vk_listbox_set_curr(g_pop_lb, strcmp(r->value, "false") == 0 ? 1 : 0);
+        vk_box_set_widget(g_pop_client, 0, VK_WIDGET(g_pop_lb), VK_INHERIT_NONE);
+    }
+    else
+    {
+        vk_label_t *pl;
+
+        w = 48;
+        h = 9;
+        g_pop = pop_new(w, h, title, COLOR_WHITE, COLOR_BLUE, "Apply", "Cancel");
+        g_pop_client = own(&g_own_pop,
+                           vk_box_create(w - 2, h - 5, VK_BOX_VERTICAL, 2), W_BOX);
+        vk_box_set_homogeneous(g_pop_client, false);
+        vk_widget_set_colors(VK_WIDGET(g_pop_client), COLOR_WHITE, COLOR_BLUE);
+        pl = own(&g_own_pop, vk_label_create(w - 2), W_LABEL);
+        snprintf(prompt, sizeof(prompt), "  %s%s:", lab, hint);
+        vk_label_set_text(pl, prompt);
+        vk_widget_set_colors(VK_WIDGET(pl), COLOR_WHITE, COLOR_BLUE);
+        vk_label_update(pl);
+        vk_box_set_widget(g_pop_client, 0, VK_WIDGET(pl), VK_INHERIT_NONE);
+        g_pop_in = own(&g_own_pop, vk_input_create(w - 4), W_INPUT);
+        vk_input_set_border_style(g_pop_in, VK_BORDER_SINGLE);
+        vk_input_set_text(g_pop_in, r->value);
+        vk_box_set_widget(g_pop_client, 1, VK_WIDGET(g_pop_in), VK_INHERIT_NONE);
+    }
+    pop_show(g_pop, g_pop_client, w, h);
+    front_restack();
+    paint_dialog();
+}
+
+static int numeric(const char *s)
+{
+    char *end;
+
+    if (!s || !s[0])
+        return 1;                       /* empty: let the daemon decide */
+    strtod(s, &end);
+    return *end == '\0';
+}
+
+static void modify_apply(void)
+{
+    row_t *r = &g_rows[g_pop_row];
+    char val[160];
+
+    if (g_pop_lb)
+        snprintf(val, sizeof(val), "%s",
+                 vk_listbox_get_curr(g_pop_lb) == 1 ? "false" : "true");
+    else
+        snprintf(val, sizeof(val), "%s",
+                 g_pop_in ? vk_input_get_text(g_pop_in) : "");
+    if (r->type == ROW_NUM && !numeric(val))
+    {
+        char lab[40], l1[96];
+
+        field_caption(r->key, lab, sizeof(lab), NULL, 0);
+        snprintf(l1, sizeof(l1), "%s must be a number.", lab);
+        msg_show(" Error ", l1, NULL, 1);
+        return;
+    }
+    snprintf(r->value, sizeof(r->value), "%s", val);
+    pop_close();
+    rebuild_list();
+    paint_dialog();
+}
+
+static void confirm_open(int kind)
+{
+    int w = 42, h = 9;
+
+    g_own_pop.n = 0;
+    g_pop_kind = kind;
+    g_pop_focus = 1;
+    g_pop_btn = 0;
+    if (kind == POP_DISCARD)
+    {
+        g_pop = pop_new(w, h, " Confirm ", COLOR_RED, COLOR_WHITE,
+                        "Discard", "Cancel");
+        g_pop_client = pop_lines(&g_own_pop, w - 2, COLOR_RED, COLOR_WHITE,
+                                 "You have unsaved changes.",
+                                 "Discard changes and close?");
+    }
+    else
+    {
+        g_pop = pop_new(w, h, " Confirm Save ", COLOR_RED, COLOR_WHITE,
+                        "Save", "Cancel");
+        g_pop_client = pop_lines(&g_own_pop, w - 2, COLOR_RED, COLOR_WHITE,
+                                 "Save module settings?",
+                                 "Changes take effect now.");
+    }
+    pop_show(g_pop, g_pop_client, w, h);
+    vk_widget_fill(VK_WIDGET(g_pop_client),
+                   ' ' | COLOR_PAIR(vdk_color_pair(COLOR_RED, COLOR_WHITE)));
+    front_restack();
+    paint_dialog();
+}
+
+/* ---- actions ------------------------------------------------------- */
+
+static void on_close(void)
+{
+    if (dirty() && !g_saving)
+    {
+        confirm_open(POP_DISCARD);
+        return;
+    }
+    mf_devset_close();
+}
+
+/* 2: the caller sends the payload (PUT, or POST in add mode). */
+static int on_save(void)
+{
+    if (g_saving)
+        return 1;
+    if (g_add_mode)
+        return 2;
+    if (!dirty())
+    {
+        msg_show(" Saved ", "No changes to save.", NULL, 0);
+        return 1;
+    }
+    confirm_open(POP_SAVE);
+    return 1;
+}
+
+static int pop_key(wint_t c)
+{
+    int n = g_pop ? vk_popup_get_button_count(g_pop) : 0;
+
+    if (c == 27 || c == KEY_EXIT || c == KEY_CANCEL)
+    {
+        pop_close();
+        return 1;
+    }
+    if (c == '\t'
+#ifdef KEY_BTAB
+        || c == KEY_BTAB
+#endif
+       )
+    {
+        if (g_pop_kind == POP_MODIFY)
+        {
+            /* input -> Apply -> Cancel -> input */
+            if (g_pop_focus == 0)
+            {
+                g_pop_focus = 1;
+                g_pop_btn = 0;
+            }
+            else if (g_pop_btn + 1 < n)
+                g_pop_btn++;
+            else
+                g_pop_focus = 0;
+        }
+        else
+            g_pop_btn = (g_pop_btn + 1) % (n ? n : 1);
+        paint_dialog();
+        return 1;
+    }
+    if (g_pop_focus == 1 && (c == KEY_LEFT || c == KEY_RIGHT))
+    {
+        g_pop_btn = (g_pop_btn + (c == KEY_LEFT ? n - 1 : 1)) % (n ? n : 1);
+        paint_dialog();
+        return 1;
+    }
+    if (c == '\n' || c == KEY_ENTER || (c == ' ' && g_pop_focus == 1))
+    {
+        int apply = g_pop_focus == 0 || g_pop_btn == 0;
+
+        if (g_pop_kind == POP_MODIFY)
+        {
+            if (apply)
+                modify_apply();
+            else
+                pop_close();
+            return 1;
+        }
+        if (g_pop_kind == POP_DISCARD)
+        {
+            pop_close();
+            if (apply)
+                mf_devset_close();
+            return 1;
+        }
+        if (g_pop_kind == POP_SAVE)
+        {
+            pop_close();
+            if (apply)
+            {
+                g_saving = 1;
+                paint_dialog();
+                return 2;
+            }
+            return 1;
+        }
+        return 1;
+    }
+    if (g_pop_kind != POP_MODIFY || g_pop_focus != 0)
+        return 1;
+    if (g_pop_lb)
+    {
+        if (c == KEY_UP)
+            vk_listbox_set_prev(g_pop_lb);
+        else if (c == KEY_DOWN)
+            vk_listbox_set_next(g_pop_lb);
+        paint_dialog();
+        return 1;
+    }
+    if (!g_pop_in)
+        return 1;
+    if (c == KEY_BACKSPACE || c == 127 || c == 8)
+        vk_input_backspace(g_pop_in);
+    else if (c == KEY_LEFT)
+        vk_input_move_cursor(g_pop_in, -1);
+    else if (c == KEY_RIGHT)
+        vk_input_move_cursor(g_pop_in, 1);
+    else if (c >= 32 && c < 127)
+        vk_input_insert_char(g_pop_in, (int)c);
+    else
+        return 1;
+    paint_dialog();
+    return 1;
+}
+
+static void select_row(int i)
+{
+    if (i < 0 || i >= g_nrows || !g_list)
+        return;
+    vk_listbox_set_curr(g_list, i);
+}
+
+static void toggle_bool(int i)
+{
+    row_t *r;
+
+    if (i < 0 || i >= g_nrows)
+        return;
+    r = &g_rows[i];
+    if (r->ro || r->type != ROW_BOOL)
+        return;
+    snprintf(r->value, sizeof(r->value), "%s",
+             strcmp(r->value, "true") == 0 ? "false" : "true");
+    rebuild_list();
+}
+
+static int activate_focus(void)
+{
+    switch (g_focus)
+    {
+    case FOCUS_LIST:
+    case FOCUS_MODIFY:
+        modify_open(vk_listbox_get_curr(g_list));
+        return 1;
+    case FOCUS_SAVE:
+        return on_save();
+    case FOCUS_CLOSE:
+        on_close();
+        return 1;
+    }
+    return 1;
+}
+
+/* ---- public API ---------------------------------------------------- */
+
+void mf_devset_close(void)
+{
+    if (!g_open)
+        return;
+    if (g_msg)
+    {
+        vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_msg));
+        vk_popup_destroy(g_msg);
+        free_owned(&g_own_msg);
+        g_msg = NULL;
+    }
+    if (g_pop)
+    {
+        vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_pop));
+        vk_popup_destroy(g_pop);
+        free_owned(&g_own_pop);
+        g_pop = NULL;
+    }
+    g_pop_in = NULL;
+    g_pop_lb = NULL;
+    g_pop_client = NULL;
+    g_msg_client = NULL;
+    g_pop_kind = POP_NONE;
+    destroy_dialog();
+    g_open = 0;
+    g_add_mode = 0;
+    g_saving = 0;
+    g_nplab = 0;
+    g_nrows = 0;
+    mf_ui_front_clear();
+    mf_ui_refresh();
+}
+
+int mf_devset_open(void)
+{
+    return g_open;
+}
+
+int mf_devset_touched(void)
+{
+    return g_open && dirty();
+}
+
+int mf_devset_has_key(const char *key)
+{
+    return row_find(key) >= 0;
+}
+
+const char *mf_devset_id(void)
+{
+    return g_id;
+}
+
+const char *mf_devset_poll_text(void)
+{
+    int i = row_find("poll_interval_s");
+
+    return i >= 0 ? g_rows[i].value : "2";
+}
+
+int mf_devset_get_graph_interval(void)
+{
+    int i = row_find("graph_interval_min");
+    int val;
+
+    if (i < 0)
+        return 0;                       /* not shown for this module */
+    val = atoi(g_rows[i].value);
+    return val < 1 ? 1 : val;
+}
+
+void mf_devset_set_kind(const char *kind)
+{
+    snprintf(g_kind, sizeof(g_kind), "%s", kind ? kind : "");
+}
+
+void mf_devset_set_graph_interval(int minutes)
+{
+    int i = row_find("graph_interval_min");
+
+    if (i < 0)
+        return;
+    snprintf(g_rows[i].value, sizeof(g_rows[i].value), "%d",
+             minutes < 1 ? 1 : minutes);
+    memcpy(g_rows[i].orig, g_rows[i].value, sizeof(g_rows[i].orig));
+    rebuild_list();
+    paint_dialog();
+}
+
 const char *mf_devset_payload(void)
 {
-    size_t off = 0;
+    size_t off = 1;
     int i;
 
     g_payload[0] = '{';
     g_payload[1] = '\0';
-    off = 1;
-    for (i = 0; i < g_nfields; i++)
+    for (i = 0; i < g_nrows; i++)
     {
-        const char *v = g_in[i] ? vk_input_get_text(g_in[i]) : "";
+        const row_t *r = &g_rows[i];
         char piece[256];
         int n;
 
-        if (!g_keys[i][0] || g_ro[i])
+        /* Read-only rows and the TUI-only graph interval stay home. */
+        if (r->ro || strcmp(r->key, "graph_interval_min") == 0)
             continue;
-        /* TUI-only key: never send to daemon/plugin. */
-        if (strcmp(g_keys[i], "graph_interval_min") == 0)
-            continue;
-        if (!v)
-            v = "";
-        if (json_bare(v))
+        if (json_bare(r->value))
             n = snprintf(piece, sizeof(piece), "%s\"%s\":%s",
-                         off > 1 ? "," : "", g_keys[i], v);
+                         off > 1 ? "," : "", r->key, r->value);
         else
             n = snprintf(piece, sizeof(piece), "%s\"%s\":\"%s\"",
-                         off > 1 ? "," : "", g_keys[i], v);
+                         off > 1 ? "," : "", r->key, r->value);
         if (n < 0 || (size_t)n >= sizeof(piece))
             continue;   /* value too long to encode safely; skip this field */
         n = snprintf(g_payload + off, sizeof(g_payload) - off, "%s", piece);
@@ -1349,57 +1463,7 @@ const char *mf_devset_payload(void)
     return g_payload;
 }
 
-static void paint_dialog(void)
-{
-    int pass, i;
-
-    /*
-     * Nested box/grid update blits children and may resize expand
-     * widgets (wiping their canvases). Two passes: layout, then paint
-     * onto the final sizes.
-     */
-    for (pass = 0; pass < 2; pass++)
-    {
-        for (i = 0; i < g_nfields; i++)
-        {
-            style_caption(g_lab[i], g_ro[i]);
-            style_caption(g_hint[i], g_ro[i]);
-            style_input(g_in[i],
-                        (g_focus >= 0 && g_focus < g_nedit &&
-                         g_edit[g_focus] == i),
-                        g_ro[i]);
-            if (g_fields[i])
-                vk_grid_update(g_fields[i]);
-            if (g_row[i])
-                vk_grid_update(g_row[i]);
-        }
-        highlight_buttons();
-        if (g_form)
-            vk_box_update(g_form);
-        paint_form_scroller();
-        if (g_bar)
-            vk_box_update(g_bar);
-        if (g_inner)
-            vk_box_update(g_inner);
-        if (g_mid)
-            vk_box_update(g_mid);
-        if (g_vbox)
-            vk_box_update(g_vbox);
-    }
-    if (g_win)
-        vk_window_update(g_win);
-    mf_ui_refresh();
-}
-
-static void show_form(const char *id, const char *name, const char *json);
-
-void mf_devset_show(const char *id, const char *name, const char *json)
-{
-    mf_devset_close();
-    show_form(id, name, json);
-}
-
-/* Remember the plugin's labels and hints from its field list. */
+/* Remember the plugin's labels, hints and types from its field list. */
 static void load_plugin_labels(const cJSON *arr)
 {
     const cJSON *f;
@@ -1410,6 +1474,7 @@ static void load_plugin_labels(const cJSON *arr)
         const cJSON *k = cJSON_GetObjectItemCaseSensitive(f, "key");
         const cJSON *l = cJSON_GetObjectItemCaseSensitive(f, "label");
         const cJSON *h = cJSON_GetObjectItemCaseSensitive(f, "hint");
+        const cJSON *t = cJSON_GetObjectItemCaseSensitive(f, "type");
 
         if (g_nplab >= MAX_PLAB || !cJSON_IsString(k))
             continue;
@@ -1418,8 +1483,44 @@ static void load_plugin_labels(const cJSON *arr)
                  cJSON_IsString(l) ? l->valuestring : "");
         snprintf(g_plab[g_nplab].hint, sizeof(g_plab[0].hint), "%s",
                  cJSON_IsString(h) ? h->valuestring : "");
+        snprintf(g_plab[g_nplab].type, sizeof(g_plab[0].type), "%s",
+                 cJSON_IsString(t) ? t->valuestring : "");
         g_nplab++;
     }
+}
+
+static void show_form(const char *id, const char *name, const char *json)
+{
+    int x, y, w, h;
+
+    /* A settings reply carries the plugin's labels as "_fields". */
+    if (!g_add_mode && json)
+    {
+        cJSON *r = cJSON_Parse(json);
+        const cJSON *f = cJSON_GetObjectItemCaseSensitive(r, "_fields");
+
+        if (cJSON_IsArray(f))
+            load_plugin_labels(f);
+        cJSON_Delete(r);
+    }
+    snprintf(g_id, sizeof(g_id), "%s", id ? id : "");
+    snprintf(g_name, sizeof(g_name), "%s", name ? name : "device");
+    mf_tui_devsettings_geom(mf_ui_cols(), mf_ui_rows(), &x, &y, &w, &h);
+    build_dialog(w, h);
+    build_rows(json);
+    g_focus = FOCUS_LIST;
+    rebuild_list();
+    select_row(0);
+    mf_ui_attach(VK_WIDGET(g_win), x, y);
+    g_open = 1;
+    front_restack();
+    paint_dialog();
+}
+
+void mf_devset_show(const char *id, const char *name, const char *json)
+{
+    mf_devset_close();
+    show_form(id, name, json);
 }
 
 void mf_devset_show_add(const char *kind, const char *driver, const char *json,
@@ -1453,176 +1554,161 @@ const char *mf_devset_add_driver(void)
     return g_add_driver;
 }
 
-/* Show a daemon error in the title bar; the form stays open to fix it. */
+/* A daemon or form error: an error popup over the dialog, which stays
+ * open so the user can fix the value. */
 void mf_devset_set_error(const char *msg)
 {
-    char cap[72];
-
-    if (!g_open || !g_win)
-        return;
-    snprintf(cap, sizeof(cap), " %.66s ", msg ? msg : "error");
-    vk_window_set_title(g_win, cap);
-    paint_dialog();
-    mf_ui_refresh();
-}
-
-static void show_form(const char *id, const char *name, const char *json)
-{
-    int x, y, w, h;
-    char cap[40];
-
-    /* A settings reply carries the plugin's labels as "_fields". */
-    if (!g_add_mode && json)
-    {
-        cJSON *r = cJSON_Parse(json);
-
-        load_plugin_labels(cJSON_GetObjectItemCaseSensitive(r, "_fields"));
-        cJSON_Delete(r);
-    }
-
-    snprintf(g_id, sizeof(g_id), "%s", id ? id : "");
-    snprintf(g_name, sizeof(g_name), "%s", name ? name : "device");
-    mf_tui_devsettings_geom(mf_ui_cols(), mf_ui_rows(), &x, &y, &w, &h);
-    snprintf(cap, sizeof(cap), " %s ", g_name);
-    g_win = vk_window_create(w, h);
-    vk_window_set_title(g_win, cap);
-    vk_window_set_border_style(g_win, VK_BORDER_SINGLE);
-    vk_window_set_border_colors(g_win, COLOR_WHITE, COL_MENU);
-    vk_window_set_border_attrs(g_win, A_BOLD);
-    vk_widget_set_colors(VK_WIDGET(g_win), COL_TEXT, COL_MENU);
-    vk_widget_set_attrs(VK_WIDGET(g_win), A_BOLD);
-
-    build_form(w - 2, h - 2, json);
-    vk_window_set_child(g_win, VK_WIDGET(g_vbox), VK_INHERIT_NONE);
-    mf_ui_attach(VK_WIDGET(g_win), x, y);
-    set_field_focus(0);
-    paint_dialog();
-
-    g_open = 1;
-    mf_ui_front_clear();
-    mf_ui_front_push(VK_WIDGET(g_win));
-    mf_ui_refresh();
-}
-
-void mf_devset_apply_json(const char *json)
-{
-    char id[40], name[32];
-
     if (!g_open)
         return;
-    snprintf(id, sizeof(id), "%s", g_id);
-    snprintf(name, sizeof(name), "%s", g_name);
-    mf_devset_show(id, name, json);
+    g_saving = 0;
+    msg_show(" Error ", msg ? msg : "error", NULL, 1);
+}
+
+/* The daemon's answer to a settings PUT. */
+void mf_devset_put_result(const char *json)
+{
+    cJSON *root;
+    const cJSON *err;
+    int i;
+
+    if (!g_open || !g_saving)
+        return;
+    g_saving = 0;
+    root = json ? cJSON_Parse(json) : NULL;
+    err = cJSON_GetObjectItemCaseSensitive(root, "error");
+    if (!root || cJSON_IsString(err))
+    {
+        char l1[80];
+
+        snprintf(l1, sizeof(l1), "%.70s",
+                 cJSON_IsString(err) ? err->valuestring : "no reply");
+        cJSON_Delete(root);
+        msg_show(" Not Saved ", "The daemon refused the change:", l1, 1);
+        return;
+    }
+    cJSON_Delete(root);
+    for (i = 0; i < g_nrows; i++)
+        memcpy(g_rows[i].orig, g_rows[i].value, sizeof(g_rows[i].orig));
+    msg_show(" Saved ", "Settings saved.", NULL, 0);
+}
+
+int mf_devset_saving(void)
+{
+    return g_open && g_saving;
+}
+
+/* A fresh settings reply (e.g. a JK frame that now has its OVP values). */
+void mf_devset_apply_json(const char *json)
+{
+    int cur;
+    cJSON *r;
+    const cJSON *f;
+
+    if (!g_open || dirty() || g_pop || g_saving)
+        return;
+    r = json ? cJSON_Parse(json) : NULL;
+    f = cJSON_GetObjectItemCaseSensitive(r, "_fields");
+    if (cJSON_IsArray(f))
+        load_plugin_labels(f);
+    cJSON_Delete(r);
+    cur = g_list ? vk_listbox_get_curr(g_list) : 0;
+    build_rows(json);
+    rebuild_list();
+    select_row(cur);
+    paint_dialog();
 }
 
 int mf_devset_key(wint_t c)
 {
-    vk_input_t *in;
-    int nbtn;
+    int cur;
 
     if (!g_open)
         return 0;
-    nbtn = g_nedit + 2;
+    if (g_msg)
+    {
+        if (c == 27 || c == '\n' || c == KEY_ENTER || c == ' ' ||
+            c == KEY_EXIT)
+            msg_close();
+        return 1;
+    }
+    if (g_pop)
+        return pop_key(c);
     if (c == 27 || c == KEY_EXIT || c == KEY_CANCEL)
     {
-        mf_devset_close();
+        on_close();
         return 1;
     }
     if (c == '\t')
     {
-        set_field_focus((g_focus + 1) % nbtn);
-        scroll_focus_into_view();
+        g_focus = (g_focus + 1) % FOCUS_MAX;
         paint_dialog();
         return 1;
     }
 #ifdef KEY_BTAB
     if (c == KEY_BTAB)
     {
-        set_field_focus((g_focus + nbtn - 1) % nbtn);
-        scroll_focus_into_view();
+        g_focus = (g_focus + FOCUS_MAX - 1) % FOCUS_MAX;
         paint_dialog();
         return 1;
     }
 #endif
-    /* Up/Down step through the fields and buttons (no wrap); the form
-       scrolls to keep the focus in view.  PgUp/PgDn scroll the form, which
-       still reaches the read-only rows below the last field. */
-    if (c == KEY_UP || c == KEY_DOWN)
+    if (g_focus != FOCUS_LIST)
     {
-        int f = g_focus + (c == KEY_UP ? -1 : 1);
-
-        if (f >= 0 && f < nbtn)
+        if (c == KEY_LEFT || c == KEY_RIGHT)
         {
-            set_field_focus(f);
-            scroll_focus_into_view();
-            paint_dialog();
-        }
-        return 1;
-    }
-    if (c == KEY_PPAGE || c == KEY_NPAGE)
-    {
-        int dy = c == KEY_PPAGE ? (g_form_h > 0 ? -g_form_h : -1)
-                                : (g_form_h > 0 ? g_form_h : 1);
+            int f = g_focus + (c == KEY_LEFT ? -1 : 1);
 
-        if (form_nudge(dy))
+            if (f >= FOCUS_MODIFY && f <= FOCUS_CLOSE)
+                g_focus = f;
             paint_dialog();
-        return 1;
-    }
-    /* Left/Right on a button: switch between the two buttons. */
-    if ((c == KEY_LEFT || c == KEY_RIGHT) && g_focus >= g_nedit)
-    {
-        set_field_focus(c == KEY_LEFT ? g_nedit : g_nedit + 1);
-        paint_dialog();
-        return 1;
-    }
-    if (c == '\n' || c == KEY_ENTER)
-    {
-        if (g_focus == g_nedit + 1)
-        {
-            mf_devset_close();
             return 1;
         }
-        return 2;
+        if (c == KEY_UP)
+        {
+            g_focus = FOCUS_LIST;
+            paint_dialog();
+            return 1;
+        }
+        if (c == '\n' || c == KEY_ENTER || c == ' ')
+            return activate_focus();
+        return 1;
     }
-    if (g_focus >= g_nedit)
-        return 1;
-    in = g_in[g_edit[g_focus]];
-    if (!in)
-        return 1;
-    if (c == KEY_BACKSPACE || c == 127)
+    cur = vk_listbox_get_curr(g_list);
+    switch (c)
     {
-        g_touched = 1;
-        vk_input_backspace(in);
-        vk_input_update(in);
-        scroll_focus_into_view();
-        paint_dialog();
+    case KEY_UP:
+        select_row(cur - 1);
+        break;
+    case KEY_DOWN:
+        if (cur + 1 < g_nrows)
+            select_row(cur + 1);
+        else
+            g_focus = FOCUS_MODIFY;     /* off the bottom: to the buttons */
+        break;
+    case KEY_PPAGE:
+        select_row(cur - 10 < 0 ? 0 : cur - 10);
+        break;
+    case KEY_NPAGE:
+        select_row(cur + 10 >= g_nrows ? g_nrows - 1 : cur + 10);
+        break;
+    case KEY_HOME:
+        select_row(0);
+        break;
+    case KEY_END:
+        select_row(g_nrows - 1);
+        break;
+    case KEY_LEFT:
+    case KEY_RIGHT:
+        toggle_bool(cur);
+        break;
+    case '\n':
+    case KEY_ENTER:
+    case ' ':
+        return activate_focus();
+    default:
         return 1;
     }
-    if (c == KEY_LEFT)
-    {
-        vk_input_move_cursor(in, -1);
-        vk_input_update(in);
-        scroll_focus_into_view();
-        paint_dialog();
-        return 1;
-    }
-    if (c == KEY_RIGHT)
-    {
-        vk_input_move_cursor(in, 1);
-        vk_input_update(in);
-        scroll_focus_into_view();
-        paint_dialog();
-        return 1;
-    }
-    if (c >= 32 && c < 127)
-    {
-        g_touched = 1;
-        vk_input_insert_char(in, (int)c);
-        vk_input_update(in);
-        scroll_focus_into_view();
-        paint_dialog();
-        return 1;
-    }
+    paint_dialog();
     return 1;
 }
 
@@ -1758,130 +1844,132 @@ mf_confirm_mouse(int x, int y, mmask_t bstate)
     return 1;
 }
 
-static int hit_btn(vk_button_t *btn, int ox, int oy, int x, int y)
-{
-    int bx, by, bw, bh;
 
-    if (!btn)
+/* ---- mouse --------------------------------------------------------- */
+
+static int inside(vk_widget_t *w, int ox, int oy, int x, int y)
+{
+    int wx, wy, ww, wh;
+
+    if (!w)
         return 0;
-    vk_widget_get_position(VK_WIDGET(btn), &bx, &by);
-    vk_widget_get_metrics(VK_WIDGET(btn), &bw, &bh);
-    bx += ox;
-    by += oy;
-    return x >= bx && x < bx + bw && y >= by && y < by + bh;
+    vk_widget_get_position(w, &wx, &wy);
+    vk_widget_get_metrics(w, &ww, &wh);
+    wx += ox;
+    wy += oy;
+    return x >= wx && x < wx + ww && y >= wy && y < wy + wh;
+}
+
+/* Which of a popup's buttons (x, y) is on, or -1.  A popup is a window
+ * whose child (at 1,1 inside the border) stacks the client over the bar. */
+static int pop_button_at(vk_popup_t *p, int x, int y)
+{
+    vk_box_t *bar = p ? vk_popup_get_button_bar(p) : NULL;
+    int px, py, bx, by, i, n;
+
+    if (!bar)
+        return -1;
+    vk_widget_get_position(VK_WIDGET(p), &px, &py);
+    vk_widget_get_position(VK_WIDGET(bar), &bx, &by);
+    n = vk_popup_get_button_count(p);
+    for (i = 0; i < n; i++)
+        if (inside(VK_WIDGET(vk_popup_get_button(p, i)),
+                   px + 1 + bx, py + 1 + by, x, y))
+            return i;
+    return -1;
 }
 
 int
 mf_devset_mouse(int x, int y, mmask_t bstate)
 {
-    int win_x, win_y, win_w, win_h;
-    int ox, oy, bx, by;
-    int i, lx, ly, cx, cy;
+    int wx, wy, vx, vy, fx, fy, lx, ly, bx, by, i;
 
     if (!g_open || !g_win)
         return 0;
-
-    vk_widget_get_position(VK_WIDGET(g_win), &win_x, &win_y);
-    vk_widget_get_metrics(VK_WIDGET(g_win), &win_w, &win_h);
-    if (x < win_x || y < win_y || x >= win_x + win_w || y >= win_y + win_h)
+    if (!(bstate & LEFT) && !(bstate & (BUTTON4_PRESSED | BUTTON5_PRESSED)))
         return 1;
+
+    /* Popups are modal: only their buttons (and a bool list) take clicks. */
+    if (g_msg)
+    {
+        if ((bstate & LEFT) && pop_button_at(g_msg, x, y) == 0)
+            msg_close();
+        return 1;
+    }
+    if (g_pop)
+    {
+        int b = (bstate & LEFT) ? pop_button_at(g_pop, x, y) : -1;
+
+        if (b >= 0)
+        {
+            g_pop_focus = 1;
+            g_pop_btn = b;
+            return pop_key('\n');
+        }
+        if (g_pop_lb && (bstate & LEFT))
+        {
+            int px, py, cx, cy, lbx, lby;
+
+            vk_widget_get_position(VK_WIDGET(g_pop), &px, &py);
+            vk_widget_get_position(VK_WIDGET(g_pop_client), &cx, &cy);
+            vk_widget_get_position(VK_WIDGET(g_pop_lb), &lbx, &lby);
+            i = y - (py + 1 + cy + lby) + vk_listbox_get_scroll_pos(g_pop_lb);
+            if (inside(VK_WIDGET(g_pop_lb), px + 1 + cx, py + 1 + cy, x, y) &&
+                i >= 0 && i < vk_listbox_get_item_count(g_pop_lb))
+            {
+                vk_listbox_set_curr(g_pop_lb, i);
+                g_pop_focus = 0;
+                paint_dialog();
+            }
+        }
+        return 1;
+    }
+
+    vk_widget_get_position(VK_WIDGET(g_win), &wx, &wy);
+    vk_widget_get_position(VK_WIDGET(g_vbox), &vx, &vy);
+    vk_widget_get_position(VK_WIDGET(g_frame), &fx, &fy);
+    vk_widget_get_position(VK_WIDGET(g_list), &lx, &ly);
+    vk_widget_get_position(VK_WIDGET(g_bar), &bx, &by);
 
     if (bstate & (BUTTON4_PRESSED | BUTTON5_PRESSED))
     {
-        if (form_nudge((bstate & BUTTON4_PRESSED) ? -1 : 1))
-            paint_dialog();
-        return 1;
-    }
+        int cur = vk_listbox_get_curr(g_list);
 
-    if (g_vscroll && (bstate & LEFT))
-    {
-        int bar_y = y - win_y;
-
-        /* Bar sits on the form's last column: border + left pad + form. */
-        if (x - win_x == win_w - 3 && bar_y >= 2 && bar_y < 2 + g_form_h)
-        {
-            int dy;
-
-            if (bar_y == 2)
-                dy = -1;
-            else if (bar_y == 2 + g_form_h - 1)
-                dy = 1;
-            else if (bar_y < 2 + g_form_h / 2)
-                dy = g_form_h > 0 ? -g_form_h : -1;
-            else
-                dy = g_form_h > 0 ? g_form_h : 1;
-            if (form_nudge(dy))
-                paint_dialog();
-            return 1;
-        }
-    }
-
-    if (!(bstate & LEFT) || !g_vbox || !g_bar)
-        return 1;
-
-    /*
-     * Buttons first. On a tall form (more field rows than fit -- e.g. a JK
-     * pack) the field rows overflow down into the button bar's row; testing
-     * field rows first would swallow the Save/Exit clicks before they reach
-     * the buttons. The bar sits at vbox -> mid -> inner -> bar, so sum that
-     * whole chain: skipping mid/inner (the 1-char pads) left the hit box off
-     * by (1,1).
-     */
-    {
-        int vx, vy, mx, my, ix, iy;
-
-        vk_widget_get_position(VK_WIDGET(g_vbox), &vx, &vy);
-        vk_widget_get_position(VK_WIDGET(g_mid), &mx, &my);
-        vk_widget_get_position(VK_WIDGET(g_inner), &ix, &iy);
-        vk_widget_get_position(VK_WIDGET(g_bar), &bx, &by);
-        ox = win_x + vx + mx + ix + bx;
-        oy = win_y + vy + my + iy + by;
-    }
-    if (hit_btn(g_btn_save, ox, oy, x, y))
-    {
-        int rc = vk_button_press(g_btn_save);
-        vk_button_update(g_btn_save);
+        select_row((bstate & BUTTON4_PRESSED) ? (cur > 0 ? cur - 1 : 0)
+                                              : (cur + 1 < g_nrows ? cur + 1
+                                                                   : cur));
         paint_dialog();
-        return rc == 2 ? 2 : 1;
-    }
-    if (hit_btn(g_btn_exit, ox, oy, x, y))
-    {
-        vk_button_press(g_btn_exit);
         return 1;
     }
 
-    /* Frame + 1-char pad; form rows stack from there. */
-    lx = x - win_x;
-    ly = y - win_y;
-    cx = 2;
-    cy = 2;
-    for (i = 0; i < g_nfields; i++)
+    for (i = 0; i < 3; i++)
     {
-        int rh;
-
-        if (!g_shown[i] || !g_row[i])
-            continue;
-        rh = form_row_h(i);
-        if (lx >= cx && lx < win_w - (g_vscroll ? 4 : 2) &&
-            ly >= cy && ly < cy + rh)
+        if (inside(VK_WIDGET(g_btn[i]), wx + vx + bx, wy + vy + by, x, y))
         {
-            if (!g_ro[i])
-            {
-                int e;
-
-                for (e = 0; e < g_nedit; e++)
-                {
-                    if (g_edit[e] == i)
-                    {
-                        set_field_focus(e);
-                        paint_dialog();
-                        break;
-                    }
-                }
-            }
-            return 1;
+            g_focus = FOCUS_MODIFY + i;
+            paint_dialog();
+            return activate_focus();
         }
-        cy += rh;
+    }
+
+    /* A row: the first click selects it, a click on the selected row
+     * opens it (as Enter does). */
+    {
+        int ox = wx + vx + fx + lx, oy = wy + vy + fy + ly;
+        int row = y - oy + vk_listbox_get_scroll_pos(g_list);
+
+        if (inside(VK_WIDGET(g_list), wx + vx + fx, wy + vy + fy, x, y) &&
+            x < ox + list_text_w() + 2 && row >= 0 && row < g_nrows)
+        {
+            int was = vk_listbox_get_curr(g_list) == row &&
+                      g_focus == FOCUS_LIST;
+
+            g_focus = FOCUS_LIST;
+            select_row(row);
+            paint_dialog();
+            if (was)
+                modify_open(row);
+        }
     }
     return 1;
 }
