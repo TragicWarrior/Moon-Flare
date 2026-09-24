@@ -57,6 +57,14 @@ int main(void)
           "cards start below the System panel");
     CHECK(grid[MF_CARD_Y + MF_CARD_H - 1][0] == '+',
           "cards end above the hints row");
+    {
+        int r2 = MF_CARD_Y + MF_SYS_H + (MF_CARD_H - MF_SYS_H) / 2;
+
+        CHECK(strstr(grid[MF_CARD_Y + MF_SYS_H], "Info"),
+              "Info panel beside Batteries and Chargers");
+        CHECK(strstr(grid[r2], "Inverters") && strstr(grid[r2], "Actuators") &&
+              strstr(grid[r2], "Services"), "second row: Inverters Actuators Services");
+    }
 
     mf_tui_paint_settings(grid, "127.0.0.1", 5250, 1.0);
     CHECK(strstr(grid[y], "General"), "settings title");

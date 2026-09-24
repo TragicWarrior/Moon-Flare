@@ -77,22 +77,30 @@ static void draw_box(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
     put_str(grid, y, x + 2, cap);
 }
 
-/* Cards sit below the System panel. */
+/* Cards sit below the System panel in a 3 x 2 grid. */
 #define CARD_TOP (MF_CARD_Y + MF_SYS_H)
-#define CARD_H   (MF_CARD_H - MF_SYS_H)
+#define CARD_H   ((MF_CARD_H - MF_SYS_H) / 2)
+
+static void fill_card_at(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1], int row,
+                         int x, const char *title, int n,
+                         const char *const *lines, const char *empty)
+{
+    int i, y = CARD_TOP + row * CARD_H;
+
+    draw_box(grid, y, x, MF_CARD_W, CARD_H, title);
+    if (n <= 0)
+        put_str(grid, y + 1, x + 2, empty);
+    else
+    {
+        for (i = 0; i < n && i < CARD_H - 2; i++)
+            put_str(grid, y + 1 + i, x + 2, lines[i]);
+    }
+}
 
 static void fill_card(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
                       int x, const char *title, int n, const char *const *lines)
 {
-    int i;
-    draw_box(grid, CARD_TOP, x, MF_CARD_W, CARD_H, title);
-    if (n <= 0)
-        put_str(grid, CARD_TOP + 1, x + 2, "not connected");
-    else
-    {
-        for (i = 0; i < n && i < CARD_H - 2; i++)
-            put_str(grid, CARD_TOP + 1 + i, x + 2, lines[i]);
-    }
+    fill_card_at(grid, 0, x, title, n, lines, "not connected");
 }
 
 static void fill_system(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1])
@@ -133,7 +141,10 @@ void mf_tui_paint_dashboard(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
     fill_system(grid);
     fill_card(grid, 0, t1, nbatt, batt);
     fill_card(grid, 27, t2, nchg, chg);
-    fill_card(grid, 54, t3, ninv, inv);
+    fill_card_at(grid, 0, 54, "Info", 0, NULL, "no weather service");
+    fill_card_at(grid, 1, 0, t3, ninv, inv, "not connected");
+    fill_card_at(grid, 1, 27, "Actuators (0)", 0, NULL, "not connected");
+    fill_card_at(grid, 1, 54, "Services (0)", 0, NULL, "not connected");
     put_str(grid, 24, 0, "F10 menu  Arrows select  Enter open  Space active  q quit");
 }
 

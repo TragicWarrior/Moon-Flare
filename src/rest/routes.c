@@ -238,6 +238,8 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
     cJSON *chargers = cJSON_GetObjectItemCaseSensitive(root, "chargers");
     cJSON *inverters = cJSON_GetObjectItemCaseSensitive(root, "inverters");
     cJSON *phantoms = cJSON_GetObjectItemCaseSensitive(root, "phantoms");
+    cJSON *services = cJSON_GetObjectItemCaseSensitive(root, "services");
+    cJSON *actuators = cJSON_GetObjectItemCaseSensitive(root, "actuators");
     cJSON *row = cJSON_CreateObject();
     cJSON *data = cJSON_Parse(d->reading_json);
 
@@ -270,6 +272,23 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
     } else if (strcmp(d->kind, "phantom") == 0)
     {
         cJSON_AddItemToArray(phantoms, row);
+    }
+    else if (strcmp(d->kind, "service") == 0 ||
+             strcmp(d->kind, "actuator") == 0)
+    {
+        /* Service/actuator readings are small and kind-specific (weather,
+           relay state): pass the whole data object for the dashboard. */
+        if (data)
+        {
+            cJSON_AddItemToObject(row, "data", data);
+            data = NULL;
+        }
+        cJSON_AddItemToArray(strcmp(d->kind, "service") == 0 ? services
+                                                            : actuators, row);
+    }
+    else if (strcmp(d->kind, "battery") != 0)
+    {
+        cJSON_Delete(row);   /* a kind the dashboard has no place for */
     }
     else
     {
@@ -357,6 +376,8 @@ static int handle_status(mf_rest_response_t *resp)
     cJSON_AddItemToObject(ctx.root, "chargers", cJSON_CreateArray());
     cJSON_AddItemToObject(ctx.root, "inverters", cJSON_CreateArray());
     cJSON_AddItemToObject(ctx.root, "phantoms", cJSON_CreateArray());
+    cJSON_AddItemToObject(ctx.root, "services", cJSON_CreateArray());
+    cJSON_AddItemToObject(ctx.root, "actuators", cJSON_CreateArray());
     mf_devices_visit_live(add_status_row, &ctx);
     mf_system_finish(&ctx.sys);
     cJSON_AddItemToObject(ctx.root, "system", system_json(&ctx.sys));
