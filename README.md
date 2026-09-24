@@ -27,6 +27,8 @@ cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on
 
 Plugins (`libmf_charger_classic.so`, `libmf_battery_xd.so`, `libmf_battery_jk.so`) live in one `--plugin-dir` (default `/usr/local/lib/moon-flare`). The build tree splits them under `build/*_plugins/` so tests load one driver at a time. The demo plugin (`libmf_demo.so`, a fake battery and charger for development) is built but not installed unless you configure with `-DMF_INSTALL_DEMO=ON`; to use it without installing, point `--plugin-dir` at `build/demo_plugins`.
 
+To write your own plugin (a new battery, charger, inverter or service), see [PLUGINS.md](PLUGINS.md): the plugin ABI, the event loop, configuration and settings, readings, history capture and a complete example.
+
 The weather.gov service plugin (`libmf_service_weathergov.so`) needs libcurl: install `libcurl4-openssl-dev` to build it (it is skipped otherwise), and the target needs the `libcurl4` runtime. Add it with Devices → Add Module; it asks for a ZIP code and a contact email for the NWS User-Agent, and feeds the dashboard's Info panel. ZIP codes are looked up offline in `data/zcta.txt` (Census Bureau ZIP centroids, installed to `share/moon-flare/zcta.txt`); the plugin checks census.gov for a newer yearly table every `weather.zip_update_days` days (default 7) and keeps updates in `/var/lib/moonflare/weathergov/`.
 
 ## Install
