@@ -4,6 +4,7 @@
 
 #include <cJSON.h>
 #include <stdarg.h>
+#include <wchar.h>
 #include <stdio.h>
 #include <string.h>
 #include <vdk.h>
@@ -706,6 +707,67 @@ static void info_line(const char *fmt, ...)
     vk_listbox_add_item(g_info_lb, line, NULL, NULL);
 }
 
+/* Symbol for a service's neutral weather icon key ("" when unknown). */
+static const char *wx_symbol(const char *key, int is_day)
+{
+    static const struct {
+        const char *key;
+        const char *day;
+        const char *night;
+    } map[] = {
+        { "clear",         "\u2600",      "\U0001F319" },  /* sun / moon */
+        { "partly_cloudy", "\u26C5",      "\u2601" },      /* sun behind cloud / cloud */
+        { "mostly_cloudy", "\U0001F325",  "\u2601" },      /* sun behind big cloud */
+        { "cloudy",        "\u2601",      "\u2601" },
+        { "wind",          "\U0001F32C",  "\U0001F32C" },  /* wind face */
+        { "showers",       "\U0001F326",  "\U0001F327" },  /* sun + rain / rain */
+        { "rain",          "\U0001F327",  "\U0001F327" },
+        { "freezing_rain", "\U0001F327",  "\U0001F327" },
+        { "thunderstorm",  "\u26C8",      "\u26C8" },      /* thunder cloud + rain */
+        { "snow",          "\U0001F328",  "\U0001F328" },
+        { "sleet",         "\U0001F328",  "\U0001F328" },
+        { "blizzard",      "\u2744",      "\u2744" },      /* snowflake */
+        { "fog",           "\U0001F32B",  "\U0001F32B" },
+        { "haze",          "\U0001F32B",  "\U0001F32B" },
+        { "tornado",       "\U0001F32A",  "\U0001F32A" },
+        { "hurricane",     "\U0001F300",  "\U0001F300" },  /* cyclone */
+        { "hot",           "\U0001F525",  "\U0001F525" },  /* fire */
+        { "cold",          "\U0001F976",  "\U0001F976" },  /* cold face */
+    };
+    size_t i;
+
+    for (i = 0; key && i < sizeof(map) / sizeof(map[0]); i++)
+        if (strcmp(key, map[i].key) == 0)
+            return is_day ? map[i].day : map[i].night;
+    return "";
+}
+
+/* Screen columns of a UTF-8 string. */
+static int text_cols(const char *s)
+{
+    wchar_t w[128];
+    size_t n = mbstowcs(w, s, 127);
+    int c;
+
+    if (n == (size_t)-1)
+        return (int)strlen(s);
+    c = wcswidth(w, n);
+    return c < 0 ? (int)n : c;
+}
+
+/* The icon in a fixed 2-column slot.  Many weather symbols are 1 column by
+ * wcwidth() but drawn 2 wide by some terminals; the padding space absorbs
+ * that, so the text after the icon never shifts. */
+static void wx_slot(const cJSON *o, char *out, size_t cap)
+{
+    const cJSON *k = cJSON_GetObjectItemCaseSensitive(o, "icon");
+    const char *sym = wx_symbol(cJSON_IsString(k) ? k->valuestring : NULL,
+        !cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(o, "is_day")));
+    int w = sym[0] ? text_cols(sym) : 0;
+
+    snprintf(out, cap, "%s%s", sym, w >= 2 ? "" : w == 1 ? " " : "  ");
+}
+
 /* Forecast period names made to fit a 24-column card: "Thursday" -> "Thu",
  * "Thursday Night" -> "Thu Nt", "Tonight" -> "Tngt", "This Afternoon" ->
  * "Aftn".  Unknown names pass through. */
@@ -778,11 +840,22 @@ static void fill_info(const cJSON *services)
         int nf = 0;
 
         snprintf(g_info_cap, sizeof(g_info_cap), "Weather");
+        char slot[16];
+        int avail = 22;
+
+        {
+            int lw = 0;
+
+            vk_widget_get_metrics(VK_WIDGET(g_info_lb), &lw, NULL);
+            if (lw > 2)
+                avail = lw - 2;         /* the listbox pads one column each side */
+        }
+        wx_slot(wx, slot, sizeof(slot));
         if (cJSON_IsNumber(t))
-            info_line("%.0fF %s", t->valuedouble,
+            info_line("%s %.0fF %s", slot, t->valuedouble,
                       cJSON_IsString(cond) ? cond->valuestring : "");
         else
-            info_line("%s", cJSON_IsString(cond) ? cond->valuestring : "--");
+            info_line("%s %s", slot, cJSON_IsString(cond) ? cond->valuestring : "--");
         wind[0] = '\0';
         if (cJSON_IsNumber(ws))
             snprintf(wind, sizeof(wind), "%s %.0f mph",
@@ -797,14 +870,20 @@ static void fill_info(const cJSON *services)
             const cJSON *pt = cJSON_GetObjectItemCaseSensitive(p, "temp_f");
             const cJSON *sh = cJSON_GetObjectItemCaseSensitive(p, "short");
 
-            char nm[16];
+            char nm[16], ps[16], line[96];
 
             if (nf++ >= 2)
                 break;
             short_period(cJSON_IsString(n) ? n->valuestring : "", nm, sizeof(nm));
-            info_line("%s %.0fF %s", nm,
-                      cJSON_IsNumber(pt) ? pt->valuedouble : 0.0,
-                      cJSON_IsString(sh) ? sh->valuestring : "");
+            wx_slot(p, ps, sizeof(ps));
+            snprintf(line, sizeof(line), "%s %s %.0fF %s", ps, nm,
+                     cJSON_IsNumber(pt) ? pt->valuedouble : 0.0,
+                     cJSON_IsString(sh) ? sh->valuestring : "");
+            /* The icon already says it: drop the words rather than cut them. */
+            if (text_cols(line) > avail)
+                snprintf(line, sizeof(line), "%s %s %.0fF", ps, nm,
+                         cJSON_IsNumber(pt) ? pt->valuedouble : 0.0);
+            info_line("%s", line);
         }
         if (cJSON_IsString(st) || cJSON_IsString(at))
             info_line("%s %s", cJSON_IsString(st) ? st->valuestring : "",

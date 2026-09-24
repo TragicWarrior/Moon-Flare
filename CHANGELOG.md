@@ -32,6 +32,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   table; when one appears it downloads, unzips and installs it in
   `/var/lib/moonflare/weathergov/`, which then takes priority over the
   shipped copy. Latitude and longitude remain as optional overrides.
+- Weather icons in the Info panel. The weather plugin adds a neutral
+  `icon` key (clear, partly_cloudy, mostly_cloudy, cloudy, wind, rain,
+  showers, thunderstorm, snow, blizzard, sleet, freezing_rain, fog, haze,
+  tornado, hurricane, hot, cold) and `is_day` to the current conditions and
+  each forecast period, taken from weather.gov's own icon codes, or from the
+  description when a station sends none. The dashboard shows ☀ or 🌙, ⛅,
+  🌥, ☁, 🌦, 🌧, ⛈, 🌨, ❄, 🌫 and so on in a fixed 2-column slot, so the text
+  lines up whether the terminal draws a symbol 1 or 2 columns wide. A
+  forecast line that does not fit drops its words and keeps the icon.
+  Needs libviper 7.6.3 for correct column layout of the symbols.
 - A module that is offline now reports its `last_error` in
   `GET /api/v1/status`, and the Info panel shows a weather service's error
   (e.g. "ZIP 00000 not found") under "waiting for weather".

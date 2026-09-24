@@ -17,15 +17,22 @@
  * The reading is provider-neutral, so the dashboard's Info panel works with
  * any weather service that publishes the same "weather" object:
  *   {"provider": "weather.gov",
- *    "weather": {"temp_f", "conditions", "humidity_pct", "wind_mph",
- *                "wind_dir", "station", "place", "observed_local",
- *                "forecast": [{"name", "temp_f", "short"}, ...]}}
+ *    "weather": {"temp_f", "conditions", "icon", "is_day", "humidity_pct",
+ *                "wind_mph", "wind_dir", "station", "place",
+ *                "observed_local",
+ *                "forecast": [{"name", "temp_f", "short", "icon",
+ *                              "is_day"}, ...]}}
+ * "icon" is a neutral condition key (clear, partly_cloudy, mostly_cloudy,
+ * cloudy, wind, rain, showers, thunderstorm, snow, blizzard, sleet,
+ * freezing_rain, fog, haze, tornado, hurricane, hot, cold); the dashboard
+ * picks the symbol.
  */
 
 #include "mf_plugin.h"
 #include "zcta.h"
 
 #include <cJSON.h>
+#include <ctype.h>
 #include <curl/curl.h>
 #include <math.h>
 #include <stdio.h>
@@ -57,6 +64,8 @@ typedef struct {
     char   name[24];
     double temp_f;
     char   shortf[48];
+    char   icon[16];
+    int    is_day;
 } wx_period_t;
 
 typedef struct {
@@ -101,6 +110,8 @@ typedef struct {
     double             wind_mph;
     char               wind_dir[4];
     char               cond[48];
+    char               icon[16];
+    int                is_day;
     char               observed_local[8];
     wx_period_t        fc[WX_NFC];
     int                nfc;
@@ -253,6 +264,92 @@ static void iso_to_local_hhmm(const char *iso, char *out, size_t cap)
         strftime(out, cap, "%H:%M", &tm);
 }
 
+/* weather.gov icon codes -> the neutral keys every weather service uses. */
+static const char *icon_key(const char *code)
+{
+    static const char *const map[][2] = {
+        { "skc", "clear" }, { "few", "clear" }, { "sct", "partly_cloudy" },
+        { "bkn", "mostly_cloudy" }, { "ovc", "cloudy" },
+        { "wind_skc", "wind" }, { "wind_few", "wind" }, { "wind_sct", "wind" },
+        { "wind_bkn", "wind" }, { "wind_ovc", "wind" },
+        { "rain", "rain" }, { "rain_showers", "showers" },
+        { "rain_showers_hi", "showers" }, { "tsra", "thunderstorm" },
+        { "tsra_sct", "thunderstorm" }, { "tsra_hi", "thunderstorm" },
+        { "snow", "snow" }, { "blizzard", "blizzard" },
+        { "rain_snow", "sleet" }, { "rain_sleet", "sleet" },
+        { "snow_sleet", "sleet" }, { "sleet", "sleet" },
+        { "fzra", "freezing_rain" }, { "rain_fzra", "freezing_rain" },
+        { "snow_fzra", "freezing_rain" }, { "fog", "fog" },
+        { "haze", "haze" }, { "smoke", "haze" }, { "dust", "haze" },
+        { "tornado", "tornado" }, { "hurricane", "hurricane" },
+        { "tropical_storm", "hurricane" }, { "hot", "hot" }, { "cold", "cold" },
+    };
+    size_t i;
+
+    for (i = 0; i < sizeof(map) / sizeof(map[0]); i++)
+        if (strcmp(code, map[i][0]) == 0)
+            return map[i][1];
+    return "";
+}
+
+/* When a station sends no icon, read the description instead. */
+static const char *icon_from_text(const char *t)
+{
+    static const char *const map[][2] = {
+        { "thunder", "thunderstorm" }, { "tornado", "tornado" },
+        { "blizzard", "blizzard" }, { "freezing", "freezing_rain" },
+        { "sleet", "sleet" }, { "snow", "snow" }, { "shower", "showers" },
+        { "rain", "rain" }, { "drizzle", "rain" }, { "fog", "fog" },
+        { "mist", "fog" }, { "haze", "haze" }, { "smoke", "haze" },
+        { "dust", "haze" }, { "partly", "partly_cloudy" },
+        { "mostly cloudy", "mostly_cloudy" }, { "mostly sunny", "partly_cloudy" },
+        { "overcast", "cloudy" }, { "cloudy", "cloudy" }, { "wind", "wind" },
+        { "breezy", "wind" }, { "clear", "clear" }, { "sunny", "clear" },
+        { "fair", "clear" },
+    };
+    char low[64];
+    size_t i;
+
+    for (i = 0; t[i] && i < sizeof(low) - 1; i++)
+        low[i] = (char)tolower((unsigned char)t[i]);
+    low[i] = '\0';
+    for (i = 0; i < sizeof(map) / sizeof(map[0]); i++)
+        if (strstr(low, map[i][0]))
+            return map[i][1];
+    return "";
+}
+
+/* ".../icons/land/night/tsra_hi,40/rain,60?size=medium" -> key of the
+ * first code ("thunderstorm") and whether it is the day icon. */
+static void parse_icon(const char *url, const char *text, char *key,
+                       size_t cap, int *is_day)
+{
+    const char *p = url ? strstr(url, "/land/") : NULL;
+    char code[32];
+    size_t n;
+
+    key[0] = '\0';
+    if (p)
+    {
+        p += 6;
+        if (is_day)
+            *is_day = strncmp(p, "night/", 6) != 0;
+        p = strchr(p, '/');
+        if (p)
+        {
+            p++;
+            n = strcspn(p, ",/?");
+            if (n >= sizeof(code))
+                n = sizeof(code) - 1;
+            memcpy(code, p, n);
+            code[n] = '\0';
+            snprintf(key, cap, "%s", icon_key(code));
+        }
+    }
+    if (!key[0] && text)
+        snprintf(key, cap, "%s", icon_from_text(text));
+}
+
 static const cJSON *props(const cJSON *root)
 {
     return cJSON_GetObjectItemCaseSensitive(root, "properties");
@@ -317,6 +414,16 @@ static int parse_obs(wx_ctx_t *c, const cJSON *root)
              isnan(wd) ? "" : compass(wd));
     snprintf(c->cond, sizeof(c->cond), "%s",
              cJSON_IsString(txt) ? txt->valuestring : "");
+    {
+        const cJSON *ic = cJSON_GetObjectItemCaseSensitive(p, "icon");
+        time_t now = time(NULL);
+        struct tm tm;
+
+        localtime_r(&now, &tm);
+        c->is_day = tm.tm_hour >= 6 && tm.tm_hour < 19;  /* if the URL won't say */
+        parse_icon(cJSON_IsString(ic) ? ic->valuestring : NULL, c->cond,
+                   c->icon, sizeof(c->icon), &c->is_day);
+    }
     iso_to_local_hhmm(cJSON_IsString(ts) ? ts->valuestring : NULL,
                       c->observed_local, sizeof(c->observed_local));
     c->have_obs = 1;
@@ -337,6 +444,8 @@ static int parse_forecast(wx_ctx_t *c, const cJSON *root)
         const cJSON *nm = cJSON_GetObjectItemCaseSensitive(it, "name");
         const cJSON *t = cJSON_GetObjectItemCaseSensitive(it, "temperature");
         const cJSON *sf = cJSON_GetObjectItemCaseSensitive(it, "shortForecast");
+        const cJSON *ic = cJSON_GetObjectItemCaseSensitive(it, "icon");
+        const cJSON *dy = cJSON_GetObjectItemCaseSensitive(it, "isDaytime");
 
         if (n >= WX_NFC)
             break;
@@ -345,6 +454,9 @@ static int parse_forecast(wx_ctx_t *c, const cJSON *root)
         c->fc[n].temp_f = cJSON_IsNumber(t) ? t->valuedouble : NAN;
         snprintf(c->fc[n].shortf, sizeof(c->fc[n].shortf), "%s",
                  cJSON_IsString(sf) ? sf->valuestring : "");
+        c->fc[n].is_day = !cJSON_IsFalse(dy);
+        parse_icon(cJSON_IsString(ic) ? ic->valuestring : NULL, c->fc[n].shortf,
+                   c->fc[n].icon, sizeof(c->fc[n].icon), &c->fc[n].is_day);
         n++;
     }
     c->nfc = n;
@@ -756,6 +868,8 @@ static int wx_get_reading(void *ctx, char *json, size_t cap)
     wx = cJSON_AddObjectToObject(root, "weather");
     add_num_or_null(wx, "temp_f", c->temp_f);
     cJSON_AddStringToObject(wx, "conditions", c->cond);
+    cJSON_AddStringToObject(wx, "icon", c->icon);
+    cJSON_AddBoolToObject(wx, "is_day", c->is_day);
     add_num_or_null(wx, "humidity_pct", c->hum);
     add_num_or_null(wx, "wind_mph", c->wind_mph);
     cJSON_AddStringToObject(wx, "wind_dir", c->wind_dir);
@@ -772,6 +886,8 @@ static int wx_get_reading(void *ctx, char *json, size_t cap)
         cJSON_AddStringToObject(p, "name", c->fc[i].name);
         add_num_or_null(p, "temp_f", c->fc[i].temp_f);
         cJSON_AddStringToObject(p, "short", c->fc[i].shortf);
+        cJSON_AddStringToObject(p, "icon", c->fc[i].icon);
+        cJSON_AddBoolToObject(p, "is_day", c->fc[i].is_day);
         cJSON_AddItemToArray(fc, p);
     }
     s = cJSON_PrintUnformatted(root);
