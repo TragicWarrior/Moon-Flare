@@ -769,13 +769,13 @@ static void wx_slot(const cJSON *o, char *out, size_t cap)
 }
 
 /* Forecast period names made to fit a 24-column card: "Thursday" -> "Thu",
- * "Thursday Night" -> "Thu Nt", "Tonight" -> "Tngt", "This Afternoon" ->
- * "Aftn".  Unknown names pass through. */
+ * "Thursday Night" -> "Thu Nt", "This Afternoon" -> "Aftn".  Tonight,
+ * Overnight and Today fit as they are; unknown names pass through. */
 static void short_period(const char *name, char *out, size_t cap)
 {
     static const char *const map[][2] = {
-        { "Tonight", "Tngt" }, { "This Afternoon", "Aftn" },
-        { "Overnight", "Ovnt" }, { "Today", "Today" },
+        { "Tonight", "Tonight" }, { "This Afternoon", "Aftn" },
+        { "Overnight", "Overnight" }, { "Today", "Today" },
     };
     size_t i;
     const char *sp;
