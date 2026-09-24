@@ -42,6 +42,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <syslog.h>
+#include <time.h>
 #include <unistd.h>
 
 #define DEFAULT_LISTEN "0.0.0.0:5250"
@@ -78,6 +79,34 @@ static volatile sig_atomic_t g_quit = 0;
 static mf_http_t             g_http;
 static mf_plugin_registry_t  g_plugins;
 static mf_daemon_config_t    g_cfg;
+
+/* A module that captures history must also say how long to keep it. */
+static void warn_capture_without_policy(void)
+{
+    int i;
+
+    for (i = 0; i < g_plugins.nops; i++)
+    {
+        const mf_plugin_ops_t *ops = g_plugins.ops[i];
+        const char *d = ops->describe ? ops->describe() : NULL;
+
+        if (d && strstr(d, "\"capture\"") &&
+            mf_capture_spec(ops, NULL, 0, NULL, NULL, NULL) != 0)
+            LOG_W("plugin %s/%s: capture has no retention_days pruning"
+                  " policy; history disabled for it", ops->kind, ops->driver);
+    }
+}
+
+/* Capture spec for a module the migration finds but no longer runs. */
+static const char *history_spec_for(const char *kind, const char *driver)
+{
+    static char spec[2048];
+
+    if (mf_capture_spec(mf_plugins_find(&g_plugins, kind, driver),
+                        spec, sizeof(spec), NULL, NULL, NULL) != 0)
+        return NULL;
+    return spec;
+}
 
 static void on_quit(int sig)
 {
@@ -282,6 +311,7 @@ int main(int argc, char **argv)
         plugin_dir = g_cfg.plugin_dir;
     if (plugin_dir)
         (void)mf_plugins_load_dir(&g_plugins, plugin_dir);
+    warn_capture_without_policy();
 
     g_listen_fd = listen_tcp(listen_spec);
     if (g_listen_fd < 0)
@@ -320,12 +350,12 @@ int main(int argc, char **argv)
     }
 
     mf_devices_init(g_pts, &g_chan_tick, &g_quit, &g_plugins);
-    if (g_cfg.history.enabled && g_cfg.history.path[0])
+    if (g_cfg.history.enabled && g_cfg.history.dir[0])
     {
-        if (mf_history_open(g_cfg.history.path) != 0)
-            LOG_W("history: open %s failed", g_cfg.history.path);
+        if (mf_history_open(g_cfg.history.dir) != 0)
+            LOG_W("history: open %s failed", g_cfg.history.dir);
         else
-            LOG_I("history: logging to %s", g_cfg.history.path);
+            LOG_I("history: per-module files in %s", g_cfg.history.dir);
     }
     {
         char err[96];
@@ -333,6 +363,20 @@ int main(int argc, char **argv)
                                          err, sizeof(err));
         if (rc < 0)
             LOG_W("startup config apply: %s", err[0] ? err : "failed");
+    }
+    /* Modules are registered now: move a pre-0.5 shared history file into
+     * their own files (once; an interrupted run resumes next start). */
+    if (mf_history_is_open() && g_cfg.history.path[0] &&
+        access(g_cfg.history.path, F_OK) == 0)
+    {
+        int rows;
+
+        LOG_I("history: migrating %s", g_cfg.history.path);
+        rows = mf_history_migrate(g_cfg.history.path, history_spec_for);
+        if (rows < 0)
+            LOG_W("history: migration incomplete; will resume next start");
+        else
+            LOG_I("history: migrated %d samples", rows);
     }
     mf_rest_set_live_config(&g_cfg, config_path);
     mf_rest_init();
@@ -371,8 +415,11 @@ int main(int argc, char **argv)
             ;
         mf_devices_apply_pending();
         mf_discover_step();
-        if (mf_history_db())
+        if (mf_history_is_open())
+        {
             mf_history_flush_slice(32);
+            mf_history_prune_slice((double)time(NULL), 500);
+        }
         while (waitpid(-1, NULL, WNOHANG) > 0)
             ;
     }

@@ -43,6 +43,7 @@ typedef struct mf_device {
     uint64_t seq;
     double   poll_interval_s;
     double   capture_interval_s;
+    double   retention_days;     /* < 0: the module's default; 0: forever */
     char     last_error[96];
     char     reading_json[MF_READING_JSON_SZ];
 
@@ -107,8 +108,94 @@ static int is_generic_setting(const char *key)
     return strcmp(key, "name") == 0 ||
            strcmp(key, "poll_interval_s") == 0 ||
            strcmp(key, "capture_interval_s") == 0 ||
+           strcmp(key, "retention_days") == 0 ||
            strcmp(key, "active") == 0 ||
            strcmp(key, "uuid") == 0;
+}
+
+int mf_capture_spec(const mf_plugin_ops_t *ops, char *buf, size_t cap,
+                    double *def_s, double *min_s, double *keep_days)
+{
+    cJSON *root, *c, *it;
+    char *printed;
+    int rc = -1;
+
+    if (buf && cap)
+        buf[0] = '\0';
+    if (!ops || !ops->describe || !ops->describe())
+        return -1;
+    root = cJSON_Parse(ops->describe());
+    c = cJSON_GetObjectItemCaseSensitive(root, "capture");
+    it = cJSON_GetObjectItemCaseSensitive(c, "retention_days");
+    /* Capturing requires a pruning policy. */
+    if (cJSON_IsObject(c) && cJSON_IsNumber(it) && it->valuedouble >= 0.0)
+    {
+        if (keep_days)
+            *keep_days = it->valuedouble;
+        it = cJSON_GetObjectItemCaseSensitive(c, "interval_s");
+        if (def_s)
+            *def_s = cJSON_IsNumber(it) && it->valuedouble >= 0.0
+                     ? it->valuedouble : 10.0;
+        it = cJSON_GetObjectItemCaseSensitive(c, "min_s");
+        if (min_s)
+            *min_s = cJSON_IsNumber(it) && it->valuedouble >= 1.0
+                     ? it->valuedouble : 1.0;
+        printed = cJSON_PrintUnformatted(c);
+        if (printed && buf && strlen(printed) < cap)
+        {
+            memcpy(buf, printed, strlen(printed) + 1);
+            rc = 0;
+        }
+        else if (printed && !buf)
+            rc = 0;
+        free(printed);
+    }
+    cJSON_Delete(root);
+    return rc;
+}
+
+/* The interval a module actually captures at: 0 when its plugin does not
+ * advertise capture; `want` < 0 means the module's default. */
+static double capture_resolve(const mf_plugin_ops_t *ops, double want)
+{
+    double def_s = 0.0, min_s = 1.0;
+
+    if (mf_capture_spec(ops, NULL, 0, &def_s, &min_s, NULL) != 0)
+        return 0.0;
+    if (want < 0.0)
+        want = def_s;
+    if (want > 0.0 && want < min_s)
+        want = min_s;
+    return want;
+}
+
+/* Push the module's pruning policy to its history store. */
+static void history_retention(const mf_device_t *d)
+{
+    if (mf_history_is_open())
+        (void)mf_history_set_retention(d->uuid, d->retention_days);
+}
+
+static void history_register(const mf_device_t *d)
+{
+    char spec[2048];
+
+    if (!mf_history_is_open())
+        return;
+    if (mf_capture_spec(d->ops, spec, sizeof(spec), NULL, NULL, NULL) != 0)
+        spec[0] = '\0';
+    if (mf_history_register(d->uuid, d->name, d->kind, d->driver, spec) != 0)
+        LOG_W("history: register %s failed", d->uuid);
+}
+
+static void history_retire(const mf_device_t *d)
+{
+    struct timespec now;
+
+    if (!mf_history_is_open())
+        return;
+    clock_gettime(CLOCK_REALTIME, &now);
+    mf_history_retire(d->uuid, (double)now.tv_sec + (double)now.tv_nsec / 1e9);
 }
 
 static int name_taken(const char *name, int skip)
@@ -157,11 +244,11 @@ static void refresh_reading(mf_device_t *d)
     if (d->ops->caps)
         d->caps = d->ops->caps(d->ctx);
 
-    if (mf_history_db())
+    if (mf_history_is_open() && d->capture_interval_s > 0.0)
     {
         mf_sample_t s;
-        cJSON *r;
         struct timespec now;
+        size_t rjlen = strlen(d->reading_json);
 
         memset(&s, 0, sizeof(s));
         snprintf(s.uuid, sizeof(s.uuid), "%s", d->uuid);
@@ -169,68 +256,10 @@ static void refresh_reading(mf_device_t *d)
         s.ts = (double)now.tv_sec + (double)now.tv_nsec / 1e9;
         s.online = d->online ? 1 : 0;
         s.capture_interval_s = d->capture_interval_s;
-        {
-            size_t rjlen = strlen(d->reading_json);
-
-            if (rjlen < sizeof(s.extra_json))
-                memcpy(s.extra_json, d->reading_json, rjlen + 1);
-            else
-                memcpy(s.extra_json, "{}", 3);
-        }
-        r = cJSON_Parse(d->reading_json);
-        if (r)
-        {
-            cJSON *it;
-
-            if (strcmp(d->kind, "charger") == 0)
-            {
-                it = cJSON_GetObjectItemCaseSensitive(r, "battery_voltage_v");
-                if (cJSON_IsNumber(it))
-                {
-                    s.pack_v = it->valuedouble;
-                    s.has_pack_v = 1;
-                }
-                it = cJSON_GetObjectItemCaseSensitive(r, "battery_current_a");
-                if (cJSON_IsNumber(it))
-                {
-                    s.current_a = it->valuedouble;
-                    s.has_current_a = 1;
-                }
-                it = cJSON_GetObjectItemCaseSensitive(r, "charging_watts");
-                if (cJSON_IsNumber(it))
-                {
-                    s.power_w = it->valuedouble;
-                    s.has_power_w = 1;
-                }
-            }
-            else
-            {
-                it = cJSON_GetObjectItemCaseSensitive(r, "pack_voltage_v");
-                if (cJSON_IsNumber(it))
-                {
-                    s.pack_v = it->valuedouble;
-                    s.has_pack_v = 1;
-                }
-                it = cJSON_GetObjectItemCaseSensitive(r, "current_a");
-                if (cJSON_IsNumber(it))
-                {
-                    s.current_a = it->valuedouble;
-                    s.has_current_a = 1;
-                }
-                it = cJSON_GetObjectItemCaseSensitive(r, "soc_pct");
-                if (cJSON_IsNumber(it))
-                {
-                    s.soc = it->valuedouble;
-                    s.has_soc = 1;
-                }
-                if (s.has_pack_v && s.has_current_a)
-                {
-                    s.power_w = s.pack_v * s.current_a;
-                    s.has_power_w = 1;
-                }
-            }
-            cJSON_Delete(r);
-        }
+        if (rjlen < sizeof(s.reading))
+            memcpy(s.reading, d->reading_json, rjlen + 1);
+        else
+            memcpy(s.reading, "{}", 3);
         mf_history_enqueue(&s);
     }
 }
@@ -473,22 +502,26 @@ int mf_devices_add(const char *name, const char *kind, const char *driver,
         d->poll_interval_s = poll < mn ? mn : poll;
     }
     {
-        double cap = 10.0;
+        double cap = -1.0;              /* module default */
         cJSON *sroot = spec_json ? cJSON_Parse(spec_json) : NULL;
         cJSON *cit = sroot ? cJSON_GetObjectItemCaseSensitive(sroot,
                              "capture_interval_s") : NULL;
         cJSON *ait = sroot ? cJSON_GetObjectItemCaseSensitive(sroot,
                              "active") : NULL;
+        cJSON *kit = sroot ? cJSON_GetObjectItemCaseSensitive(sroot,
+                             "retention_days") : NULL;
+
+        d->retention_days = cJSON_IsNumber(kit) ? kit->valuedouble : -1.0;
         if (cit && cJSON_IsNumber(cit))
             cap = cit->valuedouble;
         d->active = !cJSON_IsFalse(ait);
         if (sroot)
             cJSON_Delete(sroot);
-        if (cap != 0.0 && cap < 1.0)
-            cap = 1.0;
-        d->capture_interval_s = cap;
+        d->capture_interval_s = capture_resolve(ops, cap);
     }
     snprintf(d->reading_json, sizeof(d->reading_json), "{}");
+    history_register(d);
+    history_retention(d);
 
     if (ops && ops->open)
     {
@@ -509,14 +542,6 @@ int mf_devices_add(const char *name, const char *kind, const char *driver,
     d->in_use = true;
     d->stop = false;
     d->env.idx = slot;
-    if (mf_history_db())
-    {
-        struct timespec now;
-
-        clock_gettime(CLOCK_REALTIME, &now);
-        mf_history_upsert_device(d->uuid, d->name, d->kind, d->driver,
-                                 (double)now.tv_sec + (double)now.tv_nsec / 1e9);
-    }
     /* Do not protothread_run() here: POST is called from http_conn_pt. */
     if (g_pts && g_chan_tick)
         pt_create(g_pts, &d->thr, device_pt, &d->env);
@@ -571,7 +596,14 @@ int mf_devices_get_settings(const char *uuid, char *json, size_t cap)
         return 500;
     cJSON_AddStringToObject(out, "name", d->name);
     cJSON_AddNumberToObject(out, "poll_interval_s", d->poll_interval_s);
-    cJSON_AddNumberToObject(out, "capture_interval_s", d->capture_interval_s);
+    if (mf_capture_spec(d->ops, NULL, 0, NULL, NULL, NULL) == 0)
+    {
+        cJSON_AddNumberToObject(out, "capture_interval_s", d->capture_interval_s);
+        cJSON_AddNumberToObject(out, "retention_days",
+                                mf_history_is_open()
+                                ? mf_history_retention(d->uuid)
+                                : d->retention_days);
+    }
     cJSON_AddBoolToObject(out, "active", d->active);
     if (plug[0] == '{')
         plug_root = cJSON_Parse(plug);
@@ -661,6 +693,7 @@ int mf_devices_put_settings(const char *uuid, const char *json,
                 return 400;
             }
             snprintf(d->name, sizeof(d->name), "%s", it->valuestring);
+            history_register(d);
         }
         it = cJSON_GetObjectItemCaseSensitive(root, "poll_interval_s");
         if (cJSON_IsNumber(it) ||
@@ -685,15 +718,60 @@ int mf_devices_put_settings(const char *uuid, const char *json,
         {
             double iv = cJSON_IsNumber(it) ? it->valuedouble
                                            : atof(it->valuestring);
-            if (iv < 0.0 || (iv > 0.0 && iv < 1.0))
+            double def_s = 0.0, min_s = 1.0;
+
+            if (mf_capture_spec(d->ops, NULL, 0, &def_s, &min_s, NULL) != 0)
+            {
+                if (iv != 0.0)
+                {
+                    if (err && errsz)
+                        snprintf(err, errsz, "module does not capture history");
+                    cJSON_Delete(root);
+                    return 400;
+                }
+            }
+            else if (iv < 0.0 || (iv > 0.0 && iv < min_s))
             {
                 if (err && errsz)
                     snprintf(err, errsz,
-                             "capture_interval_s must be 0 (off) or >= 1.0");
+                             "capture_interval_s must be 0 (off) or >= %g",
+                             min_s);
                 cJSON_Delete(root);
                 return 400;
             }
-            d->capture_interval_s = iv;
+            else
+                d->capture_interval_s = iv;
+        }
+        it = cJSON_GetObjectItemCaseSensitive(root, "retention_days");
+        if (cJSON_IsNumber(it) ||
+            (cJSON_IsString(it) && it->valuestring))
+        {
+            double iv = cJSON_IsNumber(it) ? it->valuedouble
+                                           : atof(it->valuestring);
+
+            if (mf_capture_spec(d->ops, NULL, 0, NULL, NULL, NULL) != 0)
+            {
+                if (iv != 0.0)
+                {
+                    if (err && errsz)
+                        snprintf(err, errsz, "module does not capture history");
+                    cJSON_Delete(root);
+                    return 400;
+                }
+            }
+            else if (iv < 0.0 || iv != (double)(long)iv)
+            {
+                if (err && errsz)
+                    snprintf(err, errsz,
+                             "retention_days must be whole days, 0 = forever");
+                cJSON_Delete(root);
+                return 400;
+            }
+            else
+            {
+                d->retention_days = iv;
+                history_retention(d);
+            }
         }
         it = cJSON_GetObjectItemCaseSensitive(root, "active");
         if (cJSON_IsBool(it))
@@ -925,7 +1003,7 @@ static int validate_apply(const mf_config_device_t *devs, int n,
                 return -1;
             }
         }
-        if (devs[i].capture_interval_s != 0.0 &&
+        if (devs[i].capture_interval_s > 0.0 &&
             devs[i].capture_interval_s < 1.0)
         {
             if (err && errsz)
@@ -1005,6 +1083,8 @@ int mf_devices_apply_config(const mf_config_device_t *devs, int n,
         if (!want || !want->enabled)
         {
             pending_cancel(d->uuid);
+            if (!d->stop)
+                history_retire(d);
             stop_slot(d);
             continue;
         }
@@ -1024,9 +1104,11 @@ int mf_devices_apply_config(const mf_config_device_t *devs, int n,
             d->poll_interval_s = want->poll_interval_s < mn ? mn
                                                             : want->poll_interval_s;
         }
-        d->capture_interval_s = want->capture_interval_s;
-        if (d->capture_interval_s != 0.0 && d->capture_interval_s < 1.0)
-            d->capture_interval_s = 1.0;
+        d->capture_interval_s = capture_resolve(d->ops,
+                                                want->capture_interval_s);
+        d->retention_days = want->retention_days;
+        history_register(d);            /* name may have changed */
+        history_retention(d);
     }
 
     /* ADD new enabled UUIDs. */
@@ -1110,6 +1192,8 @@ int mf_devices_delete(const char *uuid)
             continue;
         if (strcmp(d->uuid, uuid) != 0)
             continue;
+        if (!d->stop)
+            history_retire(d);
         d->stop = true;
         if (!g_pts)
         {

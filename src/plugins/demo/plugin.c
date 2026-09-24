@@ -182,13 +182,14 @@ static int battery_get_reading(void *v, char *json, size_t cap)
     ctx->mosfet_temp_c = 28.0 + 2.0 * sin(t / 20.0);
 
     js_append(json, cap, &off,
-              "{\"pack_voltage_v\":%.4f,\"current_a\":%.2f,\"soc_pct\":%.1f,"
+              "{\"pack_voltage_v\":%.4f,\"current_a\":%.2f,\"power_w\":%.1f,"
+              "\"soc_pct\":%.1f,"
               "\"soh_pct\":98.0,\"cell_count\":%d,"
               "\"full_capacity_ah\":200.0,\"remaining_capacity_ah\":%.1f,"
               "\"charge_mosfet_on\":%s,"
               "\"discharge_mosfet_on\":%s,\"balancer_switch\":%s,"
               "\"cells\":[",
-              pack_v, current_a, soc, NCELL, soc * 2.0,
+              pack_v, current_a, pack_v * current_a, soc, NCELL, soc * 2.0,
               ctx->charge_on ? "true" : "false",
               ctx->discharge_on ? "true" : "false",
               ctx->balance_on ? "true" : "false");
@@ -381,12 +382,24 @@ static int charger_action(void *v, const char *action, const char *json,
 }
 
 /* What the Add Module form asks for (mf_plugin_ops_t.describe). */
-static const char *demo_describe(void)
+static const char *demo_battery_describe(void)
 {
     return
         "{\"fields\":["
         "{\"key\":\"poll_interval_s\",\"label\":\"Poll Interval\",\"hint\":\"(Seconds)\",\"type\":\"number\",\"default\":2.0}"
-        "]}";
+        "],\"capture\":{\"interval_s\":10,\"min_s\":1,\"retention_days\":60,\"graph\":\"soc\",\"columns\":{"
+        "\"pack_v\":\"pack_voltage_v\",\"current_a\":\"current_a\","
+        "\"power_w\":\"power_w\",\"soc\":\"soc_pct\"}}}";
+}
+
+static const char *demo_charger_describe(void)
+{
+    return
+        "{\"fields\":["
+        "{\"key\":\"poll_interval_s\",\"label\":\"Poll Interval\",\"hint\":\"(Seconds)\",\"type\":\"number\",\"default\":2.0}"
+        "],\"capture\":{\"interval_s\":10,\"min_s\":1,\"retention_days\":60,\"graph\":\"power_w\",\"columns\":{"
+        "\"pack_v\":\"battery_voltage_v\",\"current_a\":\"battery_current_a\","
+        "\"power_w\":\"charging_watts\"}}}";
 }
 
 /* ── Plugin entries ── */
@@ -416,7 +429,7 @@ static const mf_plugin_ops_t g_ops[2] = {
         .probe_prepare_fds = NULL,
         .probe_result = NULL,
         .probe_close = NULL,
-        .describe    = demo_describe,
+        .describe    = demo_battery_describe,
     },
     {
         .abi         = MF_PLUGIN_ABI,
@@ -442,7 +455,7 @@ static const mf_plugin_ops_t g_ops[2] = {
         .probe_prepare_fds = NULL,
         .probe_result = NULL,
         .probe_close = NULL,
-        .describe    = demo_describe,
+        .describe    = demo_charger_describe,
     },
 };
 

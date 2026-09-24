@@ -91,6 +91,7 @@ static void field_caption(const char *key, char *lab, size_t lab_cap,
         { "uuid", "UUID", "" },
         { "poll_interval_s", "Poll Interval", "(Seconds)" },
         { "capture_interval_s", "Capture Interval", "(Sec 0=off)" },
+        { "retention_days", "Keep History", "(days 0=forever)" },
         { "graph_interval_min", "Graph Interval", "(minutes)" },
         { "ble.address", "BLE Address", "(MAC)" },
         { "ble.adapter", "BLE Adapter", "(hciN)" },
@@ -693,7 +694,8 @@ static void add_json_group(cJSON *root, int want_ro, int row_h, int iw, int n)
         if (strcmp(it->string, "name") == 0 ||
             strcmp(it->string, "uuid") == 0 ||
             strcmp(it->string, "poll_interval_s") == 0 ||
-            strcmp(it->string, "capture_interval_s") == 0)
+            strcmp(it->string, "capture_interval_s") == 0 ||
+            strcmp(it->string, "retention_days") == 0)
             continue;
         if (json_key_dup(root, it))
             continue;
@@ -1071,11 +1073,23 @@ static void build_form(int iw, int ih, const char *json)
                     buf, sizeof(buf));
     add_field("poll_interval_s", buf[0] ? buf : "2.0", row_h, iw - 2);
 
-    buf[0] = '\0';
-    if (root)
-        json_scalar(cJSON_GetObjectItemCaseSensitive(root, "capture_interval_s"),
-                    buf, sizeof(buf));
-    add_field("capture_interval_s", buf[0] ? buf : "10", row_h, iw - 2);
+    /* Only modules that capture history have an interval to set. */
+    it = root ? cJSON_GetObjectItemCaseSensitive(root, "capture_interval_s")
+              : NULL;
+    if (it)
+    {
+        buf[0] = '\0';
+        json_scalar(it, buf, sizeof(buf));
+        add_field("capture_interval_s", buf[0] ? buf : "0", row_h, iw - 2);
+    }
+    /* ...and a pruning policy, which every capturing module has. */
+    it = root ? cJSON_GetObjectItemCaseSensitive(root, "retention_days") : NULL;
+    if (it)
+    {
+        buf[0] = '\0';
+        json_scalar(it, buf, sizeof(buf));
+        add_field("retention_days", buf[0] ? buf : "0", row_h, iw - 2);
+    }
 
     if (!g_add_mode && (!g_kind[0] || strcmp(g_kind, "battery") == 0 ||
                         strcmp(g_kind, "charger") == 0))

@@ -460,7 +460,9 @@ static cJSON *build_tools_list(void)
     cJSON_AddItemToObject(schema, "required", req);
     cJSON_AddFalseToObject(schema, "additionalProperties");
     cJSON_AddItemToArray(tools, make_tool("device_history",
-        "Get the recent time-series (SOC for batteries, power for chargers) for one device.",
+        "Get the recent time-series of one module's graph column (e.g. SOC for "
+        "batteries, power for chargers, temperature for weather); the reply "
+        "names the column.",
         schema));
 
     /* status - no params. */

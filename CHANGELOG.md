@@ -5,6 +5,52 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-09-24
+
+### Added
+
+- Modules advertise history capture. A plugin's `describe()` may carry a
+  `capture` block with the default and minimum interval, the reading
+  fields to keep as columns (numeric or text, by dotted path), and the
+  column to graph. `GET /api/v1/drivers` passes it through, and capturing
+  drivers and modules list `history` in `caps`. All shipped plugins
+  declare one: XD and JK batteries and the demo battery (10 s; pack_v,
+  current_a, power_w, soc), Classic and the demo charger (10 s; pack_v,
+  current_a, power_w), and weather.gov (600 s, minimum 60; temp_f,
+  humidity_pct, wind_mph, conditions, icon, station).
+- Every capturing module has a pruning policy, `retention_days` (whole
+  days, 0 = keep forever). Plugins must declare a default in their capture
+  block; one without it is rejected (the daemon logs a warning and the
+  module records nothing). Users change it per module: Keep History in
+  the settings form, or `retention_days` in a settings PUT. Each module
+  prunes only its own file, hourly, at most 500 rows per main-loop pass.
+  Every shipped plugin defaults to 60 days.
+- Battery readings (XD, JK, demo) now include `power_w`.
+
+### Changed
+
+- History is one SQLite file per module,
+  `/var/lib/moonflare/history/<uuid>.sqlite`, instead of one shared
+  `history.sqlite`. Each keeps the whole reading plus the module's declared
+  columns, and a `module` table with its identity and capture spec. Newly
+  declared columns are added to existing files. Removing a module keeps its
+  file and marks it retired.
+- On first start the daemon migrates the old shared file into the
+  per-module files, one transaction per module (an interrupted run
+  resumes), and renames it `history.sqlite.migrated`. Old fixed-column
+  values fill any declared column the stored JSON lacks, so battery
+  `power_w` history carries over.
+- The capture interval exists only for modules that capture. Settings
+  omit `capture_interval_s` otherwise, and a PUT setting it non-zero on
+  such a module is a 400. For capturing modules it must be 0 or at least
+  the module's minimum. A module with no configured interval uses its
+  plugin's default instead of a fixed 10 s.
+- The graph shows whichever column the module declares (`graph`), not a
+  column picked by kind.
+- The settings and Add Module forms show Capture Interval only for
+  modules that capture, seeded with the module's default. weather.gov no
+  longer lists it among its own fields.
+
 ## [0.4.0] - 2026-09-24
 
 ### Added

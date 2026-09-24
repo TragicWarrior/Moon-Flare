@@ -77,7 +77,24 @@ typedef struct mf_plugin_ops {
      *                "hint": "(device)", "type": "string",
      *                "default": "/dev/ttyUSB0", "required": true}, ...]}
      * key: dotted config path.  type: "string" | "number" | "bool".
-     * default, hint, required: optional.  NULL: name + poll interval only. */
+     * default, hint, required: optional.  NULL: name + poll interval only.
+     *
+     * Optional "capture" (0.5.0): the module records history, in its own
+     * <uuid>.sqlite, and says how:
+     *   "capture": {"interval_s": 600, "min_s": 60, "retention_days": 60,
+     *               "graph": "temp_f",
+     *               "columns": {"temp_f": "weather.temp_f",
+     *                           "conditions": {"path": "weather.conditions",
+     *                                          "type": "text"}}}
+     * interval_s: default capture interval (0 = off until the user sets
+     * one); min_s: the shortest allowed (default 1).  retention_days
+     * (required): the default pruning policy, whole days, 0 = forever; a
+     * capture block without it is rejected and the module records nothing.
+     * The user can change it per module.  columns: name
+     * ([a-z0-9_], up to 31 chars) -> dotted path in the reading, numeric
+     * unless "type" is "text"; the whole reading is always kept too.
+     * graph: the numeric column the TUI graphs.  No "capture": the module
+     * records nothing and has no capture interval setting. */
     const char *(*describe)(void);
 } mf_plugin_ops_t;
 
