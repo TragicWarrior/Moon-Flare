@@ -34,25 +34,28 @@ int cli_render_list_devices(const cJSON *devices, int raw)
     if (!devices || !cJSON_IsArray(devices))
         return -1;
 
-    printf("%-38s %-10s %-8s %-10s %s\n", "ID", "NAME", "KIND", "DRIVER", "ONLINE");
+    printf("%-38s %-10s %-8s %-10s %-6s %s\n",
+        "ID", "NAME", "KIND", "DRIVER", "ONLINE", "ACTIVE");
 
     cJSON_ArrayForEach(item, devices)
     {
-        const cJSON *id, *name, *kind, *driver, *online;
+        const cJSON *id, *name, *kind, *driver, *online, *active;
         id = cJSON_GetObjectItemCaseSensitive(item, "id");
         name = cJSON_GetObjectItemCaseSensitive(item, "name");
         kind = cJSON_GetObjectItemCaseSensitive(item, "kind");
         driver = cJSON_GetObjectItemCaseSensitive(item, "driver");
         online = cJSON_GetObjectItemCaseSensitive(item, "online");
+        active = cJSON_GetObjectItemCaseSensitive(item, "active");
         if (!cJSON_IsString(id) || !cJSON_IsString(name) ||
             !cJSON_IsString(kind) || !cJSON_IsString(driver))
             continue;
         if (!cJSON_IsBool(online))
             continue;
-        printf("%-38s %-10s %-8s %-10s %s\n",
+        printf("%-38s %-10s %-8s %-10s %-6s %s\n",
             id->valuestring, name->valuestring,
             kind->valuestring, driver->valuestring,
-            online->valueint ? "yes" : "no");
+            online->valueint ? "yes" : "no",
+            !cJSON_IsBool(active) ? "?" : active->valueint ? "yes" : "no");
     }
 
     return 0;
@@ -157,9 +160,12 @@ int cli_render_query_device(const cJSON *dev, int raw)
         const char *state_str = "unknown";
         if (state && cJSON_IsString(state) && state->valuestring)
             state_str = state->valuestring;
+        const cJSON *active = cJSON_GetObjectItemCaseSensitive(dev, "active");
         printf("%s  (%s / %s)                     online \xc2\xb7 %s\n",
             name->valuestring, kind->valuestring, driver->valuestring,
             online->valueint ? state_str : "offline");
+        if (cJSON_IsFalse(active))
+            printf("  Inactive: not counted in system totals\n");
     }
 
     if (strcmp(kind->valuestring, "battery") == 0 && cJSON_IsObject(data))
@@ -350,6 +356,38 @@ static void print_device_line(const char *prefix, const cJSON *item)
         cJSON_IsString(driver) ? driver->valuestring : "?",
         cJSON_IsString(id) ? id->valuestring : "?",
         cJSON_IsBool(online) ? (online->valueint ? "online" : "offline") : "?");
+    if (cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(item, "active")))
+        printf("  inactive");
+}
+
+static double sys_num(const cJSON *sys, const char *key)
+{
+    const cJSON *n = cJSON_GetObjectItemCaseSensitive(sys, key);
+    return cJSON_IsNumber(n) ? n->valuedouble : 0.0;
+}
+
+/* Totals over the devices marked active; absent from older daemons. */
+static void print_system(const cJSON *sys)
+{
+    const cJSON *soc;
+
+    if (!cJSON_IsObject(sys))
+        return;
+    soc = cJSON_GetObjectItemCaseSensitive(sys, "soc_pct");
+    printf("\nSystem (%d/%d chargers, %d/%d batteries counted):\n",
+        (int)sys_num(sys, "chargers_counted"), (int)sys_num(sys, "chargers_total"),
+        (int)sys_num(sys, "batteries_counted"), (int)sys_num(sys, "batteries_total"));
+    printf("  Input      %5.0f W of %.0f W\n",
+        sys_num(sys, "input_w"), sys_num(sys, "input_max_w"));
+    if (cJSON_IsNumber(soc))
+        printf("  Capacity   SOC %.1f%%   %.2f of %.2f kWh\n", soc->valuedouble,
+            sys_num(sys, "stored_wh") / 1000.0,
+            sys_num(sys, "capacity_wh") / 1000.0);
+    else
+        printf("  Capacity   no data\n");
+    printf("  Discharge  %5.0f W of %.0f W   (charging %.0f W)\n",
+        sys_num(sys, "discharge_w"), sys_num(sys, "discharge_max_w"),
+        sys_num(sys, "charge_w"));
 }
 
 int cli_render_status(const cJSON *status, int raw)
@@ -375,6 +413,7 @@ int cli_render_status(const cJSON *status, int raw)
     server = cJSON_GetObjectItemCaseSensitive(status, "server");
     if (cJSON_IsString(server) && server->valuestring)
         printf("%s\n", server->valuestring);
+    print_system(cJSON_GetObjectItemCaseSensitive(status, "system"));
 
     batteries = cJSON_GetObjectItemCaseSensitive(status, "batteries");
     if (cJSON_IsArray(batteries) && cJSON_GetArraySize(batteries) > 0)

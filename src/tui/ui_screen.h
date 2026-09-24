@@ -41,6 +41,15 @@ int  mf_dash_catalog_n(void);
 const char *mf_dash_catalog_id(int i);
 const char *mf_dash_catalog_name(int i);
 const char *mf_dash_catalog_kind(int i);
+int  mf_dash_catalog_active(int i);
+
+/* Dashboard keys: arrows/Tab move the cursor, Enter opens, Space toggles
+ * whether the selected device counts toward the System totals. */
+#define MF_DASH_KEY_NONE    0
+#define MF_DASH_KEY_HANDLED 1
+#define MF_DASH_KEY_OPEN    2
+#define MF_DASH_KEY_TOGGLE  3
+int  mf_dash_key(wint_t c, int *cat_idx);
 
 void mf_pack_init(void);
 void mf_pack_show(int charger);

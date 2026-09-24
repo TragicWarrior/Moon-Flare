@@ -14,7 +14,7 @@
 #define MF_HTTP_IN_CAP      (MF_HTTP_HDR_CAP + MF_HTTP_BODY_CAP)
 #define MF_HTTP_OUT_CAP     65536
 #define MF_HTTP_IDLE_S      30.0
-#define MF_HTTP_SERVER_ID   "moonflared/0.1.0"
+#define MF_HTTP_SERVER_ID   "moonflared/" MF_VERSION
 
 #define MF_IO_WANT_READ  1u
 #define MF_IO_WANT_WRITE 2u

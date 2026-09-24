@@ -69,6 +69,7 @@ typedef struct {
     char kind[MF_DEV_KIND_SIZE];
     char driver[MF_DEV_DRIVER_SIZE];
     bool enabled;
+    bool active;                 /* counts toward system totals; default true */
     double poll_interval_s;
     double capture_interval_s;   /* history sample interval; 0=off, default 10 */
     char bus[MF_DEV_BUS_SIZE];
@@ -79,11 +80,21 @@ typedef struct {
 
 #define MF_MAX_DEVICES 16
 
+/* Full-scale values for the system meters (dashboard Input and Discharge). */
+#define MF_SYSTEM_INPUT_MAX_W_DEFAULT     3500.0
+#define MF_SYSTEM_DISCHARGE_MAX_W_DEFAULT 3000.0
+
+typedef struct {
+    double input_max_w;
+    double discharge_max_w;
+} mf_config_system_t;
+
 typedef struct {
     char listen[64];
     char plugin_dir[256];
     char gatt_bin[256];
     mf_config_history_t history;
+    mf_config_system_t system;
     mf_config_device_t devices[MF_MAX_DEVICES];
     int n_devices;
     uint64_t config_gen;

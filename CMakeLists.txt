@@ -1,12 +1,15 @@
 cmake_minimum_required(VERSION 3.14)
 project(moon-flare
-    VERSION 0.1.1
+    VERSION 0.2.0
     DESCRIPTION "Moon Flare: multi-kind energy dashboard (daemon, REST, plugins, TUI)"
     LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
+
+# One version for the daemon, CLI, MCP and TUI identity strings.
+add_compile_definitions(MF_VERSION="${PROJECT_VERSION}")
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
@@ -52,7 +55,7 @@ target_compile_options(mf_phr PRIVATE -w)
 
 enable_testing()
 
-add_executable(moonflared src/moonflared.c src/http/http_pt.c src/plugin/loader.c src/config/config.c src/rest/routes.c src/rest/discover.c src/device/device.c)
+add_executable(moonflared src/moonflared.c src/http/http_pt.c src/plugin/loader.c src/config/config.c src/rest/routes.c src/rest/discover.c src/device/device.c src/system/system.c)
 target_include_directories(moonflared PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
@@ -77,6 +80,7 @@ add_executable(moonflare
     src/tui/http_client.c
     src/tui/layout.c
     src/tui/mouse.c
+    src/system/system.c
     src/config/config.c)
 target_include_directories(moonflare PRIVATE
     ${CMAKE_SOURCE_DIR}/src
@@ -261,7 +265,7 @@ set_target_properties(test_history PROPERTIES BUILD_RPATH
     ${CMAKE_SOURCE_DIR}/third_party/sqlite/lib)
 add_test(NAME history COMMAND test_history)
 
-add_executable(test_routes tests/test_routes.c src/rest/routes.c src/rest/discover.c src/device/device.c src/plugin/loader.c src/config/config.c src/history/history.c)
+add_executable(test_routes tests/test_routes.c src/rest/routes.c src/rest/discover.c src/device/device.c src/plugin/loader.c src/config/config.c src/history/history.c src/system/system.c)
 target_include_directories(test_routes PRIVATE
     ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/rest
     ${CMAKE_SOURCE_DIR}/src/device ${CMAKE_SOURCE_DIR}/src/plugin
@@ -305,6 +309,12 @@ add_executable(test_tui_layout tests/test_tui_layout.c src/tui/layout.c)
 target_include_directories(test_tui_layout PRIVATE ${CMAKE_SOURCE_DIR}/src/tui)
 target_compile_options(test_tui_layout PRIVATE ${MF_WARN})
 add_test(NAME tui_layout COMMAND test_tui_layout)
+
+add_executable(test_system tests/test_system.c src/system/system.c)
+target_include_directories(test_system PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_options(test_system PRIVATE ${MF_WARN})
+target_link_libraries(test_system PRIVATE m)
+add_test(NAME system COMMAND test_system)
 
 add_executable(test_tui_http tests/test_tui_http.c src/tui/http_client.c)
 target_include_directories(test_tui_http PRIVATE ${CMAKE_SOURCE_DIR}/src/tui)

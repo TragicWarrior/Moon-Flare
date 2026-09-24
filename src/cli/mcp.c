@@ -425,7 +425,8 @@ static cJSON *build_tools_list(void)
     cJSON_AddItemToObject(schema, "properties", props);
     cJSON_AddFalseToObject(schema, "additionalProperties");
     cJSON_AddItemToArray(tools, make_tool("list_devices",
-        "List all devices known to moonflared (id, name, kind, driver, online status).",
+        "List all devices known to moonflared (id, name, kind, driver, online status, and "
+        "whether the device is active, i.e. counted in system totals).",
         schema));
 
     /* query_device - id required. */
@@ -469,7 +470,10 @@ static cJSON *build_tools_list(void)
     cJSON_AddItemToObject(schema, "properties", props);
     cJSON_AddFalseToObject(schema, "additionalProperties");
     cJSON_AddItemToArray(tools, make_tool("status",
-        "One-shot summary of every device grouped by kind.",
+        "One-shot summary of every device grouped by kind, plus a \"system\" object with "
+        "totals over the active, online devices: charger input watts, capacity-weighted "
+        "SOC, stored/capacity Wh, and battery charge/discharge watts. Devices marked "
+        "\"active\": false still report readings but are left out of the totals.",
         schema));
 
     return tools;
@@ -533,7 +537,7 @@ static cJSON *handle_initialize(const cJSON *params)
     {
         cJSON *si = cJSON_CreateObject();
         cJSON_AddStringToObject(si, "name", "moonflare-cli");
-        cJSON_AddStringToObject(si, "version", "0.1.0");
+        cJSON_AddStringToObject(si, "version", MF_VERSION);
         cJSON_AddItemToObject(result, "serverInfo", si);
     }
 

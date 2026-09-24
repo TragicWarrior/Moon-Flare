@@ -62,8 +62,8 @@ static void test_status(void)
     if (root)
     {
         cJSON *server = cJSON_GetObjectItem(root, "server");
-        check(server != NULL && strcmp(server->valuestring, "moonflared/0.1.0") == 0,
-              "server is moonflared/0.1.0");
+        check(server != NULL && strcmp(server->valuestring, "moonflared/" MF_VERSION) == 0,
+              "server is moonflared/" MF_VERSION);
 
         cJSON *inverters = cJSON_GetObjectItem(root, "inverters");
         check(inverters != NULL && cJSON_IsArray(inverters) &&
@@ -675,6 +675,88 @@ static void test_config_apply(void)
     check(strcmp(resp.body, "[]") == 0, "no live devices");
 }
 
+static void test_active(void)
+{
+    const char *body =
+        "{\"name\":\"act-batt\",\"kind\":\"battery\",\"driver\":\"demo\"}";
+    mf_rest_request_t req;
+    mf_rest_response_t resp;
+    char setpath[192];
+    const char *id;
+    cJSON *root, *sys, *row;
+
+    printf("11. active flag and system totals\n");
+
+    memset(&req, 0, sizeof(req));
+    req.method = "POST";
+    req.path = "/api/v1/devices";
+    req.body = body;
+    req.body_len = strlen(body);
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 201,
+          "POST active device");
+    id = strrchr(resp.location, '/');
+    check(id && id[1], "active id");
+    if (!id)
+        return;
+    id++;
+    snprintf(setpath, sizeof(setpath), "/api/v1/devices/%s/settings", id);
+
+    memset(&req, 0, sizeof(req));
+    req.method = "GET";
+    req.path = "/api/v1/status";
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 200,
+          "GET status");
+    root = cJSON_Parse(resp.body);
+    sys = cJSON_GetObjectItemCaseSensitive(root, "system");
+    check(cJSON_IsObject(sys), "status has system object");
+    check(cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(sys, "input_max_w")),
+          "system has input_max_w");
+    check(cJSON_GetObjectItemCaseSensitive(sys, "batteries_total") &&
+          cJSON_GetObjectItemCaseSensitive(sys, "batteries_total")->valueint >= 1,
+          "system counts the battery");
+    row = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(root, "batteries"), 0);
+    check(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(row, "active")),
+          "new device is active");
+    cJSON_Delete(root);
+
+    memset(&req, 0, sizeof(req));
+    req.method = "PUT";
+    req.path = setpath;
+    req.body = "{\"active\":\"no\",\"name\":\"should-not-apply\"}";
+    req.body_len = strlen(req.body);
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 400,
+          "PUT non-bool active → 400");
+
+    req.body = "{\"active\":false}";
+    req.body_len = strlen(req.body);
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 200,
+          "PUT active false → 200");
+    check(strstr(resp.body, "\"active\":false") != NULL,
+          "settings echoes active false");
+    check(strstr(resp.body, "should-not-apply") == NULL,
+          "rejected PUT left the name alone");
+
+    memset(&req, 0, sizeof(req));
+    req.method = "GET";
+    req.path = "/api/v1/devices";
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 &&
+          strstr(resp.body, "\"active\":false") != NULL,
+          "device list shows inactive");
+
+    memset(&req, 0, sizeof(req));
+    req.method = "GET";
+    req.path = "/api/v1/config";
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 &&
+          strstr(resp.body, "\"active\":false") != NULL,
+          "config records inactive for saving");
+}
+
 int main(void)
 {
     srand((unsigned)time(NULL));
@@ -692,6 +774,7 @@ int main(void)
     test_malformed_json();
     test_delete();
     test_pr10();
+    test_active();
     test_config_apply();
 
     printf("\n");

@@ -43,6 +43,14 @@ Do not `systemctl enable --now moonflared` until the soak stage below matches th
 
 Config search (daemon `moonflared.json`, TUI `moonflare.json`): `--config`, then `~/.config/moonflare/`, then `/etc/moonflare/`. systemd `StateDirectory=moonflare` is `/var/lib/moonflare` (history + endpoint overlay).
 
+## System totals
+
+The dashboard's System panel (and `moonflare-cli --status`, and the MCP `status` tool) shows site-wide Input, Capacity and Discharge. Only devices marked **active** count. A device that reports readings but isn't wired into the system (a pack on the bench, say) can stay enabled but inactive: select it on the dashboard and press **Space**, or `PUT /api/v1/devices/{id}/settings` with `{"active": false}`. The flag persists across restarts. The meters' full scale comes from `moonflared.json`:
+
+```json
+"system": { "input_max_w": 3500, "discharge_max_w": 3000 }
+```
+
 ## Soak (batteryman)
 
 Order from the design Rollout. Do not skip to JK.

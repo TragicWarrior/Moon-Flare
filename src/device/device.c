@@ -33,6 +33,7 @@ typedef struct mf_device {
     char     bus[32];
     char     endpoint[160];
     bool     enabled;
+    bool     active;
     unsigned caps;
     const mf_plugin_ops_t *ops;
     void    *ctx;
@@ -92,11 +93,22 @@ static void fill_info(const mf_device_t *d, mf_devinfo_t *out)
     out->driver = d->driver;
     out->endpoint = d->endpoint;
     out->online = d->online;
+    out->active = d->active;
     out->dying = d->in_use && d->stop;
     out->seq = d->seq;
     out->caps = d->caps;
     out->reading_json = d->have_data ? d->reading_json : "{}";
     out->last_error = d->last_error;
+}
+
+/* Settings the daemon owns for every device; never passed to the plugin. */
+static int is_generic_setting(const char *key)
+{
+    return strcmp(key, "name") == 0 ||
+           strcmp(key, "poll_interval_s") == 0 ||
+           strcmp(key, "capture_interval_s") == 0 ||
+           strcmp(key, "active") == 0 ||
+           strcmp(key, "uuid") == 0;
 }
 
 static int name_taken(const char *name, int skip)
@@ -465,8 +477,11 @@ int mf_devices_add(const char *name, const char *kind, const char *driver,
         cJSON *sroot = spec_json ? cJSON_Parse(spec_json) : NULL;
         cJSON *cit = sroot ? cJSON_GetObjectItemCaseSensitive(sroot,
                              "capture_interval_s") : NULL;
+        cJSON *ait = sroot ? cJSON_GetObjectItemCaseSensitive(sroot,
+                             "active") : NULL;
         if (cit && cJSON_IsNumber(cit))
             cap = cit->valuedouble;
+        d->active = !cJSON_IsFalse(ait);
         if (sroot)
             cJSON_Delete(sroot);
         if (cap != 0.0 && cap < 1.0)
@@ -557,6 +572,7 @@ int mf_devices_get_settings(const char *uuid, char *json, size_t cap)
     cJSON_AddStringToObject(out, "name", d->name);
     cJSON_AddNumberToObject(out, "poll_interval_s", d->poll_interval_s);
     cJSON_AddNumberToObject(out, "capture_interval_s", d->capture_interval_s);
+    cJSON_AddBoolToObject(out, "active", d->active);
     if (plug[0] == '{')
         plug_root = cJSON_Parse(plug);
     if (plug_root && cJSON_IsObject(plug_root))
@@ -567,10 +583,7 @@ int mf_devices_get_settings(const char *uuid, char *json, size_t cap)
 
             if (!it->string || !it->string[0])
                 continue;
-            if (strcmp(it->string, "poll_interval_s") == 0 ||
-                strcmp(it->string, "capture_interval_s") == 0 ||
-                strcmp(it->string, "name") == 0 ||
-                strcmp(it->string, "uuid") == 0)
+            if (is_generic_setting(it->string))
                 continue;
             copy = cJSON_Duplicate(it, 1);
             if (copy)
@@ -614,6 +627,15 @@ int mf_devices_put_settings(const char *uuid, const char *json,
     root = cJSON_Parse(json);
     if (root && cJSON_IsObject(root))
     {
+        /* Type-check up front: nothing below may be half-applied by it. */
+        it = cJSON_GetObjectItemCaseSensitive(root, "active");
+        if (it && !cJSON_IsBool(it))
+        {
+            if (err && errsz)
+                snprintf(err, errsz, "active must be true or false");
+            cJSON_Delete(root);
+            return 400;
+        }
         it = cJSON_GetObjectItemCaseSensitive(root, "name");
         if (cJSON_IsString(it) && it->valuestring)
         {
@@ -673,14 +695,14 @@ int mf_devices_put_settings(const char *uuid, const char *json,
             }
             d->capture_interval_s = iv;
         }
+        it = cJSON_GetObjectItemCaseSensitive(root, "active");
+        if (cJSON_IsBool(it))
+            d->active = cJSON_IsTrue(it);
         for (it = root->child; it; it = it->next)
         {
             if (!it->string || !it->string[0])
                 continue;
-            if (strcmp(it->string, "name") == 0 ||
-                strcmp(it->string, "poll_interval_s") == 0 ||
-                strcmp(it->string, "capture_interval_s") == 0 ||
-                strcmp(it->string, "uuid") == 0)
+            if (is_generic_setting(it->string))
                 continue;
             have_other = 1;
         }
@@ -995,6 +1017,7 @@ int mf_devices_apply_config(const mf_config_device_t *devs, int n,
         snprintf(d->name, sizeof(d->name), "%.*s",
                  (int)sizeof(d->name) - 1, want->name);
         d->enabled = want->enabled;
+        d->active = want->active;
         if (want->poll_interval_s > 0.0)
         {
             double mn = mf_poll_interval_min(d->driver);

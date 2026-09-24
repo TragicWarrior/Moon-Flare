@@ -563,6 +563,114 @@ static void test_overlay_name_persist(void)
     printf("PASS: overlay name persist\n");
 }
 
+static void test_active_and_system(void)
+{
+    char dir[] = "/tmp/mf-act-XXXXXX";
+    char path[256];
+    mf_daemon_config_t cfg, loaded;
+    cJSON *root;
+    char *json;
+    const char *base_json =
+        "{\"system\":{\"input_max_w\":4200},"
+        "\"devices\":[{\"uuid\":\"aaaaaaaa-bbbb-cccc-dddd-000000000001\","
+        "\"name\":\"jk\",\"active\":false,\"capture_interval_s\":30},"
+        "{\"uuid\":\"aaaaaaaa-bbbb-cccc-dddd-000000000002\",\"name\":\"xd\"}]}";
+
+    mf_config_defaults(&cfg);
+    assert_true(cfg.system.input_max_w == MF_SYSTEM_INPUT_MAX_W_DEFAULT,
+                "system: input max default");
+    root = cJSON_Parse(base_json);
+    mf_config_apply_json(&cfg, root);
+    cJSON_Delete(root);
+    assert_true(cfg.system.input_max_w == 4200.0, "system: input max parsed");
+    assert_true(cfg.system.discharge_max_w == MF_SYSTEM_DISCHARGE_MAX_W_DEFAULT,
+                "system: discharge max keeps default");
+    assert_true(!cfg.devices[0].active, "active:false parsed");
+    assert_true(cfg.devices[1].active, "active defaults to true");
+
+    json = mf_config_serialize(&cfg);
+    assert_true(json && strstr(json, "\"active\":false") &&
+                strstr(json, "\"input_max_w\":4200"),
+                "active and system serialized");
+    free(json);
+
+    /* Overlay round-trip carries active and capture_interval_s. */
+    assert_true(mkdtemp(dir) != NULL, "active tmpdir");
+    snprintf(path, sizeof(path), "%s/settings.json", dir);
+    setenv("MF_SETTINGS_OVERLAY", path, 1);
+    cfg.devices[1].active = false;
+    cfg.devices[1].capture_interval_s = 60.0;
+    assert_int_eq(0, mf_config_save_overlay(&cfg), "active overlay save");
+    mf_config_defaults(&loaded);
+    root = cJSON_Parse(base_json);
+    mf_config_apply_json(&loaded, root);
+    cJSON_Delete(root);
+    assert_int_eq(0, mf_config_load_overlay(&loaded), "active overlay load");
+    assert_true(!loaded.devices[1].active, "overlay active wins");
+    assert_true(loaded.devices[1].capture_interval_s == 60.0,
+                "overlay capture_interval_s wins");
+
+    /* An overlay from before "active" existed must not reset it to true. */
+    write_text(path, "{\"devices\":[{\"uuid\":"
+               "\"aaaaaaaa-bbbb-cccc-dddd-000000000001\",\"name\":\"jk\"}]}");
+    mf_config_defaults(&loaded);
+    root = cJSON_Parse(base_json);
+    mf_config_apply_json(&loaded, root);
+    cJSON_Delete(root);
+    assert_int_eq(0, mf_config_load_overlay(&loaded), "old overlay load");
+    assert_true(!loaded.devices[0].active, "old overlay keeps base active");
+    assert_true(loaded.devices[0].capture_interval_s == 30.0,
+                "old overlay keeps base capture_interval_s");
+
+    unsetenv("MF_SETTINGS_OVERLAY");
+    unlink(path);
+    rmdir(dir);
+    printf("PASS: active flag and system section\n");
+}
+
+static void test_saved_config_reloads(void)
+{
+    mf_daemon_config_t cfg, again;
+    cJSON *root;
+    char *json;
+    char a[160], b[160];
+
+    /* Two devices with no transport: the saved form writes
+     * "modbus":{"ip":null,...} for both. Re-loading must not invent an
+     * endpoint (they would collide as duplicates) or turn on auto_net. */
+    mf_config_defaults(&cfg);
+    root = cJSON_Parse(
+        "{\"devices\":[{\"uuid\":\"aaaaaaaa-bbbb-cccc-dddd-000000000011\","
+        "\"name\":\"one\",\"kind\":\"battery\",\"driver\":\"demo\"},"
+        "{\"uuid\":\"aaaaaaaa-bbbb-cccc-dddd-000000000012\","
+        "\"name\":\"two\",\"kind\":\"charger\",\"driver\":\"demo\"}]}");
+    mf_config_apply_json(&cfg, root);
+    cJSON_Delete(root);
+    json = mf_config_serialize(&cfg);
+    assert_true(json != NULL, "reload: serialize");
+    mf_config_defaults(&again);
+    root = cJSON_Parse(json);
+    free(json);
+    mf_config_apply_json(&again, root);
+    cJSON_Delete(root);
+    assert_int_eq(2, again.n_devices, "reload: both devices back");
+    mf_config_device_endpoint(&again.devices[0], a, sizeof(a));
+    mf_config_device_endpoint(&again.devices[1], b, sizeof(b));
+    assert_true(a[0] == '\0' && b[0] == '\0', "reload: no invented endpoint");
+    assert_true(!again.devices[0].modbus.auto_net, "reload: auto_net stays off");
+
+    /* A modbus key left out still reads as not-set (-1). */
+    mf_config_defaults(&again);
+    root = cJSON_Parse(
+        "{\"devices\":[{\"uuid\":\"aaaaaaaa-bbbb-cccc-dddd-000000000013\","
+        "\"name\":\"three\",\"modbus\":{\"ip\":\"10.0.0.9\"}}]}");
+    mf_config_apply_json(&again, root);
+    cJSON_Delete(root);
+    assert_int_eq(-1, again.devices[0].modbus.unit_id,
+                  "reload: absent modbus number is not-set");
+    printf("PASS: saved config reloads\n");
+}
+
 /* ------------------------------------------------------------------ */
 /* main                                                               */
 /* ------------------------------------------------------------------ */
@@ -578,6 +686,8 @@ int main(void)
     test_passwords();
     test_overlay_merge();
     test_overlay_name_persist();
+    test_active_and_system();
+    test_saved_config_reloads();
 
     printf("\nAll config tests passed.\n");
     return 0;
