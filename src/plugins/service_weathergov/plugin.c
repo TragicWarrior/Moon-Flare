@@ -163,7 +163,7 @@ static const char *wx_describe(void)
     return
         "{\"fields\":["
         "{\"key\":\"poll_interval_s\",\"label\":\"Update Every\",\"hint\":\"(>=300 sec)\",\"type\":\"number\",\"default\":600},"
-        "{\"key\":\"capture_interval_s\",\"label\":\"Capture Interval\",\"hint\":\"(Sec 0=off)\",\"type\":\"number\",\"default\":0},"
+        "{\"key\":\"capture_interval_s\",\"label\":\"Capture Interval\",\"hint\":\"(Sec 0=off)\",\"type\":\"number\",\"default\":600},"
         "{\"key\":\"weather.zip\",\"label\":\"ZIP Code\",\"hint\":\"(5 digits)\",\"type\":\"string\"},"
         "{\"key\":\"weather.station\",\"label\":\"Station\",\"hint\":\"(blank=near)\",\"type\":\"string\"},"
         "{\"key\":\"weather.zip_update_days\",\"label\":\"ZIP Table Check\",\"hint\":\"(days,0=off)\",\"type\":\"number\",\"default\":7},"

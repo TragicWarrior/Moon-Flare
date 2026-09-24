@@ -46,6 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the five nearest stations; an observation with no temperature or older
   than two hours, or a station that fails, is skipped for the next nearest
   one, and if none is good the last good reading stays up.
+- Weather history: new weather modules capture their reading (including
+  the forecast of the moment) to the history database every 600 s by
+  default, matching the update interval, for later analysis.
 - Weather settings can be changed after adding: select the module on the
   dashboard and press `e`. ZIP, station, table-check days, latitude and
   longitude, and contact take effect at once (a new place is looked up
