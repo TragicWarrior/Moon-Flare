@@ -249,6 +249,8 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
     cJSON_AddBoolToObject(row, "online", d->online);
     cJSON_AddBoolToObject(row, "active", d->active);
     cJSON_AddNumberToObject(row, "seq", (double)d->seq);
+    if (!d->online && d->last_error && d->last_error[0])
+        cJSON_AddStringToObject(row, "last_error", d->last_error);
 
     if (strcmp(d->kind, "charger") == 0)
     {

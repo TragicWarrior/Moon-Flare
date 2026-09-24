@@ -19,12 +19,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   forecast periods, and the station and time of the observation.
 - A weather.gov service plugin (`libmf_service_weathergov.so`, kind
   `service`, driver `weathergov`). Add it with Devices → Add Module; the
-  form asks for latitude, longitude and a contact email, which weather.gov
-  wants in the User-Agent. It fetches current conditions every 10 minutes
+  form asks for a ZIP code and a contact email, which weather.gov wants in
+  the User-Agent. It fetches current conditions every 10 minutes
   (configurable, at least 5) and the forecast every 30, using libcurl
   without blocking the daemon. Its reading is provider-neutral, so another
   weather provider can feed the same panel. Building it needs
-  `libcurl4-openssl-dev`; without that it is skipped.
+  `libcurl4-openssl-dev` and zlib; without libcurl it is skipped.
+- ZIP codes are looked up offline in the Census Bureau's ZIP centroid
+  table (`data/zcta.txt`, 33,791 ZIPs from the 2026 Gazetteer, installed to
+  `share/moon-flare/zcta.txt`). Every `weather.zip_update_days` days
+  (default 7, 0 = never) the plugin checks census.gov for the next year's
+  table; when one appears it downloads, unzips and installs it in
+  `/var/lib/moonflare/weathergov/`, which then takes priority over the
+  shipped copy. Latitude and longitude remain as optional overrides.
+- A module that is offline now reports its `last_error` in
+  `GET /api/v1/status`, and the Info panel shows a weather service's error
+  (e.g. "ZIP 00000 not found") under "waiting for weather".
 - Plugin-specific settings, such as the weather location, are now kept in
   the daemon's config and passed back to the plugin on start. Before this,
   any setting the daemon had no field for was dropped when the config was

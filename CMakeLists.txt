@@ -204,12 +204,27 @@ add_test(NAME xd_plugin COMMAND test_xd_plugin $<TARGET_FILE:mf_battery_xd>)
 find_package(CURL)
 if(CURL_FOUND)
     set_target_properties(mf_cjson PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    find_package(ZLIB REQUIRED)
+    include(GNUInstallDirs)
     add_library(mf_service_weathergov SHARED
-        src/plugins/service_weathergov/plugin.c)
+        src/plugins/service_weathergov/plugin.c
+        src/plugins/service_weathergov/zcta.c)
     target_include_directories(mf_service_weathergov PRIVATE
         ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/third_party/cJSON)
     target_link_libraries(mf_service_weathergov PRIVATE
-        CURL::libcurl mf_cjson m)
+        CURL::libcurl ZLIB::ZLIB mf_cjson m)
+    target_compile_definitions(mf_service_weathergov PRIVATE
+        MF_DATADIR="${CMAKE_INSTALL_FULL_DATADIR}/moon-flare")
+
+    # ZIP table: parsing, unzip and lookup, without the network.
+    add_executable(test_zcta tests/test_zcta.c
+        src/plugins/service_weathergov/zcta.c)
+    target_include_directories(test_zcta PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/plugins/service_weathergov)
+    target_link_libraries(test_zcta PRIVATE ZLIB::ZLIB)
+    target_compile_definitions(test_zcta PRIVATE
+        MF_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    add_test(NAME zcta COMMAND test_zcta)
     set_target_properties(mf_service_weathergov PROPERTIES
         PREFIX "lib" OUTPUT_NAME "mf_service_weathergov"
         LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/weather_plugins)
@@ -363,6 +378,7 @@ install(TARGETS mf_charger_classic mf_battery_xd mf_battery_jk
         LIBRARY DESTINATION lib/moon-flare)
 if(TARGET mf_service_weathergov)
     install(TARGETS mf_service_weathergov LIBRARY DESTINATION lib/moon-flare)
+    install(FILES data/zcta.txt DESTINATION ${CMAKE_INSTALL_DATADIR}/moon-flare)
 endif()
 # The demo plugin fakes a battery and a charger for development.  Keep it
 # out of production plugin dirs unless asked for.

@@ -1,7 +1,11 @@
 /* Weather service: api.weather.gov (US National Weather Service).
  *
  * kind "service", driver "weathergov".  Needs a location and a contact
- * address (weather.gov asks for one in the User-Agent).  Requests run on
+ * address (weather.gov asks for one in the User-Agent).  The location is a
+ * ZIP code, looked up offline in the Census ZIP centroid table (zcta.c),
+ * or an explicit latitude/longitude.  Every weather.zip_update_days days the
+ * plugin asks census.gov whether a newer yearly table exists and installs
+ * it in its state directory.  Requests run on
  * libcurl's multi interface, driven from the daemon's select() loop through
  * prepare_fds() and step(), so nothing blocks:
  *
@@ -19,6 +23,7 @@
  */
 
 #include "mf_plugin.h"
+#include "zcta.h"
 
 #include <cJSON.h>
 #include <curl/curl.h>
@@ -37,8 +42,16 @@
 #define WX_STALE_S      (3.0 * 3600.0)
 #define WX_BODY_MAX     (512 * 1024)
 #define WX_NFC          2
+#define WX_ZCTA_URL     "https://www2.census.gov/geo/docs/maps-data/data/" \
+                        "gazetteer/%d_Gazetteer/%d_Gaz_zcta_national.zip"
+#define WX_ZCTA_MAX     (8 * 1024 * 1024)
+#define WX_ZCTA_RETRY_S 3600
+#define WX_DAY_S        86400
 
-typedef enum { WX_NONE, WX_POINTS, WX_STATION, WX_OBS, WX_FORECAST } wx_req_t;
+typedef enum {
+    WX_NONE, WX_POINTS, WX_STATION, WX_OBS, WX_FORECAST,
+    WX_ZCTA_HEAD, WX_ZCTA_GET      /* is there a newer ZIP table? fetch it */
+} wx_req_t;
 
 typedef struct {
     char   name[24];
@@ -55,6 +68,17 @@ typedef struct {
     char              *body;
     size_t             len;
     size_t             cap;
+    size_t             body_max;
+
+    char               zip[8];          /* "" when lat/lon were given */
+    int                have_loc;
+    int                zip_missing;     /* ZIP not in the table: wait for an update */
+    double             update_days;     /* 0 = never check for a newer table */
+    long               next_zcta;       /* wall clock (epoch) of the next check */
+    int                zcta_year;       /* year being checked/fetched */
+    char               zcta_state[256];
+    char               zcta_meta[256];
+    char               zcta_base[256];
 
     double             lat;
     double             lon;
@@ -109,8 +133,10 @@ static const char *wx_describe(void)
         "{\"fields\":["
         "{\"key\":\"poll_interval_s\",\"label\":\"Update Every\",\"hint\":\"(>=300 sec)\",\"type\":\"number\",\"default\":600},"
         "{\"key\":\"capture_interval_s\",\"label\":\"Capture Interval\",\"hint\":\"(Sec 0=off)\",\"type\":\"number\",\"default\":0},"
-        "{\"key\":\"weather.lat\",\"label\":\"Latitude\",\"hint\":\"(32.78)\",\"type\":\"number\",\"required\":true},"
-        "{\"key\":\"weather.lon\",\"label\":\"Longitude\",\"hint\":\"(-96.80)\",\"type\":\"number\",\"required\":true},"
+        "{\"key\":\"weather.zip\",\"label\":\"ZIP Code\",\"hint\":\"(5 digits)\",\"type\":\"string\"},"
+        "{\"key\":\"weather.zip_update_days\",\"label\":\"ZIP Table Check\",\"hint\":\"(days,0=off)\",\"type\":\"number\",\"default\":7},"
+        "{\"key\":\"weather.lat\",\"label\":\"Latitude\",\"hint\":\"(optional)\",\"type\":\"number\"},"
+        "{\"key\":\"weather.lon\",\"label\":\"Longitude\",\"hint\":\"(optional)\",\"type\":\"number\"},"
         "{\"key\":\"weather.contact\",\"label\":\"Contact Email\",\"hint\":\"(for NWS)\",\"type\":\"string\",\"required\":true}"
         "]}";
 }
@@ -133,7 +159,7 @@ static size_t on_body(char *p, size_t sz, size_t n, void *arg)
     wx_ctx_t *c = arg;
     size_t add = sz * n;
 
-    if (c->len + add + 1 > WX_BODY_MAX)
+    if (c->len + add + 1 > c->body_max)
         return 0;                       /* abort: absurdly large reply */
     if (c->len + add + 1 > c->cap)
     {
@@ -165,6 +191,9 @@ static int start_get(wx_ctx_t *c, wx_req_t what, const char *url)
     c->len = 0;
     if (c->body)
         c->body[0] = '\0';
+    c->body_max = what == WX_ZCTA_GET ? WX_ZCTA_MAX : WX_BODY_MAX;
+    if (what == WX_ZCTA_HEAD)
+        curl_easy_setopt(c->easy, CURLOPT_NOBODY, 1L);
     curl_easy_setopt(c->easy, CURLOPT_URL, url);
     curl_easy_setopt(c->easy, CURLOPT_USERAGENT, c->ua);
     curl_easy_setopt(c->easy, CURLOPT_HTTPHEADER, c->hdrs);
@@ -322,6 +351,55 @@ static int parse_forecast(wx_ctx_t *c, const cJSON *root)
     return 0;
 }
 
+static void zcta_next_check(wx_ctx_t *c, long now)
+{
+    c->next_zcta = now + (long)(c->update_days * WX_DAY_S);
+    (void)zcta_meta_write(c->zcta_meta, now);
+}
+
+/* Unzip, convert and install a newer Census table; re-resolve the ZIP. */
+static void zcta_install(wx_ctx_t *c)
+{
+    char *txt = NULL, *tab = NULL;
+    size_t tl = 0, bl = 0;
+    int rows = -1;
+
+    if (zcta_unzip_single((const unsigned char *)c->body, c->len, &txt, &tl) == 0)
+        rows = zcta_from_gazetteer(txt, tl, c->zcta_year, &tab, &bl);
+    if (rows > 1000 && zcta_write_atomic(c->zcta_state, tab, bl) == 0)
+    {
+        if (c->zip[0])
+            c->have_loc = 0;            /* look the ZIP up in the new table */
+        c->zip_missing = 0;
+    }
+    else
+        set_err(c, "ZIP table update could not be installed", NULL);
+    free(txt);
+    free(tab);
+}
+
+static void finish_zcta(wx_ctx_t *c, wx_req_t what, CURLcode rc, long code)
+{
+    long now = (long)time(NULL);
+    char url[256];
+
+    if (rc != CURLE_OK || (code != 200 && code != 404 && code != 403))
+    {
+        c->next_zcta = now + WX_ZCTA_RETRY_S;   /* census.gov unreachable */
+        return;
+    }
+    if (what == WX_ZCTA_HEAD && code == 200)
+    {
+        snprintf(url, sizeof(url), WX_ZCTA_URL, c->zcta_year, c->zcta_year);
+        if (start_get(c, WX_ZCTA_GET, url) != 0)
+            c->next_zcta = now + WX_ZCTA_RETRY_S;
+        return;
+    }
+    if (what == WX_ZCTA_GET && code == 200)
+        zcta_install(c);
+    zcta_next_check(c, now);            /* up to date, or just updated */
+}
+
 /* A request finished: parse it and schedule what comes next. */
 static void finish(wx_ctx_t *c, CURLcode rc)
 {
@@ -333,6 +411,11 @@ static void finish(wx_ctx_t *c, CURLcode rc)
 
     curl_easy_getinfo(c->easy, CURLINFO_RESPONSE_CODE, &code);
     end_request(c);
+    if (what == WX_ZCTA_HEAD || what == WX_ZCTA_GET)
+    {
+        finish_zcta(c, what, rc, code);
+        return;
+    }
     if (rc != CURLE_OK)
         set_err(c, "weather.gov request failed", curl_easy_strerror(rc));
     else if (code != 200)
@@ -379,11 +462,73 @@ static void finish(wx_ctx_t *c, CURLcode rc)
         c->next_fc = now + WX_RETRY_S;
 }
 
+/* ZIP -> latitude/longitude from the offline table. */
+static void resolve_zip(wx_ctx_t *c)
+{
+    const char *tab = zcta_pick(c->zcta_state, c->zcta_base);
+    double lat, lon;
+    int rc;
+
+    if (c->have_loc || c->zip_missing || !c->zip[0])
+        return;
+    rc = zcta_lookup(tab, c->zip, &lat, &lon);
+    if (rc == 0)
+    {
+        if (lat != c->lat || lon != c->lon)
+        {
+            c->forecast_url[0] = '\0';  /* new place: look it up again */
+            c->station[0] = '\0';
+            c->next_points = 0;
+        }
+        c->lat = lat;
+        c->lon = lon;
+        c->have_loc = 1;
+        return;
+    }
+    c->zip_missing = 1;
+    if (rc == -2)
+        set_err(c, "ZIP table not found", tab);
+    else
+    {
+        char msg[48];
+
+        snprintf(msg, sizeof(msg), "ZIP %s not found", c->zip);
+        set_err(c, msg, NULL);
+    }
+}
+
+static void start_zcta_check(wx_ctx_t *c)
+{
+    char url[256];
+    long now = (long)time(NULL);
+
+    if (c->update_days <= 0 || now < c->next_zcta)
+        return;
+    c->zcta_year = zcta_file_year(zcta_pick(c->zcta_state, c->zcta_base)) + 1;
+    if (c->zcta_year < 2000)            /* no readable table: try this year */
+    {
+        time_t t = (time_t)now;
+        struct tm tm;
+
+        gmtime_r(&t, &tm);
+        c->zcta_year = tm.tm_year + 1900;
+    }
+    snprintf(url, sizeof(url), WX_ZCTA_URL, c->zcta_year, c->zcta_year);
+    if (start_get(c, WX_ZCTA_HEAD, url) != 0)
+        c->next_zcta = now + WX_ZCTA_RETRY_S;
+}
+
 static void start_next(wx_ctx_t *c)
 {
     char url[320];
     double now = mono_now();
 
+    resolve_zip(c);
+    if (!c->have_loc)
+    {
+        start_zcta_check(c);            /* a newer table may know the ZIP */
+        return;
+    }
     if (!c->forecast_url[0] || now >= c->next_points)
     {
         if (now < c->next_points)
@@ -406,6 +551,8 @@ static void start_next(wx_ctx_t *c)
     }
     else if (now >= c->next_fc)
         (void)start_get(c, WX_FORECAST, c->forecast_url);
+    else
+        start_zcta_check(c);            /* only when the weather is idle */
 }
 
 /* ---- plugin ops ---------------------------------------------------- */
@@ -417,11 +564,26 @@ static void *wx_open(const char *spec_json, char *err, size_t errsz)
     const cJSON *contact = cJSON_GetObjectItemCaseSensitive(w, "contact");
     wx_ctx_t *c;
 
-    if (!cJSON_IsObject(w) || !cJSON_GetObjectItemCaseSensitive(w, "lat") ||
-        !cJSON_GetObjectItemCaseSensitive(w, "lon"))
+    const cJSON *zj = cJSON_GetObjectItemCaseSensitive(w, "zip");
+    char zip[8] = "";
+    int have_ll = cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(w, "lat")) &&
+                  cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(w, "lon"));
+
+    if (cJSON_IsNumber(zj))
+        snprintf(zip, sizeof(zip), "%05d", (int)zj->valuedouble);
+    else if (cJSON_IsString(zj))
+        snprintf(zip, sizeof(zip), "%.5s", zj->valuestring);
+    if (zip[0] && (strlen(zip) != 5 || strspn(zip, "0123456789") != 5))
     {
         if (err && errsz)
-            snprintf(err, errsz, "weather.lat and weather.lon are required");
+            snprintf(err, errsz, "weather.zip must be 5 digits");
+        cJSON_Delete(spec);
+        return NULL;
+    }
+    if (!zip[0] && !have_ll)
+    {
+        if (err && errsz)
+            snprintf(err, errsz, "set weather.zip (or weather.lat and weather.lon)");
         cJSON_Delete(spec);
         return NULL;
     }
@@ -449,8 +611,20 @@ static void *wx_open(const char *spec_json, char *err, size_t errsz)
         cJSON_Delete(spec);
         return NULL;
     }
-    c->lat = json_num(w, "lat", 0.0);
-    c->lon = json_num(w, "lon", 0.0);
+    /* Explicit coordinates win; otherwise the ZIP is looked up in step(). */
+    if (have_ll)
+    {
+        c->lat = json_num(w, "lat", 0.0);
+        c->lon = json_num(w, "lon", 0.0);
+        c->have_loc = 1;
+    }
+    else
+        snprintf(c->zip, sizeof(c->zip), "%s", zip);
+    c->update_days = json_num(w, "zip_update_days", 7.0);
+    zcta_paths(c->zcta_state, sizeof(c->zcta_state), c->zcta_meta,
+               sizeof(c->zcta_meta), c->zcta_base, sizeof(c->zcta_base));
+    c->next_zcta = zcta_meta_checked(c->zcta_meta) +
+                   (long)(c->update_days * WX_DAY_S);
     c->obs_every = json_num(spec, "poll_interval_s", 600.0);
     if (c->obs_every < WX_OBS_MIN_S)
         c->obs_every = WX_OBS_MIN_S;
@@ -587,6 +761,8 @@ static int wx_get_reading(void *ctx, char *json, size_t cap)
     cJSON_AddStringToObject(wx, "wind_dir", c->wind_dir);
     cJSON_AddStringToObject(wx, "station", c->station);
     cJSON_AddStringToObject(wx, "place", c->place);
+    if (c->zip[0])
+        cJSON_AddStringToObject(wx, "zip", c->zip);
     cJSON_AddStringToObject(wx, "observed_local", c->observed_local);
     fc = cJSON_AddArrayToObject(wx, "forecast");
     for (i = 0; i < c->nfc; i++)

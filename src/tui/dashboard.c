@@ -736,6 +736,7 @@ static void short_period(const char *name, char *out, size_t cap)
 static void fill_info(const cJSON *services)
 {
     const cJSON *svc, *wx = NULL;
+    const char *why = NULL;
     int nsvc = 0;
 
     if (!g_info_lb)
@@ -747,6 +748,8 @@ static void fill_info(const cJSON *services)
             cJSON_GetObjectItemCaseSensitive(svc, "data"), "weather");
 
         nsvc++;
+        if (!why && cJSON_IsString(cJSON_GetObjectItemCaseSensitive(svc, "last_error")))
+            why = cJSON_GetObjectItemCaseSensitive(svc, "last_error")->valuestring;
         if (!wx && cJSON_IsObject(w) &&
             !cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(svc, "active")) &&
             cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(svc, "online")))
@@ -756,6 +759,8 @@ static void fill_info(const cJSON *services)
     {
         snprintf(g_info_cap, sizeof(g_info_cap), "Info");
         info_line("%s", nsvc ? "waiting for weather" : "no weather service");
+        if (why)                        /* e.g. "ZIP 12345 not found" */
+            info_line("%s", why);
         vk_listbox_update(g_info_lb);
         return;
     }
