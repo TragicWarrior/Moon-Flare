@@ -24,6 +24,7 @@ void mf_ui_load_config(void);
 
 void mf_menubar_init(void);
 void mf_menubar_on_resize(void);
+void mf_menubar_tick(void);
 void mf_menubar_shutdown(void);
 int  mf_menubar_key(wint_t c);
 int  mf_menubar_active(void);
