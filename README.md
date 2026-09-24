@@ -59,6 +59,26 @@ The dashboard's System panel (and `moonflare-cli --status`, and the MCP `status`
 "system": { "input_max_w": 3500, "discharge_max_w": 3000 }
 ```
 
+## History
+
+Each module that supports it records its readings in its own SQLite file, `/var/lib/moonflare/history/<module-uuid>.sqlite`, so modules never share a table. A plugin advertises capture in its `describe()` (`"capture"`: default and minimum interval, which reading fields become columns, which column to graph); a module whose plugin advertises none records nothing and has no Capture Interval setting. `GET /api/v1/drivers` passes the spec through, and capturing drivers and modules list `history` in their `caps`.
+
+Each file has a `module` key/value table (uuid, name, kind, driver, created and retired times, the capture spec) and `samples(id, ts, online, reading, <declared columns>…)`. `reading` is the module's whole JSON reading, so a column a newer plugin declares can be backfilled with `json_extract`. New columns are added to an existing file automatically. Removing a module keeps its file and marks it retired.
+
+Every capturing module must also declare a pruning policy, `retention_days`: samples older than that are deleted from its file (0 = keep forever). A capture spec without one is rejected, and the daemon logs a warning at load. Each module prunes only its own file, about once an hour, in batches of at most 500 rows per main-loop pass, so a large backlog never stalls polling or REST. SQLite reuses the freed pages, so a file stops growing once it reaches its window; it does not shrink on disk (run `VACUUM` on a stopped daemon's file to reclaim space).
+
+Defaults:
+
+| Module | Capture | Keep | Graph |
+| --- | --- | --- | --- |
+| Batteries (XD, JK) | 10 s | 60 days | `soc` |
+| Chargers (Classic) | 10 s | 60 days | `power_w` |
+| weather.gov | 600 s (at least 60) | 60 days | `temp_f`, plus humidity, wind, conditions, icon, station |
+
+Change them per module in the settings form (Capture Interval, Keep History), or `PUT /api/v1/devices/{id}/settings` with `{"capture_interval_s": N}` (0 = off) or `{"retention_days": N}` (whole days, 0 = forever).
+
+**Upgrading from 0.4 or earlier:** on its first start the daemon copies the old shared `/var/lib/moonflare/history.sqlite` into the per-module files, one transaction per module (so an interrupted run resumes), then renames it `history.sqlite.migrated`. Removed modules get a file too, marked retired. Delete `history.sqlite.migrated` once you are happy with the result. `history.dir` and `history.path` in `moonflared.json` move the per-module directory and the old file.
+
 ## Soak (batteryman)
 
 Order from the design Rollout. Do not skip to JK.

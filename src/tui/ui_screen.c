@@ -1664,13 +1664,21 @@ void mf_ui_remove_module(void)
 
 /* Seed JSON for the Add form from the plugin's field list: name first,
  * then each field with its default ("" when it has none). */
-static void add_form_seed(const cJSON *fields, char *out, size_t cap)
+static void add_form_seed(const cJSON *fields, const cJSON *capture,
+                          char *out, size_t cap)
 {
-    const cJSON *f;
+    const cJSON *f, *iv;
     cJSON *o = cJSON_CreateObject();
     char *s;
 
     cJSON_AddStringToObject(o, "name", "");
+    /* The module's own capture default, when it captures at all. */
+    iv = cJSON_GetObjectItemCaseSensitive(capture, "interval_s");
+    if (cJSON_IsNumber(iv))
+        cJSON_AddNumberToObject(o, "capture_interval_s", iv->valuedouble);
+    iv = cJSON_GetObjectItemCaseSensitive(capture, "retention_days");
+    if (cJSON_IsNumber(iv))
+        cJSON_AddNumberToObject(o, "retention_days", iv->valuedouble);
     cJSON_ArrayForEach(f, fields)
     {
         const cJSON *k = cJSON_GetObjectItemCaseSensitive(f, "key");
@@ -1713,7 +1721,8 @@ static void show_driver_picker(const char *json)
             const cJSON *fl = cJSON_GetObjectItemCaseSensitive(d, "fields");
             char *fs = cJSON_PrintUnformatted(fl);
 
-            add_form_seed(fl, a->form, sizeof(a->form));
+            add_form_seed(fl, cJSON_GetObjectItemCaseSensitive(d, "capture"),
+                          a->form, sizeof(a->form));
             snprintf(a->fields, sizeof(a->fields), "%s", fs ? fs : "[]");
             free(fs);
         }

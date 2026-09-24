@@ -621,7 +621,9 @@ static const char *classic_describe(void)
         "{\"key\":\"modbus.port\",\"label\":\"Modbus Port\",\"hint\":\"(TCP)\",\"type\":\"number\",\"default\":502},"
         "{\"key\":\"modbus.unit_id\",\"label\":\"Modbus Unit\",\"hint\":\"(unit)\",\"type\":\"number\",\"default\":10},"
         "{\"key\":\"modbus.auto_net\",\"label\":\"Modbus Auto\",\"hint\":\"(true/false)\",\"type\":\"bool\",\"default\":true}"
-        "]}";
+        "],\"capture\":{\"interval_s\":10,\"min_s\":1,\"retention_days\":60,\"graph\":\"power_w\",\"columns\":{"
+        "\"pack_v\":\"battery_voltage_v\",\"current_a\":\"battery_current_a\","
+        "\"power_w\":\"charging_watts\"}}}";
 }
 
 static const mf_plugin_ops_t g_ops = {

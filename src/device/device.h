@@ -63,6 +63,13 @@ int    mf_devices_action(const char *uuid, const char *action, const char *json,
                          char *err, size_t errsz);
 double mf_poll_interval_min(const char *driver);
 
+/* The "capture" block a plugin's describe() advertises: printed into buf
+ * (when given) with its default and minimum interval and its default
+ * pruning policy (retention_days, required).  0 when the module captures
+ * history, -1 when it does not (no block, or one without retention_days). */
+int    mf_capture_spec(const mf_plugin_ops_t *ops, char *buf, size_t cap,
+                       double *def_s, double *min_s, double *keep_days);
+
 int    mf_devices_any_dying(void);
 
 void mf_devices_prepare_fds(fd_set *rset, fd_set *wset, int *maxfd);

@@ -467,11 +467,13 @@ static int xd_get_reading(void *v, char *json, size_t cap)
     }
     r = &c->rt;
     js_append(json, cap, &off,
-              "{\"pack_voltage_v\":%.2f,\"current_a\":%.2f,\"soc_pct\":%.2f,"
+              "{\"pack_voltage_v\":%.2f,\"current_a\":%.2f,\"power_w\":%.1f,"
+              "\"soc_pct\":%.2f,"
               "\"soh_pct\":%.2f,\"cell_count\":%u,\"full_capacity_ah\":%.2f,"
               "\"remaining_capacity_ah\":%.2f,\"cycles\":%u,"
               "\"firmware\":\"%s\",\"barcode\":\"%s\",\"cell_voltages_v\":[",
-              r->pack_voltage_v, r->current_a, r->soc_pct, r->soh_pct,
+              r->pack_voltage_v, r->current_a,
+              r->pack_voltage_v * r->current_a, r->soc_pct, r->soh_pct,
               (unsigned)r->cell_count, r->full_capacity_ah,
               r->remaining_capacity_ah, (unsigned)r->cycles,
               c->firmware, c->barcode);
@@ -617,7 +619,9 @@ static const char *xd_describe(void)
         "{\"key\":\"usb.auto_port\",\"label\":\"USB Auto Port\",\"hint\":\"(true/false)\",\"type\":\"bool\",\"default\":true},"
         "{\"key\":\"usb.baud\",\"label\":\"USB Baud\",\"hint\":\"(baud)\",\"type\":\"number\",\"default\":9600},"
         "{\"key\":\"usb.addr\",\"label\":\"USB Addr\",\"hint\":\"(addr)\",\"type\":\"number\",\"default\":1}"
-        "]}";
+        "],\"capture\":{\"interval_s\":10,\"min_s\":1,\"retention_days\":60,\"graph\":\"soc\",\"columns\":{"
+        "\"pack_v\":\"pack_voltage_v\",\"current_a\":\"current_a\","
+        "\"power_w\":\"power_w\",\"soc\":\"soc_pct\"}}}";
 }
 
 static const mf_plugin_ops_t g_ops = {

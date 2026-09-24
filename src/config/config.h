@@ -33,7 +33,8 @@ typedef struct cJSON cJSON;
 #define MF_DEV_EXTRA_SIZE     1024
 
 typedef struct {
-    char path[MF_HISTORY_PATH_SIZE];
+    char path[MF_HISTORY_PATH_SIZE];   /* pre-0.5 shared file (migrated) */
+    char dir[MF_HISTORY_PATH_SIZE];    /* one <uuid>.sqlite per module */
     bool enabled;
 } mf_config_history_t;
 
@@ -72,7 +73,10 @@ typedef struct {
     bool enabled;
     bool active;                 /* counts toward system totals; default true */
     double poll_interval_s;
-    double capture_interval_s;   /* history sample interval; 0=off, default 10 */
+    double capture_interval_s;   /* history sample interval; 0=off, <0 (or
+                                    absent) = the module's own default */
+    double retention_days;       /* history pruning; 0=forever, <0 (or
+                                    absent) = the module's own default */
     char bus[MF_DEV_BUS_SIZE];
     mf_config_usb_t usb;
     mf_config_ble_t ble;

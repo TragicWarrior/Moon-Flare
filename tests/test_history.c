@@ -1,4 +1,4 @@
-#define _POSIX_C_SOURCE 200809L
+#define _GNU_SOURCE
 
 #include "history.h"
 #include <cJSON.h>
@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -16,22 +17,41 @@ static int g_fail;
     if (!(cond)) { fprintf(stderr, "FAIL: %s\n", msg); g_fail++; } \
 } while (0)
 
-static int tmpdb(char *path, size_t n)
+#define UUID_A "aaaaaaaa-0000-4000-8000-000000000001"
+#define UUID_B "bbbbbbbb-0000-4000-8000-000000000002"
+#define UUID_C "cccccccc-0000-4000-8000-000000000003"
+
+static const char *k_bat_spec =
+    "{\"interval_s\":10,\"min_s\":1,\"retention_days\":365,\"graph\":\"soc\",\"columns\":{"
+    "\"pack_v\":\"pack_voltage_v\",\"current_a\":\"current_a\","
+    "\"power_w\":\"power_w\",\"soc\":\"soc_pct\"}}";
+
+static const char *k_wx_spec =
+    "{\"interval_s\":600,\"min_s\":60,\"retention_days\":0,\"graph\":\"temp_f\",\"columns\":{"
+    "\"temp_f\":\"weather.temp_f\","
+    "\"conditions\":{\"path\":\"weather.conditions\",\"type\":\"text\"}}}";
+
+static void tmpdir(char *path, size_t n)
 {
-    int fd;
     snprintf(path, n, "/tmp/mfhistXXXXXX");
-    fd = mkstemp(path);
-    if (fd < 0)
-        return -1;
-    close(fd);
-    return 0;
+    if (!mkdtemp(path))
+        path[0] = '\0';
 }
 
-static int select_count(const char *sql)
+static void rmtree(const char *dir)
 {
-    sqlite3 *db = mf_history_db();
+    char cmd[300];
+
+    snprintf(cmd, sizeof(cmd), "rm -rf '%s'", dir);
+    if (system(cmd) != 0)
+        fprintf(stderr, "warn: cleanup of %s failed\n", dir);
+}
+
+static int count_sql(sqlite3 *db, const char *sql)
+{
     sqlite3_stmt *st = NULL;
     int cnt = -1;
+
     if (!db || sqlite3_prepare_v2(db, sql, -1, &st, NULL) != SQLITE_OK)
         return -1;
     if (sqlite3_step(st) == SQLITE_ROW)
@@ -40,355 +60,425 @@ static int select_count(const char *sql)
     return cnt;
 }
 
-static void test_upsert_flush(void)
+static double real_sql(sqlite3 *db, const char *sql)
 {
-    char path[64];
-    double now = (double)time(NULL);
-    int i, flushed, cnt;
+    sqlite3_stmt *st = NULL;
+    double v = -99999.0;
 
-    CHECK(tmpdb(path, sizeof(path)) == 0, "tmpdb");
-    CHECK(mf_history_open(path) == 0, "open");
-    CHECK(mf_history_upsert_device("dev-001", "PackAlpha", "battery", "jk", now) == 0,
-          "upsert");
-    CHECK(mf_history_upsert_device("dev-001", "PackAlpha", "battery", "jk", now) == 0,
-          "upsert again");
-    for (i = 0; i < 100; i++)
-    {
-        mf_sample_t s;
-        memset(&s, 0, sizeof(s));
-        snprintf(s.uuid, sizeof(s.uuid), "dev-001");
-        s.ts = now + (double)i * 3.0;
-        s.online = 1;
-        s.has_pack_v = 1;
-        s.pack_v = 52.0;
-        s.has_current_a = 1;
-        s.current_a = 10.0;
-        s.has_power_w = 1;
-        s.power_w = 520.0;
-        s.has_soc = 1;
-        s.soc = 50.0;
-        snprintf(s.extra_json, sizeof(s.extra_json), "{\"i\":%d}", i);
-        s.capture_interval_s = 2.0;
-        CHECK(mf_history_enqueue(&s) == 0, "enqueue");
-    }
-    flushed = mf_history_flush_slice(1024);
-    CHECK(flushed == 100, "flushed 100");
-    cnt = select_count("SELECT COUNT(*) FROM samples");
-    CHECK(cnt == 100, "COUNT samples = 100");
-    cnt = select_count("SELECT COUNT(*) FROM devices WHERE id='dev-001'");
-    CHECK(cnt == 1, "device row");
-    mf_history_close();
-    remove(path);
+    if (!db || sqlite3_prepare_v2(db, sql, -1, &st, NULL) != SQLITE_OK)
+        return v;
+    if (sqlite3_step(st) == SQLITE_ROW && sqlite3_column_type(st, 0) != SQLITE_NULL)
+        v = sqlite3_column_double(st, 0);
+    sqlite3_finalize(st);
+    return v;
 }
 
-static void test_downsample(void)
+static void text_sql(sqlite3 *db, const char *sql, char *out, size_t cap)
 {
-    char path[64];
-    double now = (double)time(NULL) + 1000.0;
-    int i, flushed, cnt;
+    sqlite3_stmt *st = NULL;
 
-    CHECK(tmpdb(path, sizeof(path)) == 0, "tmpdb");
-    CHECK(mf_history_open(path) == 0, "open");
-    CHECK(mf_history_upsert_device("dev-down", "DownPack", "battery", "jk", now) == 0,
-          "upsert");
+    out[0] = '\0';
+    if (!db || sqlite3_prepare_v2(db, sql, -1, &st, NULL) != SQLITE_OK)
+        return;
+    if (sqlite3_step(st) == SQLITE_ROW && sqlite3_column_text(st, 0))
+        snprintf(out, cap, "%s", (const char *)sqlite3_column_text(st, 0));
+    sqlite3_finalize(st);
+}
+
+static void sample(const char *uuid, double ts, double every, const char *reading)
+{
+    mf_sample_t s;
+
+    memset(&s, 0, sizeof(s));
+    snprintf(s.uuid, sizeof(s.uuid), "%s", uuid);
+    s.ts = ts;
+    s.online = 1;
+    s.capture_interval_s = every;
+    snprintf(s.reading, sizeof(s.reading), "%s", reading);
+    mf_history_enqueue(&s);
+}
+
+static int file_exists(const char *dir, const char *name)
+{
+    char p[320];
+    struct stat sb;
+
+    snprintf(p, sizeof(p), "%s/%s", dir, name);
+    return stat(p, &sb) == 0;
+}
+
+/* Declared columns come out of the reading; the whole reading is kept. */
+static void test_columns(void)
+{
+    char dir[64], buf[256];
+    sqlite3 *db;
+    double now = 1700000000.0;
+
+    tmpdir(dir, sizeof(dir));
+    CHECK(mf_history_open(dir) == 0, "open");
+    CHECK(mf_history_is_open(), "is_open");
+    CHECK(mf_history_register(UUID_A, "XD", "battery", "xd", k_bat_spec) == 0,
+          "register battery");
+    CHECK(mf_history_register(UUID_B, "Weather", "service", "weathergov",
+                              k_wx_spec) == 0, "register weather");
+    CHECK(file_exists(dir, UUID_A ".sqlite"), "battery file");
+    CHECK(file_exists(dir, UUID_B ".sqlite"), "weather file");
+
+    sample(UUID_A, now, 1.0,
+           "{\"pack_voltage_v\":52.5,\"current_a\":-2.0,\"power_w\":-105,"
+           "\"soc_pct\":80.5,\"cells\":[3.3,3.3]}");
+    sample(UUID_B, now, 600.0,
+           "{\"weather\":{\"temp_f\":71.6,\"conditions\":\"Haze\",\"icon\":\"fog\"}}");
+    CHECK(mf_history_flush_slice(32) == 2, "flush 2");
+
+    db = mf_history_module_db(UUID_A);
+    CHECK(count_sql(db, "SELECT COUNT(*) FROM samples") == 1, "battery row");
+    CHECK(real_sql(db, "SELECT soc FROM samples") == 80.5, "soc column");
+    CHECK(real_sql(db, "SELECT power_w FROM samples") == -105.0, "power column");
+    text_sql(db, "SELECT reading FROM samples", buf, sizeof(buf));
+    CHECK(strstr(buf, "\"cells\"") != NULL, "reading kept whole");
+    text_sql(db, "SELECT value FROM module WHERE key='kind'", buf, sizeof(buf));
+    CHECK(strcmp(buf, "battery") == 0, "meta kind");
+
+    db = mf_history_module_db(UUID_B);
+    CHECK(count_sql(db, "SELECT COUNT(*) FROM samples") == 1, "weather row");
+    CHECK(real_sql(db, "SELECT temp_f FROM samples") == 71.6, "nested numeric");
+    text_sql(db, "SELECT conditions FROM samples", buf, sizeof(buf));
+    CHECK(strcmp(buf, "Haze") == 0, "text column");
+    /* Namespaces: one module's file has none of the other's columns. */
+    CHECK(count_sql(db, "SELECT COUNT(*) FROM pragma_table_info('samples')"
+                        " WHERE name='soc'") == 0, "no foreign columns");
+
+    CHECK(strcmp(mf_history_graph_column(UUID_A), "soc") == 0, "graph soc");
+    CHECK(strcmp(mf_history_graph_column(UUID_B), "temp_f") == 0, "graph temp");
+    mf_history_close();
+    rmtree(dir);
+}
+
+/* Interval downsampling, and modules that do not capture. */
+static void test_capture_gate(void)
+{
+    char dir[64];
+    double now = 1700000000.0;
+    int i;
+
+    tmpdir(dir, sizeof(dir));
+    mf_history_open(dir);
+    mf_history_register(UUID_A, "XD", "battery", "xd", k_bat_spec);
+    mf_history_register(UUID_C, "Plain", "inverter", "x", NULL);
     for (i = 0; i < 10; i++)
     {
-        mf_sample_t s;
-        memset(&s, 0, sizeof(s));
-        snprintf(s.uuid, sizeof(s.uuid), "dev-down");
-        s.ts = now + (double)i * 0.1;
-        s.online = 1;
-        s.has_pack_v = 1;
-        s.pack_v = 53.0;
-        s.capture_interval_s = 2.0;
-        snprintf(s.extra_json, sizeof(s.extra_json), "{}");
-        CHECK(mf_history_enqueue(&s) == 0, "enqueue downsample");
+        sample(UUID_A, now + i, 3.0, "{\"soc_pct\":50}");
+        sample(UUID_C, now + i, 1.0, "{\"x\":1}");
+        sample(UUID_A, now + i, 0.0, "{\"soc_pct\":50}"); /* off: dropped */
     }
-    flushed = mf_history_flush_slice(1024);
-    CHECK(flushed == 1, "downsample flush 1");
-    cnt = select_count("SELECT COUNT(*) FROM samples");
-    CHECK(cnt == 1, "downsample COUNT 1");
+    mf_history_flush_slice(1024);
+    CHECK(count_sql(mf_history_module_db(UUID_A),
+                    "SELECT COUNT(*) FROM samples") == 4, "every 3 s of 10");
+    CHECK(count_sql(mf_history_module_db(UUID_C),
+                    "SELECT COUNT(*) FROM samples") == 0, "no capture spec");
+    CHECK(mf_history_graph_column(UUID_C) == NULL, "no graph");
+    /* Unknown modules and unsafe ids are refused. */
+    CHECK(mf_history_register("../etc/passwd", "x", "x", "x", k_bat_spec) != 0,
+          "unsafe uuid");
+    {
+        mf_sample_t s;
+
+        memset(&s, 0, sizeof(s));
+        snprintf(s.uuid, sizeof(s.uuid), "%s", UUID_B);
+        s.capture_interval_s = 1.0;
+        CHECK(mf_history_enqueue(&s) == -1, "unregistered enqueue");
+    }
     mf_history_close();
-    remove(path);
+    rmtree(dir);
+}
+
+/* A newer plugin declaring more columns grows the existing file. */
+static void test_schema_evolution(void)
+{
+    char dir[64];
+    sqlite3 *db;
+    double now = 1700000000.0;
+    const char *v1 = "{\"interval_s\":1,\"retention_days\":0,"
+                     "\"columns\":{\"soc\":\"soc_pct\"}}";
+    const char *v2 = "{\"interval_s\":1,\"retention_days\":0,\"graph\":\"temp_c\",\"columns\":{"
+                     "\"soc\":\"soc_pct\",\"temp_c\":\"temp_c\"}}";
+
+    tmpdir(dir, sizeof(dir));
+    mf_history_open(dir);
+    mf_history_register(UUID_A, "XD", "battery", "xd", v1);
+    sample(UUID_A, now, 1.0, "{\"soc_pct\":40,\"temp_c\":20}");
+    mf_history_flush_slice(8);
+    mf_history_close();
+
+    mf_history_open(dir);
+    CHECK(mf_history_register(UUID_A, "XD", "battery", "xd", v2) == 0,
+          "re-register v2");
+    sample(UUID_A, now + 5, 1.0, "{\"soc_pct\":41,\"temp_c\":21}");
+    mf_history_flush_slice(8);
+    db = mf_history_module_db(UUID_A);
+    CHECK(count_sql(db, "SELECT COUNT(*) FROM samples") == 2, "both rows");
+    CHECK(count_sql(db, "SELECT COUNT(*) FROM samples WHERE temp_c IS NULL") == 1,
+          "old row has no new column value");
+    CHECK(real_sql(db, "SELECT temp_c FROM samples WHERE soc = 41") == 21.0,
+          "new column filled");
+    /* Old readings are kept whole, so the new column can be backfilled. */
+    CHECK(real_sql(db, "SELECT json_extract(reading,'$.temp_c') FROM samples"
+                       " WHERE soc = 40") == 20.0, "backfillable");
+    mf_history_close();
+    rmtree(dir);
 }
 
 static void test_retire(void)
 {
-    char path[64];
-    double now = (double)time(NULL) + 2000.0;
-    int i, cnt;
-    sqlite3_stmt *st = NULL;
+    char dir[64], buf[64];
+    sqlite3 *db = NULL;
 
-    CHECK(tmpdb(path, sizeof(path)) == 0, "tmpdb");
-    CHECK(mf_history_open(path) == 0, "open");
-    CHECK(mf_history_upsert_device("dev-ret", "RetiredPack", "battery", "xd", now) == 0,
-          "upsert");
-    for (i = 0; i < 50; i++)
+    tmpdir(dir, sizeof(dir));
+    mf_history_open(dir);
+    mf_history_register(UUID_A, "XD", "battery", "xd", k_bat_spec);
+    sample(UUID_A, 1700000000.0, 1.0, "{\"soc_pct\":1}");
+    CHECK(mf_history_retire(UUID_A, 1700000100.0) == 0, "retire");
+    CHECK(mf_history_module_db(UUID_A) == NULL, "closed");
+    CHECK(file_exists(dir, UUID_A ".sqlite"), "file kept");
     {
-        mf_sample_t s;
-        memset(&s, 0, sizeof(s));
-        snprintf(s.uuid, sizeof(s.uuid), "dev-ret");
-        s.ts = now + (double)i * 5.0;
-        s.online = 1;
-        s.has_pack_v = 1;
-        s.pack_v = 54.0;
-        s.capture_interval_s = 5.0;
-        snprintf(s.extra_json, sizeof(s.extra_json), "{}");
-        CHECK(mf_history_enqueue(&s) == 0, "enqueue retire");
+        char p[320];
+
+        snprintf(p, sizeof(p), "%s/" UUID_A ".sqlite", dir);
+        sqlite3_open(p, &db);
+        CHECK(count_sql(db, "SELECT COUNT(*) FROM samples") == 1,
+              "queued sample flushed before retire");
+        text_sql(db, "SELECT value FROM module WHERE key='retired_ts'",
+                 buf, sizeof(buf));
+        CHECK(atof(buf) == 1700000100.0, "retired_ts");
+        sqlite3_close(db);
     }
-    CHECK(mf_history_flush_slice(1024) == 50, "flush 50");
-    CHECK(mf_history_retire_device("dev-ret", now + 500.0) == 0, "retire");
-    cnt = select_count("SELECT COUNT(*) FROM samples");
-    CHECK(cnt == 50, "samples remain after retire");
-    CHECK(sqlite3_prepare_v2(mf_history_db(),
-                             "SELECT COUNT(*), MIN(retired_ts) FROM devices WHERE id='dev-ret'",
-                             -1, &st, NULL) == SQLITE_OK, "prepare retire");
-    CHECK(sqlite3_step(st) == SQLITE_ROW, "retire row");
-    CHECK(sqlite3_column_int(st, 0) == 1, "device still present");
-    CHECK(sqlite3_column_double(st, 1) > 0.0, "retired_ts set");
-    sqlite3_finalize(st);
-    cnt = select_count(
-        "SELECT COUNT(*) FROM samples s JOIN devices d ON s.device_id=d.id WHERE d.id='dev-ret'");
-    CHECK(cnt == 50, "join still works");
+    /* Re-adding the module clears it. */
+    mf_history_register(UUID_A, "XD", "battery", "xd", k_bat_spec);
+    text_sql(mf_history_module_db(UUID_A),
+             "SELECT value FROM module WHERE key='retired_ts'", buf, sizeof(buf));
+    CHECK(buf[0] == '\0', "retired_ts cleared");
     mf_history_close();
-    remove(path);
+    rmtree(dir);
 }
 
-static void test_flush_slices(void)
+static void test_query_step(void)
 {
-    char path[64];
-    double now = (double)time(NULL) + 3000.0;
-    int i, total = 0, cnt;
-
-    CHECK(tmpdb(path, sizeof(path)) == 0, "tmpdb");
-    CHECK(mf_history_open(path) == 0, "open");
-    CHECK(mf_history_upsert_device("dev-flush", "FlushTest", "charger", "classic", now) == 0,
-          "upsert");
-    for (i = 0; i < 25; i++)
-    {
-        mf_sample_t s;
-        memset(&s, 0, sizeof(s));
-        snprintf(s.uuid, sizeof(s.uuid), "dev-flush");
-        s.ts = now + (double)i * 6.0;
-        s.online = 1;
-        s.has_pack_v = 1;
-        s.pack_v = 48.0;
-        s.capture_interval_s = 6.0;
-        snprintf(s.extra_json, sizeof(s.extra_json), "{}");
-        CHECK(mf_history_enqueue(&s) == 0, "enqueue slice");
-    }
-    for (;;)
-    {
-        int n = mf_history_flush_slice(10);
-        total += n;
-        if (n == 0)
-            break;
-    }
-    CHECK(total == 25, "sliced flush 25");
-    cnt = select_count("SELECT COUNT(*) FROM samples");
-    CHECK(cnt == 25, "COUNT 25");
-    mf_history_close();
-    remove(path);
-}
-
-static void test_power_w_query(void)
-{
-    char path[64];
-    double now = (double)time(NULL) + 4000.0;
-    double values[512];
+    char dir[64];
+    double ts[64], v[64];
+    double base = 1699999980.0;     /* a multiple of 60 */
     int i, n;
 
-    CHECK(tmpdb(path, sizeof(path)) == 0, "tmpdb");
-    CHECK(mf_history_open(path) == 0, "open");
-    CHECK(mf_history_upsert_device("dev-pwr", "PwrTest", "charger", "classic", now) == 0,
-          "upsert");
-    for (i = 0; i < 10; i++)
+    tmpdir(dir, sizeof(dir));
+    mf_history_open(dir);
+    mf_history_register(UUID_B, "Weather", "service", "weathergov", k_wx_spec);
+    for (i = 0; i < 6; i++)          /* 0,20,..,100 s: bins 0 and 60 */
     {
-        mf_sample_t s;
-        memset(&s, 0, sizeof(s));
-        snprintf(s.uuid, sizeof(s.uuid), "dev-pwr");
-        s.ts = now + (double)i * 3.0;
-        s.online = 1;
-        s.has_pack_v = 1;
-        s.pack_v = 52.0;
-        s.has_power_w = 1;
-        s.power_w = 100.0 + (double)i * 100.0;
-        s.capture_interval_s = 3.0;
-        snprintf(s.extra_json, sizeof(s.extra_json), "{}");
-        CHECK(mf_history_enqueue(&s) == 0, "enqueue power_w");
+        char r[96];
+
+        snprintf(r, sizeof(r), "{\"weather\":{\"temp_f\":%d,\"conditions\":\"x\"}}",
+                 i * 10);
+        sample(UUID_B, base + i * 20, 1.0, r);
     }
-    CHECK(mf_history_flush_slice(1024) == 10, "flush 10 power_w");
-    n = mf_history_query("dev-pwr", "power_w", values, 512);
-    CHECK(n == 10, "query returned 10");
-    CHECK(n >= 3, "enough values for round-trip");
-    if (n >= 3)
-    {
-        /* Values are newest first; last element is oldest. */
-        CHECK(values[n - 1] == 100.0, "oldest power_w = 100");
-        CHECK(values[n - 2] == 200.0, "mid power_w = 200");
-        CHECK(values[n - 3] == 300.0, "newest of three = 300");
-    }
-    /* Bad column returns -1. */
-    CHECK(mf_history_query("dev-pwr", "bogus", values, 10) < 0, "bad column returns -1");
-    /* Non-existent device returns 0 rows (not -1). */
-    CHECK(mf_history_query("no-such-dev", "power_w", values, 10) == 0,
-          "missing dev returns 0 rows");
+    mf_history_flush_slice(64);
+    n = mf_history_query_ts_step(UUID_B, "temp_f", 60, ts, v, 64);
+    CHECK(n == 2, "two bins");
+    CHECK(n == 2 && ts[0] < ts[1], "oldest first");
+    CHECK(n == 2 && v[0] == 10.0 && v[1] == 40.0, "bin averages");
+    n = mf_history_query_ts_step(UUID_B, "temp_f", 0, ts, v, 3);
+    CHECK(n == 3 && v[2] == 50.0 && v[0] == 30.0, "raw newest 3, oldest first");
+    CHECK(mf_history_query_ts_step(UUID_B, "conditions", 60, ts, v, 64) == -1,
+          "text column refused");
+    CHECK(mf_history_query_ts_step(UUID_B, "soc", 60, ts, v, 64) == -1,
+          "undeclared column refused");
+    CHECK(mf_history_query_ts_step(UUID_B, "temp_f;DROP TABLE samples", 60,
+                                   ts, v, 64) == -1, "injection refused");
+    CHECK(mf_history_query_ts_step(UUID_A, "soc", 60, ts, v, 64) == -1,
+          "unknown module");
     mf_history_close();
-    remove(path);
+    rmtree(dir);
 }
 
-static void test_json_parse_history_fixture(void)
+/* Each module prunes its own file by its own policy. */
+static void test_prune(void)
 {
-    /* Simulates the parsing path from ui_screen.c:
-     * cJSON_Parse -> cJSON_GetObjectItemCaseSensitive("values") -> extract doubles.
-     * This proves the JSON shape {"column":"power_w","values":[100,200,300]}
-     * produces the correct double array without ncurses. */
-    const char *fixture = "{\"column\":\"power_w\",\"values\":[100.0,200.0,300.0]}";
-    cJSON *root, *arr;
-    int i, n;
-    double values[512];
+    char dir[64];
+    double now = 1700000000.0, day = 86400.0;
+    const char *keep1 = "{\"interval_s\":1,\"retention_days\":1,"
+                        "\"columns\":{\"soc\":\"soc_pct\"}}";
+    const char *nokeep = "{\"interval_s\":1,\"columns\":{\"soc\":\"soc_pct\"}}";
+    sqlite3 *a, *b;
+    int i;
 
-    root = cJSON_Parse(fixture);
-    CHECK(root != NULL, "parse fixture");
-    arr = cJSON_GetObjectItemCaseSensitive(root, "values");
-    CHECK(arr != NULL && cJSON_IsArray(arr), "values is array");
-    n = cJSON_GetArraySize(arr);
-    CHECK(n == 3, "array size 3");
-    for (i = 0; i < n; i++)
+    tmpdir(dir, sizeof(dir));
+    mf_history_open(dir);
+    mf_history_register(UUID_A, "XD", "battery", "xd", keep1);
+    mf_history_register(UUID_B, "Weather", "service", "weathergov", k_wx_spec);
+    mf_history_register(UUID_C, "Old", "battery", "x", nokeep);
+    CHECK(mf_history_retention(UUID_A) == 1.0, "default policy 1 day");
+    CHECK(mf_history_retention(UUID_B) == 0.0, "weather keeps forever");
+    CHECK(mf_history_retention(UUID_C) == -1.0, "no policy: not capturing");
+    CHECK(mf_history_set_retention(UUID_C, 5) == -1, "no policy to set");
+    for (i = 0; i < 5; i++)                  /* 5 old + 1 fresh each */
     {
-        cJSON *elem = cJSON_GetArrayItem(arr, i);
-        values[i] = (elem && cJSON_IsNumber(elem)) ? elem->valuedouble : 0.0;
+        sample(UUID_A, now - (7 - i) * day, 0.5, "{\"soc_pct\":1}");
+        sample(UUID_B, now - (7 - i) * day, 0.5, "{\"weather\":{\"temp_f\":1}}");
+        sample(UUID_C, now - (7 - i) * day, 0.5, "{\"soc_pct\":1}");
     }
-    CHECK(values[0] == 100.0, "value[0]=100");
-    CHECK(values[1] == 200.0, "value[1]=200");
-    CHECK(values[2] == 300.0, "value[2]=300");
-    cJSON_Delete(root);
+    sample(UUID_A, now - 0.5 * day, 0.5, "{\"soc_pct\":2}");
+    sample(UUID_B, now - 0.5 * day, 0.5, "{\"weather\":{\"temp_f\":2}}");
+    mf_history_flush_slice(64);
+    a = mf_history_module_db(UUID_A);
+    b = mf_history_module_db(UUID_B);
+    CHECK(count_sql(mf_history_module_db(UUID_C), "SELECT COUNT(*) FROM samples")
+          == 0, "spec without a policy captures nothing");
 
-    /* Edge: empty values array. */
-    {
-        const char *empty_fixture = "{\"column\":\"power_w\",\"values\":[]}";
-        cJSON *r2, *a2;
-        r2 = cJSON_Parse(empty_fixture);
-        CHECK(r2 != NULL, "parse empty fixture");
-        a2 = cJSON_GetObjectItemCaseSensitive(r2, "values");
-        CHECK(a2 != NULL && cJSON_IsArray(a2), "empty values is array");
-        CHECK(cJSON_GetArraySize(a2) == 0, "empty array size 0");
-        cJSON_Delete(r2);
-    }
+    /* Batches: a backlog goes a slice at a time and stays due. */
+    CHECK(mf_history_prune_slice(now, 2) == 2, "first batch");
+    CHECK(mf_history_prune_slice(now, 2) == 2, "still due");
+    CHECK(mf_history_prune_slice(now, 2) == 1, "last of the backlog");
+    CHECK(mf_history_prune_slice(now, 2) == 0, "not due again yet");
+    CHECK(count_sql(a, "SELECT COUNT(*) FROM samples") == 1, "fresh row kept");
+    CHECK(count_sql(b, "SELECT COUNT(*) FROM samples") == 6, "0 = forever");
 
-    /* Edge: missing values field. */
-    {
-        const char *no_vals = "{\"column\":\"power_w\"}";
-        cJSON *r3;
-        r3 = cJSON_Parse(no_vals);
-        CHECK(r3 != NULL, "parse no-values fixture");
-        CHECK(cJSON_GetObjectItemCaseSensitive(r3, "values") == NULL,
-              "missing values field");
-        cJSON_Delete(r3);
-    }
+    /* The user's policy overrides the default and is due at once. */
+    CHECK(mf_history_set_retention(UUID_B, 2) == 0, "set weather 2 days");
+    CHECK(mf_history_prune_slice(now, 500) == 5, "weather pruned");
+    CHECK(count_sql(b, "SELECT COUNT(*) FROM samples") == 1, "weather fresh kept");
+    CHECK(mf_history_retention(UUID_B) == 2.0, "policy in effect");
+    mf_history_set_retention(UUID_B, -1);
+    CHECK(mf_history_retention(UUID_B) == 0.0, "-1 restores the default");
+    CHECK(mf_history_prune_slice(now + 2 * 3600, 500) == 0, "hourly recheck");
+    mf_history_close();
+    rmtree(dir);
 }
 
-static void test_query_ts(void)
-{
-    char path[64];
-    double now = (double)time(NULL) + 5000.0;
-    double ts_arr[16], val_arr[16];
-    int i, n;
+/* ---- migration from the pre-0.5 shared file ------------------------- */
 
-    CHECK(tmpdb(path, sizeof(path)) == 0, "tmpdb");
-    CHECK(mf_history_open(path) == 0, "open");
-    CHECK(mf_history_upsert_device("dev-ts", "TsPack", "charger", "classic", now) == 0,
-          "upsert");
-    for (i = 0; i < 10; i++)
+static void make_old_db(const char *path)
+{
+    sqlite3 *db = NULL;
+    char *sql;
+    int i;
+
+    unlink(path);
+    sqlite3_open(path, &db);
+    sqlite3_exec(db,
+        "PRAGMA journal_mode=WAL;"
+        "CREATE TABLE devices (id TEXT PRIMARY KEY, name TEXT NOT NULL,"
+        " kind TEXT NOT NULL, driver TEXT NOT NULL, created_ts REAL NOT NULL,"
+        " retired_ts REAL);"
+        "CREATE TABLE samples (id INTEGER PRIMARY KEY, ts REAL NOT NULL,"
+        " device_id TEXT NOT NULL, online INTEGER NOT NULL, pack_v REAL,"
+        " current_a REAL, power_w REAL, soc REAL, extra_json TEXT NOT NULL);"
+        "INSERT INTO devices VALUES ('" UUID_A "','XD','battery','xd',1600000000,NULL);"
+        "INSERT INTO devices VALUES ('" UUID_B "','Weather','service','weathergov',1600000000,NULL);"
+        "INSERT INTO devices VALUES ('" UUID_C "','Old JK','battery','jk',1500000000,NULL);",
+        NULL, NULL, NULL);
+    for (i = 0; i < 5; i++)
     {
-        mf_sample_t s;
-        memset(&s, 0, sizeof(s));
-        snprintf(s.uuid, sizeof(s.uuid), "dev-ts");
-        s.ts = now + (double)i * 3.0;
-        s.online = 1;
-        s.has_power_w = 1;
-        s.power_w = 100.0 + (double)i * 100.0;
-        s.capture_interval_s = 3.0;
-        snprintf(s.extra_json, sizeof(s.extra_json), "{}");
-        CHECK(mf_history_enqueue(&s) == 0, "enqueue ts");
+        /* Old battery rows: no power_w in the JSON, only in the fixed column. */
+        sql = sqlite3_mprintf(
+            "INSERT INTO samples (ts, device_id, online, pack_v, current_a,"
+            " power_w, soc, extra_json) VALUES (%d, '%s', 1, 52.0, 2.0, 104.0,"
+            " %d, '{\"pack_voltage_v\":52.0,\"current_a\":2.0,\"soc_pct\":%d}');"
+            "INSERT INTO samples (ts, device_id, online, extra_json) VALUES"
+            " (%d, '%s', 1, '{\"weather\":{\"temp_f\":%d,\"conditions\":\"Clear\"}}');"
+            "INSERT INTO samples (ts, device_id, online, soc, extra_json) VALUES"
+            " (%d, '%s', 0, 90, '{}');",
+            1600000000 + i * 10, UUID_A, 70 + i, 70 + i,
+            1600000000 + i * 600, UUID_B, 60 + i,
+            1500000000 + i, UUID_C);
+        sqlite3_exec(db, sql, NULL, NULL, NULL);
+        sqlite3_free(sql);
     }
-    CHECK(mf_history_flush_slice(1024) == 10, "flush 10 ts");
-    n = mf_history_query_ts("dev-ts", "power_w", ts_arr, val_arr, 16);
-    CHECK(n == 10, "query_ts returned 10");
-    CHECK(n >= 3, "enough for checks");
-    if (n >= 3)
-    {
-        /* Oldest first: first element = ts at now, value=100 */
-        CHECK(ts_arr[0] == now, "oldest ts correct");
-        CHECK(val_arr[0] == 100.0, "oldest value=100");
-        /* Newest last: last element = ts at now+27, value=1000 */
-        CHECK(ts_arr[n - 1] == now + 27.0, "newest ts correct");
-        CHECK(val_arr[n - 1] == 1000.0, "newest value=1000");
-        /* Timestamps ascending */
-        for (i = 1; i < n; i++)
-        {
-            CHECK(ts_arr[i] > ts_arr[i - 1], "ts ascending");
-        }
-    }
-    /* Bad column returns -1. */
-    CHECK(mf_history_query_ts("dev-ts", "bogus", ts_arr, val_arr, 10) < 0,
-          "bad column returns -1");
-    /* Non-existent device returns 0. */
-    CHECK(mf_history_query_ts("no-such-dev", "power_w", ts_arr, val_arr, 10) == 0,
-          "missing dev returns 0 rows");
-    mf_history_close();
-    remove(path);
+    sqlite3_close(db);
 }
 
-static void test_query_ts_step(void)
+static const char *spec_for(const char *kind, const char *driver)
 {
-    char path[64];
-    double now = (double)time(NULL) + 8000.0;
-    double ts_arr[16], val_arr[16];
-    int i, n;
+    (void)driver;
+    return strcmp(kind, "battery") == 0 ? k_bat_spec : NULL;
+}
 
-    CHECK(tmpdb(path, sizeof(path)) == 0, "tmpdb");
-    CHECK(mf_history_open(path) == 0, "open");
-    CHECK(mf_history_upsert_device("dev-step", "StepPack", "charger", "classic", now) == 0,
-          "upsert");
-    for (i = 0; i < 6; i++)
+static void test_migrate(void)
+{
+    char dir[64], old[128], moved[160], buf[64];
+    sqlite3 *db = NULL;
+    struct stat sb;
+    int rows;
+
+    tmpdir(dir, sizeof(dir));
+    snprintf(old, sizeof(old), "%s/history.sqlite", dir);
+    snprintf(moved, sizeof(moved), "%s.migrated", old);
+    make_old_db(old);
+
+    mf_history_open(dir);
+    /* A and B are running modules; C was removed long ago. */
+    mf_history_register(UUID_A, "XD", "battery", "xd", k_bat_spec);
+    mf_history_register(UUID_B, "Weather", "service", "weathergov", k_wx_spec);
+    rows = mf_history_migrate(old, spec_for);
+    CHECK(rows == 15, "all rows migrated");
+    CHECK(stat(old, &sb) != 0, "old file retired");
+    CHECK(stat(moved, &sb) == 0, "renamed .migrated");
+
+    db = mf_history_module_db(UUID_A);
+    CHECK(count_sql(db, "SELECT COUNT(*) FROM samples") == 5, "A rows");
+    CHECK(real_sql(db, "SELECT soc FROM samples ORDER BY ts DESC") == 74.0,
+          "A soc from JSON");
+    CHECK(real_sql(db, "SELECT power_w FROM samples ORDER BY ts DESC") == 104.0,
+          "A power_w from the old fixed column");
+    text_sql(db, "SELECT value FROM module WHERE key='created_ts'", buf, sizeof(buf));
+    CHECK(atof(buf) == 1600000000.0, "created_ts kept");
+    db = mf_history_module_db(UUID_B);
+    CHECK(count_sql(db, "SELECT COUNT(*) FROM samples") == 5, "B rows");
+    CHECK(real_sql(db, "SELECT MAX(temp_f) FROM samples") == 64.0, "B temp_f");
+    CHECK(mf_history_module_db(UUID_C) == NULL, "removed module not left open");
     {
-        mf_sample_t s;
-        memset(&s, 0, sizeof(s));
-        snprintf(s.uuid, sizeof(s.uuid), "dev-step");
-        s.ts = now + (double)i * 90.0;
-        s.online = 1;
-        s.has_power_w = 1;
-        s.power_w = 10.0 * (double)(i + 1);
-        s.capture_interval_s = 10.0;
-        snprintf(s.extra_json, sizeof(s.extra_json), "{}");
-        CHECK(mf_history_enqueue(&s) == 0, "enqueue step");
+        char p[320];
+        sqlite3 *c = NULL;
+
+        snprintf(p, sizeof(p), "%s/" UUID_C ".sqlite", dir);
+        CHECK(stat(p, &sb) == 0, "removed module got a file");
+        sqlite3_open(p, &c);
+        CHECK(count_sql(c, "SELECT COUNT(*) FROM samples WHERE online = 0") == 5,
+              "C rows");
+        CHECK(real_sql(c, "SELECT soc FROM samples") == 90.0,
+              "C soc from fixed column");
+        text_sql(c, "SELECT value FROM module WHERE key='retired_ts'",
+                 buf, sizeof(buf));
+        CHECK(atof(buf) == 1500000004.0, "removed module retired at last sample");
+        sqlite3_close(c);
     }
-    CHECK(mf_history_flush_slice(1024) == 6, "flush 6 step");
-    n = mf_history_query_ts_step("dev-step", "power_w", 60, ts_arr, val_arr, 16);
-    CHECK(n == 6, "step query 6 minute bins");
-    CHECK(val_arr[0] == 10.0, "oldest bin 10");
-    CHECK(val_arr[n - 1] == 60.0, "newest bin 60");
+
+    /* Nothing left to do. */
+    CHECK(mf_history_migrate(old, spec_for) == 0, "second run no-op");
+
+    /* Interrupted-run resume: the old file reappears, but modules already
+     * marked migrated are not copied twice. */
+    make_old_db(old);
+    rows = mf_history_migrate(old, spec_for);
+    CHECK(rows == 0, "no duplicate copy");
+    CHECK(count_sql(mf_history_module_db(UUID_A), "SELECT COUNT(*) FROM samples")
+          == 5, "A still 5");
     mf_history_close();
-    remove(path);
+    rmtree(dir);
 }
 
 int main(void)
 {
-    test_upsert_flush();
-    test_downsample();
+    test_columns();
+    test_capture_gate();
+    test_schema_evolution();
     test_retire();
-    test_flush_slices();
-    test_power_w_query();
-    test_json_parse_history_fixture();
-    test_query_ts();
-    test_query_ts_step();
-    mf_history_close();
+    test_query_step();
+    test_prune();
+    test_migrate();
     if (g_fail)
     {
-        fprintf(stderr, "%d check(s) failed\n", g_fail);
+        fprintf(stderr, "%d failure(s)\n", g_fail);
         return 1;
     }
-    printf("history: ok\n");
+    printf("test_history: ok\n");
     return 0;
 }

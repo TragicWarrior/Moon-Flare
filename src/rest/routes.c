@@ -176,6 +176,11 @@ static void cfg_patch_settings(const char *uuid, const cJSON *body)
         d->capture_interval_s = it->valuedouble;
     else if (cJSON_IsString(it) && it->valuestring)
         d->capture_interval_s = atof(it->valuestring);
+    it = cJSON_GetObjectItemCaseSensitive(body, "retention_days");
+    if (cJSON_IsNumber(it))
+        d->retention_days = it->valuedouble;
+    else if (cJSON_IsString(it) && it->valuestring)
+        d->retention_days = atof(it->valuestring);
     it = cJSON_GetObjectItemCaseSensitive(body, "active");
     if (cJSON_IsBool(it))
         d->active = cJSON_IsTrue(it);
@@ -486,10 +491,17 @@ static void add_driver_schema(cJSON *o, const mf_plugin_ops_t *ops)
     cJSON *d = plugin_describe(ops);
     cJSON *bus = cJSON_GetObjectItemCaseSensitive(d, "bus");
 
+    cJSON *capture = cJSON_DetachItemFromObjectCaseSensitive(d, "capture");
+
     if (cJSON_IsString(bus))
         cJSON_AddStringToObject(o, "bus", bus->valuestring);
     cJSON_AddItemToObject(o, "fields",
         cJSON_DetachItemFromObjectCaseSensitive(d, "fields"));
+    /* History capture the module supports (interval, columns), if any. */
+    if (cJSON_IsObject(capture))
+        cJSON_AddItemToObject(o, "capture", capture);
+    else
+        cJSON_Delete(capture);
     cJSON_Delete(d);
 }
 
@@ -514,6 +526,8 @@ static int handle_drivers(mf_rest_response_t *resp)
                 if (ops->caps)
                     c = ops->caps(NULL);
                 add_caps(caps, c);
+                if (mf_capture_spec(ops, NULL, 0, NULL, NULL, NULL) == 0)
+                    cJSON_AddItemToArray(caps, cJSON_CreateString("history"));
                 cJSON_AddItemToObject(o, "caps", caps);
             }
             add_driver_schema(o, ops);
@@ -722,6 +736,8 @@ static int handle_device_get(const char *id, mf_rest_response_t *resp)
     {
         cJSON *caps = cJSON_CreateArray();
         add_caps(caps, info.caps);
+        if (mf_capture_spec(device_ops(info.uuid), NULL, 0, NULL, NULL, NULL) == 0)
+            cJSON_AddItemToArray(caps, cJSON_CreateString("history"));
         cJSON_AddItemToObject(obj, "caps", caps);
     }
     data = cJSON_Parse(info.reading_json);
@@ -754,16 +770,13 @@ static int handle_device_history(const char *id, mf_rest_response_t *resp)
     double values[800], ts[800];
     cJSON *root, *arr;
     int n, i;
-    const char *column = "power_w";
+    /* The column the module's capture spec names for its graph. */
+    const char *column = mf_history_graph_column(id);
 
-    /* Pick column by device kind; fall back to power_w. */
+    if (!column)
     {
-        mf_devinfo_t info;
-        if (mf_devices_find_live(id, &info) == 0)
-        {
-            if (strcmp(info.kind, "battery") == 0)
-                column = "soc";
-        }
+        set_error(resp, 404, "no history");
+        return 0;
     }
 
     /* 60 s bins × 800 rows ≈ 13 h, still fits HTTP 64k. */

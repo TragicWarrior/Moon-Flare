@@ -49,6 +49,8 @@ void mf_config_defaults(mf_daemon_config_t *cfg)
             sizeof(cfg->gatt_bin) - 1);
     strncpy(cfg->history.path, "/var/lib/moonflare/history.sqlite",
             sizeof(cfg->history.path) - 1);
+    strncpy(cfg->history.dir, "/var/lib/moonflare/history",
+            sizeof(cfg->history.dir) - 1);
     cfg->history.enabled = true;
     cfg->system.input_max_w     = MF_SYSTEM_INPUT_MAX_W_DEFAULT;
     cfg->system.discharge_max_w = MF_SYSTEM_DISCHARGE_MAX_W_DEFAULT;
@@ -233,6 +235,18 @@ static void apply_history(mf_config_history_t *h, const cJSON *obj)
     cJSON *v;
     if ((v = cJSON_GetObjectItem(obj, "path")) && v->type == cJSON_String)
         strncpy(h->path, v->valuestring, sizeof(h->path) - 1);
+    if ((v = cJSON_GetObjectItem(obj, "dir")) && v->type == cJSON_String)
+        strncpy(h->dir, v->valuestring, sizeof(h->dir) - 1);
+    else if ((v = cJSON_GetObjectItem(obj, "path")) && v->type == cJSON_String)
+    {
+        /* Older configs name only the shared file: keep the per-module
+         * files beside it. */
+        const char *slash = strrchr(h->path, '/');
+        int n = slash ? (int)(slash - h->path) : 1;
+
+        snprintf(h->dir, sizeof(h->dir), "%.*s/history", n,
+                 slash ? h->path : ".");
+    }
     if ((v = cJSON_GetObjectItem(obj, "enabled")) && v->type == cJSON_True)
         h->enabled = true;
 }
@@ -340,7 +354,11 @@ static int apply_device(mf_config_device_t *dev, const cJSON *obj)
     if ((v = cJSON_GetObjectItem(obj, "poll_interval_s")) &&
         v->type == cJSON_Number)
         dev->poll_interval_s = v->valuedouble;
-    dev->capture_interval_s = 10.0;
+    dev->capture_interval_s = -1.0;     /* the module's default */
+    dev->retention_days = -1.0;
+    if ((v = cJSON_GetObjectItem(obj, "retention_days")) &&
+        v->type == cJSON_Number)
+        dev->retention_days = v->valuedouble;
     if ((v = cJSON_GetObjectItem(obj, "capture_interval_s")) &&
         v->type == cJSON_Number)
         dev->capture_interval_s = v->valuedouble;
@@ -352,7 +370,7 @@ static int apply_device(mf_config_device_t *dev, const cJSON *obj)
     {
         static const char *const known[] = {
             "uuid", "name", "kind", "driver", "enabled", "active",
-            "poll_interval_s", "capture_interval_s", "bus",
+            "poll_interval_s", "capture_interval_s", "retention_days", "bus",
             "usb", "ble", "modbus"
         };
         cJSON *extra = cJSON_CreateObject();
@@ -534,6 +552,7 @@ static cJSON *device_to_json(const mf_config_device_t *d)
     cJSON_AddBool(dev, "active", d->active);
     cJSON_AddNumber(dev, "poll_interval_s", d->poll_interval_s);
     cJSON_AddNumber(dev, "capture_interval_s", d->capture_interval_s);
+    cJSON_AddNumber(dev, "retention_days", d->retention_days);
     cJSON_AddStringOrNull(dev, "bus", d->bus);
     {
         cJSON *usb = cJSON_CreateObject();
@@ -613,6 +632,7 @@ char *mf_config_serialize(const mf_daemon_config_t *cfg)
     {
         cJSON *h = cJSON_CreateObject();
         cJSON_AddStringOrNull(h, "path", cfg->history.path);
+        cJSON_AddStringOrNull(h, "dir", cfg->history.dir);
         cJSON_AddBool(h, "enabled", cfg->history.enabled);
         cJSON_AddItemToObject(root, "history", h);
     }

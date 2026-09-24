@@ -787,13 +787,15 @@ static int jk_get_reading(void *v, char *json, size_t cap)
             bal = (r->balancing_indicator ||
                    r->balancing_action != JK_BALANCE_OFF) ? 1 : 0;
         js_append(json, cap, &off,
-                  "{\"pack_voltage_v\":%.3f,\"current_a\":%.2f,\"soc_pct\":%.1f,"
+                  "{\"pack_voltage_v\":%.3f,\"current_a\":%.2f,\"power_w\":%.1f,"
+                  "\"soc_pct\":%.1f,"
                   "\"soh_pct\":%.1f,\"cell_count\":%u,"
                   "\"full_capacity_ah\":%.2f,\"remaining_capacity_ah\":%.2f,"
                   "\"charge_mosfet_on\":%s,\"discharge_mosfet_on\":%s,"
                   "\"balancer_switch\":%s,\"balancing_indicator\":%s,"
                   "\"balance_current_a\":%.3f,\"cells\":[",
                   (double)r->pack_voltage_v, (double)r->current_a,
+                  (double)r->pack_voltage_v * (double)r->current_a,
                   (double)r->soc_pct, (double)r->soh_pct,
                   (unsigned)r->cell_count,
                   (double)r->nominal_ah, (double)r->remaining_ah,
@@ -1145,7 +1147,9 @@ static const char *jk_describe(void)
         "{\"key\":\"ble.adapter\",\"label\":\"BLE Adapter\",\"hint\":\"(hciN)\",\"type\":\"string\",\"default\":\"hci0\"},"
         "{\"key\":\"ble.protocol\",\"label\":\"BLE Protocol\",\"hint\":\"(JK02_32S)\",\"type\":\"string\",\"default\":\"JK02_32S\"},"
         "{\"key\":\"ble.password\",\"label\":\"App Passcode\",\"hint\":\"(optional)\",\"type\":\"string\"}"
-        "]}";
+        "],\"capture\":{\"interval_s\":10,\"min_s\":1,\"retention_days\":60,\"graph\":\"soc\",\"columns\":{"
+        "\"pack_v\":\"pack_voltage_v\",\"current_a\":\"current_a\","
+        "\"power_w\":\"power_w\",\"soc\":\"soc_pct\"}}}";
 }
 
 static const mf_plugin_ops_t g_ops = {

@@ -107,7 +107,9 @@ static void stub_probe_close(void *job)
 static const char *stub_describe(void)
 {
     return "{\"fields\":[{\"key\":\"stub.path\",\"label\":\"Stub Path\","
-           "\"type\":\"string\",\"required\":true}]}";
+           "\"type\":\"string\",\"required\":true}],"
+           "\"capture\":{\"interval_s\":10,\"min_s\":2,\"retention_days\":30,\"graph\":\"ok\","
+           "\"columns\":{\"ok\":\"ok\"}}}";
 }
 
 static const mf_plugin_ops_t g_ops[2] = {

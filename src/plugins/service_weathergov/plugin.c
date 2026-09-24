@@ -163,14 +163,18 @@ static const char *wx_describe(void)
     return
         "{\"fields\":["
         "{\"key\":\"poll_interval_s\",\"label\":\"Update Every\",\"hint\":\"(>=300 sec)\",\"type\":\"number\",\"default\":600},"
-        "{\"key\":\"capture_interval_s\",\"label\":\"Capture Interval\",\"hint\":\"(Sec 0=off)\",\"type\":\"number\",\"default\":600},"
         "{\"key\":\"weather.zip\",\"label\":\"ZIP Code\",\"hint\":\"(5 digits)\",\"type\":\"string\"},"
         "{\"key\":\"weather.station\",\"label\":\"Station\",\"hint\":\"(blank=near)\",\"type\":\"string\"},"
         "{\"key\":\"weather.zip_update_days\",\"label\":\"ZIP Table Check\",\"hint\":\"(days,0=off)\",\"type\":\"number\",\"default\":7},"
         "{\"key\":\"weather.lat\",\"label\":\"Latitude\",\"hint\":\"(optional)\",\"type\":\"number\"},"
         "{\"key\":\"weather.lon\",\"label\":\"Longitude\",\"hint\":\"(optional)\",\"type\":\"number\"},"
         "{\"key\":\"weather.contact\",\"label\":\"Contact Email\",\"hint\":\"(for NWS)\",\"type\":\"string\",\"required\":true}"
-        "]}";
+        "],\"capture\":{\"interval_s\":600,\"min_s\":60,\"retention_days\":60,\"graph\":\"temp_f\",\"columns\":{"
+        "\"temp_f\":\"weather.temp_f\",\"humidity_pct\":\"weather.humidity_pct\","
+        "\"wind_mph\":\"weather.wind_mph\","
+        "\"conditions\":{\"path\":\"weather.conditions\",\"type\":\"text\"},"
+        "\"icon\":{\"path\":\"weather.icon\",\"type\":\"text\"},"
+        "\"station\":{\"path\":\"weather.station\",\"type\":\"text\"}}}}";
 }
 
 static double json_num(const cJSON *o, const char *key, double dflt)

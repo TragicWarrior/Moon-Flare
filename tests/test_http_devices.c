@@ -249,6 +249,8 @@ static int write_startup_cfg(const char *path)
     if (!f)
         return -1;
     fputs("{\n"
+          "  \"history\": {\"dir\": \"/tmp/mf-http-devices-hist\",\n"
+          "               \"path\": \"/tmp/mf-http-devices-hist.sqlite\"},\n"
           "  \"devices\": [{\n"
           "    \"uuid\": \"aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee01\",\n"
           "    \"name\": \"pack-cfg\",\n"
@@ -287,6 +289,8 @@ int main(int argc, char **argv)
         FAIL("pick_port");
         return 1;
     }
+    if (system("rm -rf /tmp/mf-http-devices-hist") != 0)
+        FAIL("clear history dir");
     if (write_startup_cfg(cfgpath) != 0)
     {
         FAIL("write startup cfg");
@@ -341,6 +345,62 @@ int main(int argc, char **argv)
              !strstr(body_of(resp), "\"driver\":\"demo\"") ||
              !strstr(body_of(resp), "\"kind\":\"charger\""))
         FAIL("drivers missing demo battery+charger");
+    else if (!strstr(body_of(resp), "\"capture\":{") ||
+             !strstr(body_of(resp), "\"history\""))
+        FAIL("drivers missing the modules' capture spec");
+
+    /* Each module captures into its own file. */
+    if (access("/tmp/mf-http-devices-hist/"
+               "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee01.sqlite", F_OK) != 0)
+        FAIL("no per-module history file for pack-cfg");
+    {
+        char sreq[256];
+
+        snprintf(sreq, sizeof(sreq),
+                 "GET /api/v1/devices/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee01/settings"
+                 " HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n");
+        if (http_exchange(port, sreq, resp, sizeof(resp)) < 0 ||
+            status_of(resp) != 200)
+            FAIL("GET pack-cfg settings");
+        else if (!strstr(body_of(resp), "\"capture_interval_s\":10"))
+            FAIL("capture_interval_s not the module's default 10");
+        else if (!strstr(body_of(resp), "\"retention_days\":60"))
+            FAIL("retention_days not the module's default 60");
+    }
+    {
+        static const struct { const char *body; int want; } k[] = {
+            { "{\"retention_days\":1.5}", 400 },
+            { "{\"retention_days\":-3}", 400 },
+            { "{\"retention_days\":45}", 200 },
+        };
+        size_t j;
+
+        for (j = 0; j < sizeof(k) / sizeof(k[0]); j++)
+        {
+            snprintf(req, sizeof(req),
+                     "PUT /api/v1/devices/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee01/settings"
+                     " HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n"
+                     "Content-Length: %zu\r\nConnection: close\r\n\r\n%s",
+                     strlen(k[j].body), k[j].body);
+            if (http_exchange(port, req, resp, sizeof(resp)) < 0 ||
+                status_of(resp) != k[j].want)
+                FAIL(k[j].body);
+        }
+        if (!strstr(body_of(resp), "\"retention_days\":45"))
+            FAIL("retention_days 45 not applied");
+    }
+    {
+        const char *body = "{\"capture_interval_s\":0.5}";
+
+        snprintf(req, sizeof(req),
+                 "PUT /api/v1/devices/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee01/settings"
+                 " HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n"
+                 "Content-Length: %zu\r\nConnection: close\r\n\r\n%s",
+                 strlen(body), body);
+        if (http_exchange(port, req, resp, sizeof(resp)) < 0 ||
+            status_of(resp) != 400)
+            FAIL("capture below the module's minimum should 400");
+    }
 
     {
         const char *body =
@@ -570,6 +630,8 @@ int main(int argc, char **argv)
     }
 
     stop_daemon(pid);
+    if (!g_fail && system("rm -rf /tmp/mf-http-devices-hist") != 0)
+        FAIL("remove history dir");
     if (g_fail)
     {
         fprintf(stderr, "%d check(s) failed (see /tmp/mf-http-devices.log)\n", g_fail);
