@@ -126,6 +126,11 @@ typedef struct {
     int    n_profiles;
     char   default_profile[MF_PROFILE_NAME_SIZE];
     double refresh_interval_s;
+    /* The Discharge meter's full scale: "auto" (the highest discharge seen),
+     * "battery" (what the packs can deliver), "inverter" (what the
+     * inverters are rated for) or "fixed" (discharge_scale_w). */
+    char   discharge_scale[12];
+    double discharge_scale_w;
 } mf_tui_config_t;
 
 /* ---------- Combined config ---------- */

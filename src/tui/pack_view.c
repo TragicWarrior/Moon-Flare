@@ -1231,7 +1231,8 @@ void mf_pack_update(const char *json)
                 double rem = jnum(data, "remaining_capacity_ah", -1);
                 double avg = nv > 0 ? vsum / (double)nv : 0;
                 soc = mf_display_soc(jnum(data, "soc_pct", soc),
-                                     rem, full, avg, cur);
+                                     rem, full, avg, cur,
+                                     mf_soc_voltage_check(driver));
             }
         }
         vk_progress_set_value(VK_PROGRESS(g_mt_soc), soc);

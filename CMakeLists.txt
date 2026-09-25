@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 project(moon-flare
-    VERSION 0.10.0
+    VERSION 0.11.0
     DESCRIPTION "Moon Flare: multi-kind energy dashboard (daemon, REST, plugins, TUI)"
     LANGUAGES C)
 
@@ -85,6 +85,7 @@ add_executable(moonflare
     src/tui/layout.c
     src/tui/mouse.c
     src/tui/picker.c
+    src/tui/tui_state.c
     src/system/system.c
     src/config/config.c)
 target_include_directories(moonflare PRIVATE

@@ -1,8 +1,10 @@
 #include "ui_screen.h"
 #include "layout.h"
 #include "system/system.h"
+#include "tui_state.h"
 
 #include <cJSON.h>
+#include <math.h>
 #include <stdarg.h>
 #include <wchar.h>
 #include <stdio.h>
@@ -480,7 +482,8 @@ static void fill_lb(vk_listbox_t *lb, cJSON *arr, int card)
                 rem && cJSON_IsNumber(rem) ? rem->valuedouble : -1,
                 full && cJSON_IsNumber(full) ? full->valuedouble : 0,
                 avg,
-                cur && cJSON_IsNumber(cur) ? cur->valuedouble : 0);
+                cur && cJSON_IsNumber(cur) ? cur->valuedouble : 0,
+                mf_soc_voltage_check(cJSON_IsString(drv) ? drv->valuestring : ""));
             snprintf(rd, sizeof(rd), "%.1fV %.0f%%", pack, soc);
             if (!nm[0])
                 snprintf(nm, sizeof(nm), "pack");
@@ -583,7 +586,116 @@ static double jnum_or(const cJSON *o, const char *key, double dflt)
     return cJSON_IsNumber(n) ? n->valuedouble : dflt;
 }
 
-/* Totals come from the daemon so the TUI, CLI and MCP agree. */
+/* ---- the Discharge meter's full scale ------------------------------ */
+
+/* The highest discharge seen from the daemon now shown (kept between
+ * runs, see tui_state.h), and whose it is. */
+static double g_peak_w;
+static char   g_peak_hp[128];
+
+/* 500 W steps: a calm full scale for the Auto choice. */
+static double scale_step(double w)
+{
+    double s = 500.0 * ceil(w / 500.0);
+
+    return s < 500.0 ? 500.0 : s;
+}
+
+/* The high mark for this daemon, raised to w; saved when its 500 W step
+ * goes up, so the file is written rarely. */
+static double note_peak(double w)
+{
+    if (strcmp(g_peak_hp, g_last_hp) != 0)
+    {
+        snprintf(g_peak_hp, sizeof(g_peak_hp), "%s", g_last_hp);
+        g_peak_w = mf_state_peak(g_peak_hp);
+    }
+    if (w > g_peak_w)
+    {
+        int up = g_peak_w <= 0 || scale_step(w) > scale_step(g_peak_w);
+
+        g_peak_w = w;
+        if (up)
+            mf_state_set_peak(g_peak_hp, g_peak_w);
+    }
+    return g_peak_w;
+}
+
+/* The full scale by File > General's choice.  Batteries, inverters and a
+ * fixed value fall back to Auto while unknown (or 0). */
+static double discharge_scale(const cJSON *sys, double dis_w)
+{
+    double peak = note_peak(dis_w), v = 0.0;
+
+    switch (mf_ui_discharge_scale())
+    {
+    case MF_SCALE_BATTERY:
+        /* Current limit times pack voltage moves with the voltage: round it
+         * to 100 W so the scale holds still. */
+        v = 100.0 * round(jnum_or(sys, "battery_limit_w", 0.0) / 100.0);
+        break;
+    case MF_SCALE_INVERTER:
+        v = jnum_or(sys, "inverter_rated_w", 0.0);
+        break;
+    case MF_SCALE_FIXED:
+        v = mf_ui_discharge_fixed_w();
+        break;
+    default:
+        break;
+    }
+    return v > 0.0 ? v : scale_step(peak);
+}
+
+/* What a Discharge choice gives right now, for File > General. */
+void mf_dash_discharge_info(int mode, double fixed_w, char *out, size_t cap)
+{
+    cJSON *root = g_last_json[0] ? cJSON_Parse(g_last_json) : NULL;
+    const cJSON *sys = cJSON_GetObjectItemCaseSensitive(root, "system");
+    double peak = note_peak(0.0), v;
+
+    switch (mode)
+    {
+    case MF_SCALE_BATTERY:
+        v = 100.0 * round(jnum_or(sys, "battery_limit_w", 0.0) / 100.0);
+        if (v > 0.0)
+            snprintf(out, cap, "The batteries can deliver %.0f W.", v);
+        else
+            snprintf(out, cap, "The batteries don't say; uses Auto.");
+        break;
+    case MF_SCALE_INVERTER:
+        v = jnum_or(sys, "inverter_rated_w", 0.0);
+        if (v > 0.0)
+            snprintf(out, cap, "The inverters are rated %.0f W.", v);
+        else
+            snprintf(out, cap, "No inverter rating known; uses Auto.");
+        break;
+    case MF_SCALE_FIXED:
+        if (fixed_w > 0.0)
+            snprintf(out, cap, "Full scale %.0f W.", fixed_w);
+        else
+            snprintf(out, cap, "Enter the watts below.");
+        break;
+    default:
+        if (peak > 0.0)
+            snprintf(out, cap, "High mark %.0f W: full scale %.0f W.", peak,
+                     scale_step(peak));
+        else
+            snprintf(out, cap, "No discharge seen yet.");
+        break;
+    }
+    cJSON_Delete(root);
+}
+
+/* Forget the high mark for the daemon now shown; Auto learns it again. */
+void mf_dash_discharge_reset(void)
+{
+    (void)note_peak(0.0);               /* whose it is */
+    g_peak_w = 0.0;
+    mf_state_set_peak(g_peak_hp, 0.0);
+}
+
+/* Totals come from the daemon so the TUI, CLI and MCP agree; the
+ * Discharge meter's scale is the TUI's own choice (File > General). */
 static void fill_system(const cJSON *sys)
 {
     char val[48];
@@ -620,13 +732,15 @@ static void fill_system(const cJSON *sys)
     }
 
     dis_w = jnum_or(sys, "discharge_w", 0);
-    dis_max = jnum_or(sys, "discharge_max_w", 0);
     chg_w = jnum_or(sys, "charge_w", 0);
+    dis_max = discharge_scale(sys, dis_w);
     if (dis_w <= 0 && chg_w > 0)
         snprintf(val, sizeof(val), "0 W  (charging %.0f W)", chg_w);
+    else if (dis_w > dis_max)          /* a fixed or known scale, exceeded */
+        snprintf(val, sizeof(val), "%.0f W (above %.0f W)", dis_w, dis_max);
     else
         snprintf(val, sizeof(val), "%.0f W / %.0f W", dis_w, dis_max);
-    set_sys_row(2, dis_max > 0 ? dis_w / dis_max * 100.0 : 0, val);
+    set_sys_row(2, dis_w / dis_max * 100.0, val);
 }
 
 static void cat_add(cJSON *arr, const char *kind)
@@ -808,31 +922,6 @@ static void wx_slot(const cJSON *o, char *out, size_t cap)
     snprintf(out, cap, "%s%s", sym, w >= 2 ? "" : w == 1 ? " " : "  ");
 }
 
-/* Forecast period names made to fit a 24-column card: "Thursday" -> "Thu",
- * "Thursday Night" -> "Thu Nt", "This Afternoon" -> "Aftn".  Tonight,
- * Overnight and Today fit as they are; unknown names pass through. */
-static void short_period(const char *name, char *out, size_t cap)
-{
-    static const char *const map[][2] = {
-        { "Tonight", "Tonight" }, { "This Afternoon", "Aftn" },
-        { "Overnight", "Overnight" }, { "Today", "Today" },
-    };
-    size_t i;
-    const char *sp;
-
-    for (i = 0; i < sizeof(map) / sizeof(map[0]); i++)
-        if (strcmp(name, map[i][0]) == 0)
-        {
-            snprintf(out, cap, "%s", map[i][1]);
-            return;
-        }
-    sp = strchr(name, ' ');
-    if (strlen(name) > 3 && (!sp || strcmp(sp, " Night") == 0))
-        snprintf(out, cap, "%.3s%s", name, sp ? " Nt" : "");
-    else
-        snprintf(out, cap, "%s", name);
-}
-
 /* The Info panel shows the first active, online service that publishes a
  * provider-neutral "weather" object (see the weather service plugins). */
 static void fill_info(const cJSON *services)
@@ -869,15 +958,15 @@ static void fill_info(const cJSON *services)
     {
         const cJSON *t = cJSON_GetObjectItemCaseSensitive(wx, "temp_f");
         const cJSON *cond = cJSON_GetObjectItemCaseSensitive(wx, "conditions");
-        const cJSON *hum = cJSON_GetObjectItemCaseSensitive(wx, "humidity_pct");
-        const cJSON *ws = cJSON_GetObjectItemCaseSensitive(wx, "wind_mph");
-        const cJSON *wd = cJSON_GetObjectItemCaseSensitive(wx, "wind_dir");
         const cJSON *st = cJSON_GetObjectItemCaseSensitive(wx, "station");
         const cJSON *at = cJSON_GetObjectItemCaseSensitive(wx, "observed_local");
         const cJSON *fc = cJSON_GetObjectItemCaseSensitive(wx, "forecast");
+        const cJSON *rise = cJSON_GetObjectItemCaseSensitive(wx, "sunrise");
+        const cJSON *set = cJSON_GetObjectItemCaseSensitive(wx, "sunset");
         const cJSON *p;
-        char wind[24];
-        int nf = 0;
+        char ps[2][16], temp[2][16], line[96];
+        const char *nm[2];
+        int nf = 0, form;
 
         snprintf(g_info_cap, sizeof(g_info_cap), "Weather");
         char slot[16];
@@ -896,35 +985,50 @@ static void fill_info(const cJSON *services)
                       cJSON_IsString(cond) ? cond->valuestring : "");
         else
             info_line("%s %s", slot, cJSON_IsString(cond) ? cond->valuestring : "--");
-        wind[0] = '\0';
-        if (cJSON_IsNumber(ws))
-            snprintf(wind, sizeof(wind), "%s %.0f mph",
-                     cJSON_IsString(wd) ? wd->valuestring : "", ws->valuedouble);
-        if (cJSON_IsNumber(hum))
-            info_line("Hum %.0f%%  %s", hum->valuedouble, wind);
-        else if (wind[0])
-            info_line("Wind %s", wind);
+        /* The next two forecast periods on one line, in order and named by
+         * what they are ("Day 85F  Night 65F", or in the evening "Night 65F
+         * Day 88F"), each with its icon.  A narrow card (80 columns) drops
+         * the units first, then a space; only then the icons. */
         cJSON_ArrayForEach(p, fc)
         {
-            const cJSON *n = cJSON_GetObjectItemCaseSensitive(p, "name");
             const cJSON *pt = cJSON_GetObjectItemCaseSensitive(p, "temp_f");
-            const cJSON *sh = cJSON_GetObjectItemCaseSensitive(p, "short");
 
-            char nm[16], ps[16], line[96];
-
-            if (nf++ >= 2)
+            if (nf >= 2)
                 break;
-            short_period(cJSON_IsString(n) ? n->valuestring : "", nm, sizeof(nm));
-            wx_slot(p, ps, sizeof(ps));
-            snprintf(line, sizeof(line), "%s %s %.0fF %s", ps, nm,
-                     cJSON_IsNumber(pt) ? pt->valuedouble : 0.0,
-                     cJSON_IsString(sh) ? sh->valuestring : "");
-            /* The icon already says it: drop the words rather than cut them. */
-            if (text_cols(line) > avail)
-                snprintf(line, sizeof(line), "%s %s %.0fF", ps, nm,
-                         cJSON_IsNumber(pt) ? pt->valuedouble : 0.0);
-            info_line("%s", line);
+            nm[nf] = cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(p, "is_day"))
+                     ? "Night" : "Day";
+            if (cJSON_IsNumber(pt))
+                snprintf(temp[nf], sizeof(temp[nf]), "%.0f", pt->valuedouble);
+            else
+                snprintf(temp[nf], sizeof(temp[nf]), "--");
+            wx_slot(p, ps[nf], sizeof(ps[nf]));
+            nf++;
         }
+        /* 0: icons, units, two spaces between; 1: no units; 2: one space;
+         * 3: no icons. */
+        for (form = 0; nf > 0 && form < 4; form++)
+        {
+            size_t off = 0;
+            int i;
+
+            line[0] = '\0';
+            for (i = 0; i < nf && off < sizeof(line); i++)
+                off += (size_t)snprintf(line + off, sizeof(line) - off,
+                                        "%s%s%s%s %s%s",
+                                        i == 0 ? "" : form == 2 ? " " : "  ",
+                                        form == 3 ? "" : ps[i],
+                                        form == 3 ? "" : " ", nm[i], temp[i],
+                                        (form == 0 || form == 3) &&
+                                        strcmp(temp[i], "--") != 0 ? "F" : "");
+            if (text_cols(line) <= avail)
+                break;
+        }
+        if (nf > 0)
+            info_line("%s", line);
+        if (cJSON_IsString(rise))
+            info_line("Sunrise %s", rise->valuestring);
+        if (cJSON_IsString(set))
+            info_line("Sunset  %s", set->valuestring);
         if (cJSON_IsString(st) || cJSON_IsString(at))
             info_line("%s %s", cJSON_IsString(st) ? st->valuestring : "",
                       cJSON_IsString(at) ? at->valuestring : "");

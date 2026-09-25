@@ -9,7 +9,9 @@
  * libcurl's multi interface, driven from the daemon's select() loop through
  * prepare_fds() and step(), so nothing blocks:
  *
- *   /points/{lat},{lon}           -> forecast URL, stations URL, place name
+ *   /points/{lat},{lon}           -> forecast URL, stations URL, place name,
+ *                                    today's sunrise and sunset; fetched
+ *                                    again just after local midnight
  *   {stations}?limit=5            -> the nearest observation stations
  *   /stations/{id}/observations/latest   every poll_interval_s (>= 300 s)
  *
@@ -24,9 +26,11 @@
  *   {"provider": "weather.gov",
  *    "weather": {"temp_f", "conditions", "icon", "is_day", "humidity_pct",
  *                "wind_mph", "wind_dir", "station", "place",
- *                "observed_local",
+ *                "observed_local", "sunrise", "sunset",
  *                "forecast": [{"name", "temp_f", "short", "icon",
  *                              "is_day"}, ...]}}
+ * sunrise and sunset are local "HH:MM" like observed_local (null until
+ * /points has given them).
  * "icon" is a neutral condition key (clear, partly_cloudy, mostly_cloudy,
  * cloudy, wind, rain, showers, thunderstorm, snow, blizzard, sleet,
  * freezing_rain, fog, haze, tornado, hurricane, hot, cold); the dashboard
@@ -125,6 +129,10 @@ typedef struct {
     int                nst;             /* 0 = list not fetched yet */
     int                st_try;          /* candidate being tried */
     char               place[64];
+    long               sunrise_epoch;   /* today's, from /points; 0 unknown */
+    long               sunset_epoch;
+    char               sunrise[8];      /* local "HH:MM" */
+    char               sunset[8];
     double             next_points;
     double             next_station;
     double             next_obs;
@@ -289,6 +297,59 @@ static void iso_to_local_hhmm(const char *iso, char *out, size_t cap)
         strftime(out, cap, "%H:%M", &tm);
 }
 
+/* "2026-09-25T06:58:46-04:00" (or "...Z", or no zone for UTC) -> epoch;
+ * 0 when it does not parse.  /points' sun times carry the place's offset. */
+static long iso_to_epoch(const char *iso)
+{
+    struct tm tm;
+    const char *p;
+    long off = 0;
+
+    memset(&tm, 0, sizeof(tm));
+    if (!iso || !(p = strptime(iso, "%Y-%m-%dT%H:%M:%S", &tm)))
+        return 0;
+    if (*p == '.')                      /* fractions of a second */
+        while (*++p >= '0' && *p <= '9')
+            ;
+    if (*p == '+' || *p == '-')
+    {
+        int hh = 0, mm = 0;
+
+        if (sscanf(p + 1, "%2d:%2d", &hh, &mm) < 1)
+            return 0;
+        off = (hh * 3600L + mm * 60L) * (*p == '-' ? -1 : 1);
+    }
+    return (long)timegm(&tm) - off;
+}
+
+static void epoch_to_local_hhmm(long t, char *out, size_t cap)
+{
+    time_t tt = (time_t)t;
+    struct tm tm;
+
+    out[0] = '\0';
+    if (t && localtime_r(&tt, &tm))
+        strftime(out, cap, "%H:%M", &tm);
+}
+
+/* Seconds until just after the next local midnight: /points' sunrise and
+ * sunset are for the day the request is made. */
+static double until_tomorrow(void)
+{
+    time_t t = time(NULL), next;
+    struct tm tm;
+
+    if (!localtime_r(&t, &tm))
+        return WX_POINTS_S;
+    tm.tm_mday++;
+    tm.tm_hour = 0;
+    tm.tm_min = 1;
+    tm.tm_sec = 0;
+    tm.tm_isdst = -1;
+    next = mktime(&tm);
+    return next > t ? (double)(next - t) : WX_POINTS_S;
+}
+
 /* weather.gov icon codes -> the neutral keys every weather service uses. */
 static const char *icon_key(const char *code)
 {
@@ -404,6 +465,16 @@ static int parse_points(wx_ctx_t *c, const cJSON *root)
     if (cJSON_IsString(city) && cJSON_IsString(state))
         snprintf(c->place, sizeof(c->place), "%s, %s",
                  city->valuestring, state->valuestring);
+    {
+        const cJSON *astro = cJSON_GetObjectItemCaseSensitive(p, "astronomicalData");
+        const cJSON *rise = cJSON_GetObjectItemCaseSensitive(astro, "sunrise");
+        const cJSON *set = cJSON_GetObjectItemCaseSensitive(astro, "sunset");
+
+        c->sunrise_epoch = iso_to_epoch(cJSON_IsString(rise) ? rise->valuestring : NULL);
+        c->sunset_epoch = iso_to_epoch(cJSON_IsString(set) ? set->valuestring : NULL);
+        epoch_to_local_hhmm(c->sunrise_epoch, c->sunrise, sizeof(c->sunrise));
+        epoch_to_local_hhmm(c->sunset_epoch, c->sunset, sizeof(c->sunset));
+    }
     c->nst = 0;                         /* re-fetch the nearby stations */
     return 0;
 }
@@ -457,8 +528,13 @@ static int parse_obs(wx_ctx_t *c, const cJSON *root, wx_obs_t *o)
     snprintf(o->wind_dir, sizeof(o->wind_dir), "%s", isnan(wd) ? "" : compass(wd));
     snprintf(o->cond, sizeof(o->cond), "%s",
              cJSON_IsString(txt) ? txt->valuestring : "");
+    /* If the icon URL won't say: between sunrise and sunset, or failing
+     * those, 6:00 to 19:00. */
     localtime_r(&now, &tm);
-    o->is_day = tm.tm_hour >= 6 && tm.tm_hour < 19;  /* if the URL won't say */
+    if (c->sunrise_epoch && c->sunset_epoch)
+        o->is_day = (long)now >= c->sunrise_epoch && (long)now < c->sunset_epoch;
+    else
+        o->is_day = tm.tm_hour >= 6 && tm.tm_hour < 19;
     parse_icon(cJSON_IsString(ic) ? ic->valuestring : NULL, o->cond,
                o->icon, sizeof(o->icon), &o->is_day);
     iso_to_local_hhmm(cJSON_IsString(ts) ? ts->valuestring : NULL,
@@ -631,7 +707,7 @@ static void finish(wx_ctx_t *c, CURLcode rc)
     {
         c->err[0] = '\0';
         if (what == WX_POINTS)
-            c->next_points = now + WX_POINTS_S;
+            c->next_points = now + until_tomorrow();
         else if (what == WX_OBS)
             c->next_obs = now + c->obs_every;
         else if (what == WX_FORECAST)
@@ -1122,6 +1198,14 @@ static int wx_get_reading(void *ctx, char *json, size_t cap)
     if (c->zip[0])
         cJSON_AddStringToObject(wx, "zip", c->zip);
     cJSON_AddStringToObject(wx, "observed_local", c->obs.observed_local);
+    if (c->sunrise[0])
+        cJSON_AddStringToObject(wx, "sunrise", c->sunrise);
+    else
+        cJSON_AddNullToObject(wx, "sunrise");
+    if (c->sunset[0])
+        cJSON_AddStringToObject(wx, "sunset", c->sunset);
+    else
+        cJSON_AddNullToObject(wx, "sunset");
     fc = cJSON_AddArrayToObject(wx, "forecast");
     for (i = 0; i < c->nfc; i++)
     {

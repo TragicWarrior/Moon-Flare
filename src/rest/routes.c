@@ -364,6 +364,13 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
         cJSON_AddItemToArray(chargers, row);
     } else if (strcmp(d->kind, "inverter") == 0)
     {
+        /* Its continuous rating, when it reports one (Magnum: from the
+           model), feeds the system's inverter capacity. */
+        cJSON *rw = num_or_null(data, "rated_w");
+
+        if (rw)
+            cJSON_AddNumberToObject(row, "rated_w", rw->valuedouble);
+        mf_system_add_inverter(&ctx->sys, d->active, d->online, num_or(rw, 0.0));
         cJSON_AddItemToArray(inverters, row);
     }
     else if (strcmp(d->kind, "service") == 0 ||
@@ -407,7 +414,18 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
         mf_system_add_battery(&ctx->sys, d->active, d->online,
                               num_or(v, 0.0), num_or(c, 0.0), num_or(s, 0.0),
                               num_or(rem, -1.0), num_or(full, 0.0),
-                              (int)num_or(n, 0.0));
+                              (int)num_or(n, 0.0),
+                              mf_soc_voltage_check(d->driver));
+        {
+            /* How much it can deliver, when its BMS says (JK: its
+               maximum discharge current). */
+            cJSON *mw = num_or_null(data, "max_discharge_w");
+            cJSON *ma = num_or_null(data, "max_discharge_a");
+            double lim = mw ? mw->valuedouble
+                       : ma ? ma->valuedouble * num_or(v, 0.0) : 0.0;
+
+            mf_system_add_battery_limit(&ctx->sys, d->active, d->online, lim);
+        }
         cJSON_AddItemToArray(batteries, row);
     }
     if (data)
@@ -454,6 +472,18 @@ static cJSON *system_json(const mf_system_totals_t *t)
     cJSON_AddNumberToObject(o, "chargers_total", t->chargers_total);
     cJSON_AddNumberToObject(o, "batteries_counted", t->batteries_counted);
     cJSON_AddNumberToObject(o, "batteries_total", t->batteries_total);
+    cJSON_AddNumberToObject(o, "inverters_counted", t->inverters_counted);
+    cJSON_AddNumberToObject(o, "inverters_total", t->inverters_total);
+    /* What the counted packs can deliver and what the counted inverters are
+       rated for, when every one of them says. */
+    if (mf_system_battery_limit_known(t))
+        cJSON_AddNumberToObject(o, "battery_limit_w", t->battery_limit_w);
+    else
+        cJSON_AddNullToObject(o, "battery_limit_w");
+    if (mf_system_inverter_rated_known(t))
+        cJSON_AddNumberToObject(o, "inverter_rated_w", t->inverter_rated_w);
+    else
+        cJSON_AddNullToObject(o, "inverter_rated_w");
     return o;
 }
 

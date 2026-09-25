@@ -793,7 +793,7 @@ static int jk_get_reading(void *v, char *json, size_t cap)
                   "\"full_capacity_ah\":%.2f,\"remaining_capacity_ah\":%.2f,"
                   "\"charge_mosfet_on\":%s,\"discharge_mosfet_on\":%s,"
                   "\"balancer_switch\":%s,\"balancing_indicator\":%s,"
-                  "\"balance_current_a\":%.3f,\"cells\":[",
+                  "\"balance_current_a\":%.3f,",
                   (double)r->pack_voltage_v, (double)r->current_a,
                   (double)r->pack_voltage_v * (double)r->current_a,
                   (double)r->soc_pct, (double)r->soh_pct,
@@ -805,6 +805,12 @@ static int jk_get_reading(void *v, char *json, size_t cap)
                   r->balancing_indicator ? "true" : "false",
                   (double)r->balance_current_a);
     }
+    /* The BMS's own discharge limit, from its settings frame: what the pack
+     * can deliver (the dashboard can scale Discharge by it). */
+    if (c->have_settings && c->settings.max_discharge_a > 0.0f)
+        js_append(json, cap, &off, "\"max_discharge_a\":%.1f,",
+                  (double)c->settings.max_discharge_a);
+    js_append(json, cap, &off, "\"cells\":[");
     for (i = 0; i < (int)r->cell_count; i++)
         js_append(json, cap, &off,
                   "%s{\"index\":%d,\"voltage_v\":%.3f,\"balancing\":%s}",
