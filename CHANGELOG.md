@@ -5,6 +5,60 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-09-25
+
+### Added
+
+- The TUI's Discharge meter scale is now a display preference, chosen in
+  File → General:
+  - **Auto** (the default): the highest discharge seen from the daemon,
+    in 500 W steps, remembered between runs in
+    `~/.local/state/moonflare/tui-state.json`, with a Reset Peak button;
+  - **Battery limits**: what the counted packs can deliver;
+  - **Inverter ratings**: what the counted inverters are rated for;
+  - **Fixed watts**: a value you enter.
+
+  A line under the choice says what it gives right now. Unknown limits,
+  and a fixed scale without watts, use Auto. File → Save config keeps
+  the choice (`discharge_scale`, `discharge_scale_w` in `moonflare.json`).
+- `/api/v1/status` has `system.battery_limit_w` (the counted packs'
+  maximum discharge current times voltage, summed) and
+  `system.inverter_rated_w` (the counted inverters' ratings, summed), plus
+  `inverters_counted` and `inverters_total`. Each is `null` unless every
+  counted pack or inverter reports its figure.
+- The JK battery reading has `max_discharge_a`, from its BMS settings
+  frame. The Magnum inverter reading has `rated_w`, from the model (an
+  MS4448PAE is 4400 W). The demo battery reports a 100 A limit.
+- Sunrise and sunset in the weather reading (`weather.sunrise` and
+  `weather.sunset`, local `HH:MM`). They come from weather.gov's `/points`
+  reply (its `astronomicalData`), which the plugin now fetches again just
+  after local midnight, so the times are always today's.
+
+### Fixed
+
+- The Capacity meter (and a pack's SOC on the dashboard) jumped around,
+  e.g. from 82% to 49% and back. The LFP voltage check, added for the JK
+  pack's drifting coulomb counter, applied to every pack: whenever one
+  reading showed 0 A (an XD reports 0.00 A when solar roughly matches the
+  load), it replaced the BMS's SOC with a voltage estimate that reads LFP's
+  flat middle range far too low. It now applies to JK packs only, for now
+  (until that pack's cells are top-balanced); every other pack's SOC is
+  its BMS's.
+
+### Changed
+
+- The Discharge meter reads `3508 W (above 3000 W)`, not `3508 W / 3000 W`,
+  when a fixed or known scale is exceeded.
+- The dashboard's Info panel shows sunrise and sunset in place of humidity
+  and wind. The next two forecast periods share one line, each with its
+  icon and named by what it is: `Day 92F  Night 72F` (`Night 72F  Day 91F`
+  in the evening). On an 80-column screen the line drops the `F` units to
+  keep the icons. Humidity and wind remain in the reading for other
+  clients.
+- When weather.gov's icon doesn't say whether it's day or night, the
+  weather plugin decides by sunrise and sunset instead of a fixed 6:00 to
+  19:00.
+
 ## [0.10.0] - 2026-09-25
 
 ### Added

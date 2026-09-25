@@ -400,6 +400,7 @@ static void test_reading_json(void)
     CHECK(o && strcmp(cJSON_GetObjectItem(o, "tap")->valuestring, "Inverter 1") == 0, "tap");
     CHECK(o && NEAR(cJSON_GetObjectItem(o, "dc_voltage_v")->valuedouble, 52.6), "dc_voltage_v");
     CHECK(o && NEAR(cJSON_GetObjectItem(o, "dc_power_w")->valuedouble, 1157.2), "dc_power_w");
+    CHECK(o && NEAR(cJSON_GetObjectItem(o, "rated_w")->valuedouble, 4400), "rated_w");
     CHECK(o && NEAR(cJSON_GetObjectItem(o, "freq_hz")->valuedouble, 60.0), "freq_hz");
     CHECK(o && cJSON_IsTrue(cJSON_GetObjectItem(o, "invled")), "invled bool");
     CHECK(o && strcmp(cJSON_GetObjectItem(o, "stackmode_text")->valuestring,
@@ -452,6 +453,13 @@ static void test_names(void)
     CHECK(strcmp(mag_fault_text(0x55), "Unknown") == 0, "unknown fault code");
     CHECK(mag_multiplier(0x0F) == 1 && mag_multiplier(0x6B) == 2 && mag_multiplier(0x73) == 4,
           "multipliers");
+    /* Ratings from the model names: watts in hundreds, then volts. */
+    CHECK(mag_model_rated_w(0x73) == 4400, "MS4448PAE: 4400 W");
+    CHECK(mag_model_rated_w(0x06) == 600, "MM612: 600 W");
+    CHECK(mag_model_rated_w(0x35) == 1300, "MM1324E: 1300 W");
+    CHECK(mag_model_rated_w(0x2C) == 3000, "MSH3012M: 3000 W");
+    CHECK(mag_model_rated_w(0x70) == 3700, "MS3748AEJ: 3700 W");
+    CHECK(mag_model_rated_w(0xEE) == 0, "unknown model: no rating");
 }
 
 /* Pre-framed packets (magtest lines), identified one at a time. */

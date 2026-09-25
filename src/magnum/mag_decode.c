@@ -16,6 +16,7 @@
 
 #include <math.h>
 #include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
 
 typedef struct {
@@ -149,6 +150,30 @@ int mag_multiplier(int model)
 const char *mag_mode_text(int mode)        { return LOOKUP(k_modes, mode, "??"); }
 const char *mag_fault_text(int fault)      { return LOOKUP(k_faults, fault, "Unknown"); }
 const char *mag_model_text(int model)      { return LOOKUP(k_models, model, "Unknown"); }
+
+int mag_model_rated_w(int model)
+{
+    const char *name = LOOKUP(k_models, model, NULL);
+    char digits[8];
+    size_t n = 0, len;
+    int volts;
+
+    if (!name)
+        return 0;
+    while (*name && (*name < '0' || *name > '9'))
+        name++;
+    while (*name >= '0' && *name <= '9' && n + 1 < sizeof(digits))
+        digits[n++] = *name++;
+    digits[n] = '\0';
+    len = strlen(digits);
+    if (len < 3)
+        return 0;
+    volts = atoi(digits + len - 2);
+    if (volts != 12 && volts != 24 && volts != 48)
+        return 0;
+    digits[len - 2] = '\0';
+    return atoi(digits) * 100;
+}
 const char *mag_stackmode_text(int sm)     { return LOOKUP(k_stack_modes, sm, "Unknown"); }
 const char *mag_ags_status_text(int st)    { return LOOKUP(k_ags_status, st, "Unknown"); }
 const char *mag_bmk_fault_text(int fault)  { return LOOKUP(k_bmk_faults, fault, "Unknown"); }

@@ -39,17 +39,25 @@ static int g_port = 5250;
 static double g_refresh = 1.0;
 static double g_last_get;
 static int g_settings_open;
+/* File > General: Refresh, the Discharge meter's scale (a choice cycled
+ * with Left/Right), and the watts of a fixed scale; a line under the
+ * choice says what it gives right now. */
+#define SET_ROWS 3                      /* Refresh, Discharge, Watts */
+#define SET_FOCI 6                      /* the rows, OK, Reset Peak, Cancel */
+enum { SF_REFRESH = 0, SF_SCALE, SF_WATTS, SF_OK, SF_RESET, SF_CANCEL };
 static vk_window_t *g_set_win;
 static vk_box_t *g_set_vbox, *g_set_mid, *g_set_inner, *g_set_form, *g_set_bar;
-static vk_grid_t *g_set_row[4];
-static vk_grid_t *g_set_fields[1];
-static vk_label_t *g_set_lab[1];
-static vk_label_t *g_set_hint[1];
-static vk_input_t *g_set_in[1];
-static vk_button_t *g_set_ok, *g_set_cancel;
-static vk_filler_t *g_set_fill, *g_set_form_fill;
+static vk_grid_t *g_set_row[SET_ROWS];
+static vk_grid_t *g_set_fields[SET_ROWS];
+static vk_label_t *g_set_lab[SET_ROWS];
+static vk_label_t *g_set_hint[SET_ROWS];
+static vk_input_t *g_set_in[SET_ROWS];
+static vk_label_t *g_set_info;
+static vk_button_t *g_set_ok, *g_set_reset, *g_set_cancel;
+static vk_filler_t *g_set_fill, *g_set_fill2, *g_set_form_fill;
 static vk_filler_t *g_set_pad_top, *g_set_pad_bot, *g_set_pad_left, *g_set_pad_right;
 static int g_set_focus;
+static int g_set_scale;                 /* the Discharge choice being edited */
 static void close_settings(void);
 static void paint_settings(void);
 static void apply_settings(void);
@@ -257,13 +265,38 @@ static void style_set_input(vk_input_t *in, int focused)
     vk_input_update(in);
 }
 
+static const char *const k_scale_key[] = { "auto", "battery", "inverter", "fixed" };
+static const char *const k_scale_name[] = {
+    "Auto (high mark)", "Battery limits", "Inverter ratings", "Fixed watts"
+};
+
+static int scale_from_cfg(void)
+{
+    int i;
+
+    for (i = 0; i < 4; i++)
+        if (strcmp(g_tui_cfg.discharge_scale, k_scale_key[i]) == 0)
+            return i;
+    return MF_SCALE_AUTO;
+}
+
+int mf_ui_discharge_scale(void)
+{
+    return scale_from_cfg();
+}
+
+double mf_ui_discharge_fixed_w(void)
+{
+    return g_tui_cfg.discharge_scale_w;
+}
+
 static void paint_settings(void)
 {
     int pass, i;
 
     for (pass = 0; pass < 2; pass++)
     {
-        for (i = 0; i < 1; i++)
+        for (i = 0; i < SET_ROWS; i++)
         {
             if (g_set_lab[i])
                 vk_label_update(g_set_lab[i]);
@@ -275,10 +308,14 @@ static void paint_settings(void)
             if (g_set_row[i])
                 vk_grid_update(g_set_row[i]);
         }
+        if (g_set_info)
+            vk_label_update(g_set_info);
         if (g_set_form)
             vk_box_update(g_set_form);
         if (g_set_ok)
             vk_button_update(g_set_ok);
+        if (g_set_reset)
+            vk_button_update(g_set_reset);
         if (g_set_cancel)
             vk_button_update(g_set_cancel);
         if (g_set_bar)
@@ -321,6 +358,33 @@ static void box_vacate(vk_box_t *box)
         vk_box_set_widget(box, i, NULL, VK_INHERIT_NONE);
 }
 
+static void destroy_filler(vk_filler_t **f)
+{
+    if (*f)
+    {
+        vk_filler_destroy(*f);
+        *f = NULL;
+    }
+}
+
+static void destroy_box(vk_box_t **b)
+{
+    if (*b)
+    {
+        vk_box_destroy(*b);
+        *b = NULL;
+    }
+}
+
+static void destroy_button(vk_button_t **b)
+{
+    if (*b)
+    {
+        vk_button_destroy(*b);
+        *b = NULL;
+    }
+}
+
 static void close_settings(void)
 {
     int i;
@@ -333,7 +397,7 @@ static void close_settings(void)
     box_vacate(g_set_inner);
     box_vacate(g_set_form);
     box_vacate(g_set_bar);
-    for (i = 0; i < 1; i++)
+    for (i = 0; i < SET_ROWS; i++)
     {
         if (g_set_row[i])
         {
@@ -361,71 +425,26 @@ static void close_settings(void)
             g_set_hint[i] = NULL;
         }
     }
-    if (g_set_ok)
+    if (g_set_info)
     {
-        vk_button_destroy(g_set_ok);
-        g_set_ok = NULL;
+        vk_label_destroy(g_set_info);
+        g_set_info = NULL;
     }
-    if (g_set_cancel)
-    {
-        vk_button_destroy(g_set_cancel);
-        g_set_cancel = NULL;
-    }
-    if (g_set_fill)
-    {
-        vk_filler_destroy(g_set_fill);
-        g_set_fill = NULL;
-    }
-    if (g_set_form_fill)
-    {
-        vk_filler_destroy(g_set_form_fill);
-        g_set_form_fill = NULL;
-    }
-    if (g_set_bar)
-    {
-        vk_box_destroy(g_set_bar);
-        g_set_bar = NULL;
-    }
-    if (g_set_form)
-    {
-        vk_box_destroy(g_set_form);
-        g_set_form = NULL;
-    }
-    if (g_set_inner)
-    {
-        vk_box_destroy(g_set_inner);
-        g_set_inner = NULL;
-    }
-    if (g_set_pad_left)
-    {
-        vk_filler_destroy(g_set_pad_left);
-        g_set_pad_left = NULL;
-    }
-    if (g_set_pad_right)
-    {
-        vk_filler_destroy(g_set_pad_right);
-        g_set_pad_right = NULL;
-    }
-    if (g_set_mid)
-    {
-        vk_box_destroy(g_set_mid);
-        g_set_mid = NULL;
-    }
-    if (g_set_pad_top)
-    {
-        vk_filler_destroy(g_set_pad_top);
-        g_set_pad_top = NULL;
-    }
-    if (g_set_pad_bot)
-    {
-        vk_filler_destroy(g_set_pad_bot);
-        g_set_pad_bot = NULL;
-    }
-    if (g_set_vbox)
-    {
-        vk_box_destroy(g_set_vbox);
-        g_set_vbox = NULL;
-    }
+    destroy_button(&g_set_ok);
+    destroy_button(&g_set_reset);
+    destroy_button(&g_set_cancel);
+    destroy_filler(&g_set_fill);
+    destroy_filler(&g_set_fill2);
+    destroy_filler(&g_set_form_fill);
+    destroy_box(&g_set_bar);
+    destroy_box(&g_set_form);
+    destroy_box(&g_set_inner);
+    destroy_filler(&g_set_pad_left);
+    destroy_filler(&g_set_pad_right);
+    destroy_box(&g_set_mid);
+    destroy_filler(&g_set_pad_top);
+    destroy_filler(&g_set_pad_bot);
+    destroy_box(&g_set_vbox);
     if (g_set_win)
     {
         vk_screen_detach_widget(g_screen, 0, VK_WIDGET(g_set_win));
@@ -437,9 +456,83 @@ static void close_settings(void)
     mf_ui_refresh();
 }
 
+/* One "Label [input] hint" row of the form, in slot `slot` of g_set_form. */
+static void mk_set_row(int i, int slot, int iw, const char *label, const char *hint)
+{
+    int fields_w = iw - 2 - 13;
+    int in_w;
+
+    if (fields_w < 12 + 8)
+        fields_w = 12 + 8;
+    in_w = fields_w - 12;
+    if (in_w < 8)
+        in_w = 8;
+
+    g_set_fields[i] = vk_grid_create(fields_w, 3, 2, 1);
+    vk_grid_set_homogeneous(g_set_fields[i], false);
+    vk_grid_set_gap(g_set_fields[i], 0);
+    vk_grid_set_col_width(g_set_fields[i], 0, 12);
+    vk_grid_set_col_width(g_set_fields[i], 1, in_w);
+    vk_grid_set_row_height(g_set_fields[i], 0, 3);
+    vk_widget_set_colors(VK_WIDGET(g_set_fields[i]), COL_TEXT, COL_MENU);
+    vk_widget_set_expand(VK_WIDGET(g_set_fields[i]));
+    g_set_lab[i] = vk_label_create(12);
+    vk_widget_set_colors(VK_WIDGET(g_set_lab[i]), COL_TEXT, COL_MENU);
+    vk_label_set_text(g_set_lab[i], label);
+    vk_label_update(g_set_lab[i]);
+    g_set_in[i] = vk_input_create(in_w);
+    vk_input_set_border_style(g_set_in[i], VK_BORDER_SINGLE);
+    vk_grid_set_widget(g_set_fields[i], 0, 0, VK_WIDGET(g_set_lab[i]), VK_INHERIT_NONE);
+    vk_grid_set_widget(g_set_fields[i], 1, 0, VK_WIDGET(g_set_in[i]), VK_INHERIT_NONE);
+
+    g_set_hint[i] = vk_label_create(13);
+    vk_widget_set_colors(VK_WIDGET(g_set_hint[i]), COL_TEXT, COL_MENU);
+    vk_label_set_text(g_set_hint[i], hint);
+    vk_label_update(g_set_hint[i]);
+
+    g_set_row[i] = vk_grid_create(iw - 2, 3, 2, 1);
+    vk_grid_set_homogeneous(g_set_row[i], false);
+    vk_grid_set_gap(g_set_row[i], 0);
+    vk_grid_set_col_width(g_set_row[i], 0, fields_w);
+    vk_grid_set_col_expand(g_set_row[i], 0, true);
+    vk_grid_set_col_width(g_set_row[i], 1, 13);
+    vk_grid_set_row_height(g_set_row[i], 0, 3);
+    vk_widget_set_colors(VK_WIDGET(g_set_row[i]), COL_TEXT, COL_MENU);
+    vk_grid_set_widget(g_set_row[i], 0, 0, VK_WIDGET(g_set_fields[i]), VK_INHERIT_NONE);
+    vk_grid_set_widget(g_set_row[i], 1, 0, VK_WIDGET(g_set_hint[i]), VK_INHERIT_NONE);
+    vk_box_set_widget(g_set_form, slot, VK_WIDGET(g_set_row[i]), VK_INHERIT_NONE);
+}
+
+/* The choice as its row shows it, and what it gives on the line below. */
+static void show_scale(void)
+{
+    char buf[48], info[96], line[112];
+    const char *ws = g_set_in[SF_WATTS] ? vk_input_get_text(g_set_in[SF_WATTS]) : NULL;
+
+    if (g_set_in[SF_SCALE])
+    {
+        snprintf(buf, sizeof(buf), "< %s >", k_scale_name[g_set_scale]);
+        vk_input_set_text(g_set_in[SF_SCALE], buf);
+    }
+    mf_dash_discharge_info(g_set_scale, ws ? atof(ws) : 0.0, info, sizeof(info));
+    snprintf(line, sizeof(line), "%13s%s", "", info);   /* under the inputs */
+    if (g_set_info)
+        vk_label_set_text(g_set_info, line);
+}
+
+static int on_set_reset(vk_widget_t *w, void *a)
+{
+    (void)w;
+    (void)a;
+    mf_dash_discharge_reset();
+    show_scale();
+    paint_settings();
+    return 1;
+}
+
 void mf_ui_open_settings(void)
 {
-    int x, y, w, h, iw, ih;
+    int x, y, w, h, iw, ih, slack;
     char buf[32];
 
     if (g_settings_open)
@@ -454,85 +547,50 @@ void mf_ui_open_settings(void)
     vk_window_set_border_attrs(g_set_win, A_BOLD);
     vk_widget_set_colors(VK_WIDGET(g_set_win), COL_TEXT, COL_MENU);
 
-    g_set_form = vk_box_create(iw - 2, ih - 5, VK_BOX_VERTICAL, 2);
+    /* Refresh, Discharge, the line about it, Watts, then slack. */
+    g_set_form = vk_box_create(iw - 2, ih - 5, VK_BOX_VERTICAL, 5);
     vk_box_set_homogeneous(g_set_form, false);
     vk_widget_set_colors(VK_WIDGET(g_set_form), COL_TEXT, COL_MENU);
     vk_widget_set_expand(VK_WIDGET(g_set_form));
+    mk_set_row(SF_REFRESH, 0, iw, "Refresh", " (Seconds)");
+    mk_set_row(SF_SCALE, 1, iw, "Discharge", " (Left/Right)");
+    g_set_info = vk_label_create(iw - 2);
+    vk_widget_set_colors(VK_WIDGET(g_set_info), COL_TEXT, COL_MENU);
+    vk_box_set_widget(g_set_form, 2, VK_WIDGET(g_set_info), VK_INHERIT_NONE);
+    mk_set_row(SF_WATTS, 3, iw, "Watts", " (Fixed)");
+    slack = (ih - 5) - (3 * SET_ROWS + 1);
+    if (slack > 0)
     {
-        static const char *hints[1] = { " (Seconds)" };
-        int fields_w = iw - 2 - 13;
-        int in_w;
-
-        if (fields_w < 12 + 8)
-            fields_w = 12 + 8;
-        in_w = fields_w - 12;
-        if (in_w < 8)
-            in_w = 8;
-
-        g_set_fields[0] = vk_grid_create(fields_w, 3, 2, 1);
-        vk_grid_set_homogeneous(g_set_fields[0], false);
-        vk_grid_set_gap(g_set_fields[0], 0);
-        vk_grid_set_col_width(g_set_fields[0], 0, 12);
-        vk_grid_set_col_width(g_set_fields[0], 1, in_w);
-        vk_grid_set_row_height(g_set_fields[0], 0, 3);
-        vk_widget_set_colors(VK_WIDGET(g_set_fields[0]), COL_TEXT, COL_MENU);
-        vk_widget_set_expand(VK_WIDGET(g_set_fields[0]));
-        g_set_lab[0] = vk_label_create(12);
-        vk_widget_set_colors(VK_WIDGET(g_set_lab[0]), COL_TEXT, COL_MENU);
-        vk_label_set_text(g_set_lab[0], "Refresh");
-        vk_label_update(g_set_lab[0]);
-        g_set_in[0] = vk_input_create(in_w);
-        vk_input_set_border_style(g_set_in[0], VK_BORDER_SINGLE);
-        vk_grid_set_widget(g_set_fields[0], 0, 0, VK_WIDGET(g_set_lab[0]), VK_INHERIT_NONE);
-        vk_grid_set_widget(g_set_fields[0], 1, 0, VK_WIDGET(g_set_in[0]), VK_INHERIT_NONE);
-
-        g_set_hint[0] = vk_label_create(13);
-        vk_widget_set_colors(VK_WIDGET(g_set_hint[0]), COL_TEXT, COL_MENU);
-        vk_label_set_text(g_set_hint[0], hints[0]);
-        vk_label_update(g_set_hint[0]);
-
-        g_set_row[0] = vk_grid_create(iw - 2, 3, 2, 1);
-        vk_grid_set_homogeneous(g_set_row[0], false);
-        vk_grid_set_gap(g_set_row[0], 0);
-        vk_grid_set_col_width(g_set_row[0], 0, fields_w);
-        vk_grid_set_col_expand(g_set_row[0], 0, true);
-        vk_grid_set_col_width(g_set_row[0], 1, 13);
-        vk_grid_set_row_height(g_set_row[0], 0, 3);
-        vk_widget_set_colors(VK_WIDGET(g_set_row[0]), COL_TEXT, COL_MENU);
-        vk_grid_set_widget(g_set_row[0], 0, 0, VK_WIDGET(g_set_fields[0]), VK_INHERIT_NONE);
-        vk_grid_set_widget(g_set_row[0], 1, 0, VK_WIDGET(g_set_hint[0]), VK_INHERIT_NONE);
-        vk_box_set_widget(g_set_form, 0, VK_WIDGET(g_set_row[0]), VK_INHERIT_NONE);
-    }
-    {
-        int slack = (ih - 5) - 3;
-
-        if (slack > 0)
-        {
-            uint32_t st;
-
-            g_set_form_fill = vk_filler_create();
-            st = vk_widget_get_state(VK_WIDGET(g_set_form_fill));
-            vk_widget_set_state(VK_WIDGET(g_set_form_fill),
-                                st & ~(uint32_t)VK_STATE_EXPAND);
-            vk_widget_set_colors(VK_WIDGET(g_set_form_fill), COL_TEXT, COL_MENU);
-            vk_widget_resize(VK_WIDGET(g_set_form_fill), iw - 2, slack);
-            vk_box_set_widget(g_set_form, 1, VK_WIDGET(g_set_form_fill), VK_INHERIT_NONE);
-        }
+        g_set_form_fill = mk_set_pad(iw - 2, slack);
+        vk_box_set_widget(g_set_form, 4, VK_WIDGET(g_set_form_fill), VK_INHERIT_NONE);
     }
     snprintf(buf, sizeof(buf), "%.2f", g_refresh);
-    vk_input_set_text(g_set_in[0], buf);
+    vk_input_set_text(g_set_in[SF_REFRESH], buf);
+    if (g_tui_cfg.discharge_scale_w > 0)
+    {
+        snprintf(buf, sizeof(buf), "%.0f", g_tui_cfg.discharge_scale_w);
+        vk_input_set_text(g_set_in[SF_WATTS], buf);
+    }
+    g_set_scale = scale_from_cfg();
+    show_scale();
 
-    g_set_bar = vk_box_create(iw - 2, 3, VK_BOX_HORIZONTAL, 3);
+    g_set_bar = vk_box_create(iw - 2, 3, VK_BOX_HORIZONTAL, 5);
     vk_box_set_homogeneous(g_set_bar, false);
     vk_widget_set_colors(VK_WIDGET(g_set_bar), COL_TEXT, COL_MENU);
     g_set_ok = mk_set_btn("OK", on_set_ok);
+    g_set_reset = mk_set_btn("Reset Peak", on_set_reset);
     g_set_cancel = mk_set_btn("Cancel", on_set_cancel);
     g_set_fill = vk_filler_create();
     vk_widget_set_colors(VK_WIDGET(g_set_fill), COL_TEXT, COL_MENU);
     vk_widget_set_expand(VK_WIDGET(g_set_fill));
+    g_set_fill2 = vk_filler_create();
+    vk_widget_set_colors(VK_WIDGET(g_set_fill2), COL_TEXT, COL_MENU);
+    vk_widget_set_expand(VK_WIDGET(g_set_fill2));
     vk_box_set_widget(g_set_bar, 0, VK_WIDGET(g_set_ok), VK_INHERIT_NONE);
     vk_box_set_widget(g_set_bar, 1, VK_WIDGET(g_set_fill), VK_INHERIT_NONE);
-    vk_box_set_widget(g_set_bar, 2, VK_WIDGET(g_set_cancel), VK_INHERIT_NONE);
+    vk_box_set_widget(g_set_bar, 2, VK_WIDGET(g_set_reset), VK_INHERIT_NONE);
+    vk_box_set_widget(g_set_bar, 3, VK_WIDGET(g_set_fill2), VK_INHERIT_NONE);
+    vk_box_set_widget(g_set_bar, 4, VK_WIDGET(g_set_cancel), VK_INHERIT_NONE);
 
     g_set_inner = vk_box_create(iw - 2, ih - 2, VK_BOX_VERTICAL, 2);
     vk_box_set_homogeneous(g_set_inner, false);
@@ -564,7 +622,7 @@ void mf_ui_open_settings(void)
     mf_ui_attach(VK_WIDGET(g_set_win), x, y);
     paint_settings();
 
-    g_set_focus = 0;
+    g_set_focus = SF_REFRESH;
     g_settings_open = 1;
     mf_ui_front_clear();
     mf_ui_front_push(VK_WIDGET(g_set_win));
@@ -573,8 +631,10 @@ void mf_ui_open_settings(void)
 
 static void apply_settings(void)
 {
-    const char *rs = vk_input_get_text(g_set_in[0]);
-    double r;
+    const char *rs = vk_input_get_text(g_set_in[SF_REFRESH]);
+    const char *ws = vk_input_get_text(g_set_in[SF_WATTS]);
+    double r, wv;
+
     r = rs ? atof(rs) : g_refresh;
     if (r < 0.25)
         r = 0.25;
@@ -582,34 +642,45 @@ static void apply_settings(void)
         r = 10.0;
     g_refresh = r;
     g_tui_cfg.refresh_interval_s = g_refresh;
+    /* A fixed scale without watts falls back to Auto on the dashboard. */
+    wv = ws ? atof(ws) : 0.0;
+    g_tui_cfg.discharge_scale_w = wv > 0.0 ? wv : 0.0;
+    snprintf(g_tui_cfg.discharge_scale, sizeof(g_tui_cfg.discharge_scale), "%s",
+             k_scale_key[g_set_scale]);
     close_settings();
 }
 
-/* Focus ring: input(0) OK(1) Cancel(2). */
+/* Focus ring: Refresh, Discharge, Watts, OK, Reset Peak, Cancel. */
 static void set_settings_focus(int f)
 {
-    if (g_set_focus == 0)
-        vk_input_show_cursor(g_set_in[0], false);
+    int i;
+
+    for (i = 0; i < SET_ROWS; i++)
+        if (g_set_in[i])
+            vk_input_show_cursor(g_set_in[i], false);
     g_set_focus = f;
-    if (g_set_focus == 0)
+    /* The choice takes no typing, so it shows no cursor. */
+    if (g_set_focus == SF_REFRESH || g_set_focus == SF_WATTS)
     {
-        vk_input_show_cursor(g_set_in[0], true);
-        vk_input_update(g_set_in[0]);
+        vk_input_show_cursor(g_set_in[g_set_focus], true);
+        vk_input_update(g_set_in[g_set_focus]);
     }
     if (g_set_ok)
-    {
         vk_widget_set_colors(VK_WIDGET(g_set_ok),
-                             g_set_focus == 1 ? COLOR_YELLOW : COL_TEXT,
-                             COL_MENU);
-        vk_button_update(g_set_ok);
-    }
+                             g_set_focus == SF_OK ? COLOR_YELLOW : COL_TEXT, COL_MENU);
+    if (g_set_reset)
+        vk_widget_set_colors(VK_WIDGET(g_set_reset),
+                             g_set_focus == SF_RESET ? COLOR_YELLOW : COL_TEXT, COL_MENU);
     if (g_set_cancel)
-    {
         vk_widget_set_colors(VK_WIDGET(g_set_cancel),
-                             g_set_focus == 2 ? COLOR_YELLOW : COL_TEXT,
-                             COL_MENU);
-        vk_button_update(g_set_cancel);
-    }
+                             g_set_focus == SF_CANCEL ? COLOR_YELLOW : COL_TEXT, COL_MENU);
+    paint_settings();
+}
+
+static void cycle_scale(int dir)
+{
+    g_set_scale = (g_set_scale + dir + 4) % 4;
+    show_scale();
     paint_settings();
 }
 
@@ -625,57 +696,60 @@ static int settings_key(wint_t c)
     }
     if (c == '\t' || c == KEY_BTAB)
     {
-        set_settings_focus((g_set_focus + (c == '\t' ? 1 : 2)) % 3);
+        set_settings_focus((g_set_focus + (c == '\t' ? 1 : SET_FOCI - 1)) % SET_FOCI);
         return 1;
     }
-    if (c == KEY_UP || c == KEY_DOWN)
+    if (c == KEY_UP)
     {
-        int f = g_set_focus + (c == KEY_UP ? -1 : 1);
+        set_settings_focus(g_set_focus >= SF_OK ? SF_WATTS
+                           : g_set_focus > 0 ? g_set_focus - 1 : 0);
+        return 1;
+    }
+    if (c == KEY_DOWN)
+    {
+        if (g_set_focus < SF_OK)
+            set_settings_focus(g_set_focus + 1);
+        return 1;
+    }
+    if (g_set_focus == SF_SCALE && (c == KEY_LEFT || c == KEY_RIGHT || c == ' '))
+    {
+        cycle_scale(c == KEY_LEFT ? -1 : 1);
+        return 1;
+    }
+    if ((c == KEY_LEFT || c == KEY_RIGHT) && g_set_focus >= SF_OK)
+    {
+        int f = g_set_focus + (c == KEY_LEFT ? -1 : 1);
 
-        if (f >= 0 && f <= 2)
+        if (f >= SF_OK && f <= SF_CANCEL)
             set_settings_focus(f);
-        return 1;
-    }
-    if ((c == KEY_LEFT || c == KEY_RIGHT) && g_set_focus >= 1)
-    {
-        set_settings_focus(c == KEY_LEFT ? 1 : 2);
         return 1;
     }
     if (c == '\n' || c == KEY_ENTER)
     {
-        if (g_set_focus == 2)
+        if (g_set_focus == SF_CANCEL)
             close_settings();
+        else if (g_set_focus == SF_RESET)
+            (void)on_set_reset(NULL, NULL);
         else
             apply_settings();
         return 1;
     }
-    if (g_set_focus >= 1)
+    if (g_set_focus != SF_REFRESH && g_set_focus != SF_WATTS)
         return 1;
     in = g_set_in[g_set_focus];
     if (c == KEY_BACKSPACE || c == 127)
-    {
         vk_input_backspace(in);
-        paint_settings();
-        return 1;
-    }
-    if (c == KEY_LEFT)
-    {
+    else if (c == KEY_LEFT)
         vk_input_move_cursor(in, -1);
-        paint_settings();
-        return 1;
-    }
-    if (c == KEY_RIGHT)
-    {
+    else if (c == KEY_RIGHT)
         vk_input_move_cursor(in, 1);
-        paint_settings();
-        return 1;
-    }
-    if (c >= 32 && c < 127)
-    {
+    else if (c >= 32 && c < 127)
         vk_input_insert_char(in, (int)c);
-        paint_settings();
+    else
         return 1;
-    }
+    if (g_set_focus == SF_WATTS)
+        show_scale();                   /* "Full scale 8800 W." */
+    paint_settings();
     return 1;
 }
 
@@ -2710,11 +2784,23 @@ mf_help_mouse(int x, int y, mmask_t bstate)
     return 1;
 }
 
+/* A button of the General dialog under (x, y)?  ox/oy: the bar's origin. */
+static int set_btn_hit(vk_button_t *b, int ox, int oy, int x, int y)
+{
+    int px, py, bw, bh;
+
+    if (!b)
+        return 0;
+    vk_widget_get_position(VK_WIDGET(b), &px, &py);
+    vk_widget_get_metrics(VK_WIDGET(b), &bw, &bh);
+    return x >= ox + px && x < ox + px + bw && y >= oy + py && y < oy + py + bh;
+}
+
 int
 mf_settings_mouse(int x, int y, mmask_t bstate)
 {
     int win_x, win_y, win_w, win_h;
-    int ox, oy, bx, by, px, py, bw, bh;
+    int ox, oy, bx, by;
 
     if (!g_settings_open || !g_set_win)
         return 0;
@@ -2729,9 +2815,11 @@ mf_settings_mouse(int x, int y, mmask_t bstate)
     if (!g_set_vbox || !g_set_bar)
         return 1;
     {
+        /* The rows, top down from under the border and top pad; the line
+         * about the Discharge choice sits between it and Watts. */
         int i, lx = x - win_x, ly = y - win_y, cy = 2;
 
-        for (i = 0; i < 1; i++)
+        for (i = 0; i < SET_ROWS; i++)
         {
             int rw = 0, rh = 3;
 
@@ -2741,42 +2829,26 @@ mf_settings_mouse(int x, int y, mmask_t bstate)
                 rh = 3;
             if (lx >= 2 && lx < win_w - 2 && ly >= cy && ly < cy + rh)
             {
-                if (g_set_focus != i)
-                {
-                    g_set_focus = i;
-                    paint_settings();
-                }
+                /* A click on the choice, once it has focus, moves it on. */
+                if (i == SF_SCALE && g_set_focus == SF_SCALE)
+                    cycle_scale(1);
+                else if (g_set_focus != i)
+                    set_settings_focus(i);
                 return 1;
             }
-            cy += rh;
+            cy += rh + (i == SF_SCALE ? 1 : 0);
         }
     }
     vk_widget_get_position(VK_WIDGET(g_set_vbox), &ox, &oy);
     vk_widget_get_position(VK_WIDGET(g_set_bar), &bx, &by);
     ox += win_x + bx;
     oy += win_y + by;
-    if (g_set_ok)
-    {
-        vk_widget_get_position(VK_WIDGET(g_set_ok), &px, &py);
-        vk_widget_get_metrics(VK_WIDGET(g_set_ok), &bw, &bh);
-        if (x >= ox + px && x < ox + px + bw &&
-            y >= oy + py && y < oy + py + bh)
-        {
-            vk_button_press(g_set_ok);
-            return 1;
-        }
-    }
-    if (g_set_cancel)
-    {
-        vk_widget_get_position(VK_WIDGET(g_set_cancel), &px, &py);
-        vk_widget_get_metrics(VK_WIDGET(g_set_cancel), &bw, &bh);
-        if (x >= ox + px && x < ox + px + bw &&
-            y >= oy + py && y < oy + py + bh)
-        {
-            vk_button_press(g_set_cancel);
-            return 1;
-        }
-    }
+    if (set_btn_hit(g_set_ok, ox, oy, x, y))
+        vk_button_press(g_set_ok);
+    else if (set_btn_hit(g_set_reset, ox, oy, x, y))
+        vk_button_press(g_set_reset);
+    else if (set_btn_hit(g_set_cancel, ox, oy, x, y))
+        vk_button_press(g_set_cancel);
     return 1;
 }
 

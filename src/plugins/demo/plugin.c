@@ -186,6 +186,7 @@ static int battery_get_reading(void *v, char *json, size_t cap)
               "\"soc_pct\":%.1f,"
               "\"soh_pct\":98.0,\"cell_count\":%d,"
               "\"full_capacity_ah\":200.0,\"remaining_capacity_ah\":%.1f,"
+              "\"max_discharge_a\":100.0,"
               "\"charge_mosfet_on\":%s,"
               "\"discharge_mosfet_on\":%s,\"balancer_switch\":%s,"
               "\"cells\":[",

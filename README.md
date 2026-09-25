@@ -30,7 +30,7 @@ Plugins (`libmf_charger_classic.so`, `libmf_battery_xd.so`, `libmf_battery_jk.so
 
 To write your own plugin (a new battery, charger, inverter or service), see [PLUGINS.md](PLUGINS.md): the plugin ABI, the event loop, configuration and settings, readings, history capture and a complete example.
 
-The weather.gov service plugin (`libmf_service_weathergov.so`) needs libcurl: install `libcurl4-openssl-dev` to build it (it is skipped otherwise), and the target needs the `libcurl4` runtime. Add it with Modules → Add Module; it asks for a ZIP code and a contact email for the NWS User-Agent, and feeds the dashboard's Info panel. ZIP codes are looked up offline in `data/zcta.txt` (Census Bureau ZIP centroids, installed to `share/moon-flare/zcta.txt`); the plugin checks census.gov for a newer yearly table every `weather.zip_update_days` days (default 7) and keeps updates in `/var/lib/moonflare/weathergov/`.
+The weather.gov service plugin (`libmf_service_weathergov.so`) needs libcurl: install `libcurl4-openssl-dev` to build it (it is skipped otherwise), and the target needs the `libcurl4` runtime. Add it with Modules → Add Module; it asks for a ZIP code and a contact email for the NWS User-Agent. It feeds the dashboard's Info panel: the current conditions, the next day and night forecast on one line (`Day 92F  Night 72F`), today's sunrise and sunset, and the station and time of the observation. Sunrise and sunset come from weather.gov's `/points` reply, which the plugin fetches again just after local midnight. ZIP codes are looked up offline in `data/zcta.txt` (Census Bureau ZIP centroids, installed to `share/moon-flare/zcta.txt`); the plugin checks census.gov for a newer yearly table every `weather.zip_update_days` days (default 7) and keeps updates in `/var/lib/moonflare/weathergov/`.
 
 ## Install
 
@@ -56,11 +56,22 @@ The daemon owns its working config at `/var/lib/moonflare/moonflared.json` (`$ST
 
 ## System totals
 
-The dashboard's System panel (and `moonflare-cli --status`, and the MCP `status` tool) shows site-wide Input, Capacity and Discharge. Only modules marked **active** count. A module that reports readings but isn't wired into the system (a pack on the bench, say) can stay enabled but inactive: select it on the dashboard and press **Space**, or `PUT /api/v1/devices/{id}/settings` with `{"active": false}`. The flag persists across restarts. The meters' full scale comes from `moonflared.json`:
+The dashboard's System panel (and `moonflare-cli --status`, and the MCP `status` tool) shows site-wide Input, Capacity and Discharge. Only modules marked **active** count. A module that reports readings but isn't wired into the system (a pack on the bench, say) can stay enabled but inactive: select it on the dashboard and press **Space**, or `PUT /api/v1/devices/{id}/settings` with `{"active": false}`. The flag persists across restarts. The full scale of the Input meter (and of Discharge for the CLI and MCP) comes from `moonflared.json`:
 
 ```json
 "system": { "input_max_w": 3500, "discharge_max_w": 3000 }
 ```
+
+In the TUI, the Discharge meter's full scale is a display preference, chosen in **File → General → Discharge**:
+
+| Choice | Full scale |
+| --- | --- |
+| **Auto** (default) | The highest discharge seen from this daemon, rounded up to 500 W. The TUI remembers it between runs in `~/.local/state/moonflare/tui-state.json` (under `$XDG_STATE_HOME` when set). **Reset Peak** forgets it. |
+| **Battery limits** | What the counted packs can deliver: each BMS's maximum discharge current times pack voltage, summed, and rounded to 100 W. JK reports its limit; XD doesn't. |
+| **Inverter ratings** | The counted inverters' continuous ratings, summed. Magnum's comes from the model: an MS4448PAE is 4400 W. |
+| **Fixed watts** | The **Watts** you enter. |
+
+The line under the choice says what it gives right now. Battery limits and Inverter ratings count only when every counted pack or inverter reports one, and until then the scale uses Auto (so does Fixed without watts). A fixed or known scale that is exceeded reads `3508 W (above 3000 W)`. **File → Save config** keeps the choice in `moonflare.json` (`discharge_scale`, `discharge_scale_w`). `/api/v1/status` reports the two sums as `system.battery_limit_w` and `system.inverter_rated_w` (`null` while unknown).
 
 ## Phantom modules
 

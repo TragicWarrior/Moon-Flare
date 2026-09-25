@@ -207,6 +207,11 @@ int  mag_multiplier(int model);         /* pymagnum: <=50 x1, <=107 x2, <=150 x4
 const char *mag_mode_text(int mode);
 const char *mag_fault_text(int fault);
 const char *mag_model_text(int model);
+/* Continuous rating in watts, from the model name: Magnum names carry the
+ * watts in hundreds, then the battery volts (MS4448PAE: 4400 W at 48 V;
+ * MM612: 600 W at 12 V).  0 for an unknown model.  A moon-flare addition,
+ * not in pymagnum. */
+int  mag_model_rated_w(int model);
 const char *mag_stackmode_text(int stackmode);
 const char *mag_ags_status_text(int status);
 const char *mag_bmk_fault_text(int fault);

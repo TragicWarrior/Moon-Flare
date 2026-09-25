@@ -101,6 +101,15 @@ int  mf_devset_mouse(int x, int y, mmask_t bstate);
 const char *mf_devset_id(void);
 const char *mf_devset_poll_text(void);
 const char *mf_devset_payload(void);
+/* The Discharge meter's full scale, chosen in File > General (saved in
+ * moonflare.json as discharge_scale / discharge_scale_w). */
+enum { MF_SCALE_AUTO = 0, MF_SCALE_BATTERY, MF_SCALE_INVERTER, MF_SCALE_FIXED };
+int    mf_ui_discharge_scale(void);
+double mf_ui_discharge_fixed_w(void);
+/* What a choice gives right now (for the dialog), and forgetting the Auto
+ * high mark of the daemon now shown. */
+void   mf_dash_discharge_info(int mode, double fixed_w, char *out, size_t cap);
+void   mf_dash_discharge_reset(void);
 /* An action row that was run (mf_devset_key/mouse returned 3): POST
  * mf_devset_action_body() to mf_devset_action_path(), hand the reply to
  * mf_devset_action_reply(), then, while mf_devset_action_waiting(), fetch

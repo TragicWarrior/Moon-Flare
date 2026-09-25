@@ -86,9 +86,9 @@ The kind decides where a module appears on the dashboard, and which reading keys
 
 | Kind | Dashboard | What the daemon reads from your reading |
 | --- | --- | --- |
-| `battery` | Batteries frame, pack view, system totals | `pack_voltage_v`, `current_a` (negative while discharging), `soc_pct`, `full_capacity_ah`, `remaining_capacity_ah`, `cell_count` |
+| `battery` | Batteries frame, pack view, system totals | `pack_voltage_v`, `current_a` (negative while discharging), `soc_pct`, `full_capacity_ah`, `remaining_capacity_ah`, `cell_count`; optionally `max_discharge_a` (or `max_discharge_w`), what the pack can deliver, for `system.battery_limit_w` |
 | `charger` | Chargers frame, charger view, the Input meter | `battery_voltage_v`, `charging_watts`, `kwh_today`, `charge_stage` |
-| `inverter` | Inverters frame (a list for now) | nothing yet |
+| `inverter` | Inverters frame (a list for now) | optionally `rated_w`, the continuous rating, for `system.inverter_rated_w` |
 | `service` | Services frame; the whole reading is passed through as `data` | the Info panel shows a `weather` object (see [Readings](#readings)) |
 | `actuator` | Actuators frame; the whole reading is passed through as `data` | nothing yet |
 
@@ -256,13 +256,22 @@ A module's settings form combines the daemon's own settings (name, poll and capt
   {"weather": {"temp_f": 84.2, "conditions": "Clear", "icon": "clear",
                "is_day": true, "humidity_pct": 62, "wind_mph": 9.2,
                "wind_dir": "S", "station": "KDWH", "place": "Tomball, TX",
-               "observed_local": "10:53",
+               "observed_local": "10:53", "sunrise": "07:17",
+               "sunset": "19:20",
                "forecast": [{"name": "Tonight", "temp_f": 72,
                              "short": "Mostly Clear", "icon": "clear",
                              "is_day": false}]}}
   ```
 
   `icon` is one of: `clear`, `partly_cloudy`, `mostly_cloudy`, `cloudy`, `wind`, `rain`, `showers`, `thunderstorm`, `snow`, `blizzard`, `sleet`, `freezing_rain`, `fog`, `haze`, `tornado`, `hurricane`, `hot`, `cold`. The dashboard picks the symbol.
+
+  The panel shows these lines:
+  - the current conditions;
+  - the first two forecast periods on one line, each with its icon and named `Day` or `Night` by its `is_day` (at 80 columns without the `F` units);
+  - `sunrise` and `sunset` (local `HH:MM`, or `null` when unknown);
+  - the station and `observed_local`.
+
+  Humidity and wind are still part of the reading for other clients; the panel doesn't show them.
 
 ## History capture and pruning
 

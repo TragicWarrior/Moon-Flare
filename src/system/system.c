@@ -2,8 +2,13 @@
 
 #include <string.h>
 
+int mf_soc_voltage_check(const char *driver)
+{
+    return driver && strcmp(driver, "jk") == 0;
+}
+
 double mf_display_soc(double bms_soc, double rem_ah, double full_ah,
-                      double avg_cell_v, double current_a)
+                      double avg_cell_v, double current_a, int voltage_check)
 {
     static const double pt[][2] = {
         {2.80, 0}, {3.00, 5}, {3.20, 10}, {3.25, 20}, {3.28, 30},
@@ -17,7 +22,8 @@ double mf_display_soc(double bms_soc, double rem_ah, double full_ah,
 
     if (full_ah > 0 && rem_ah >= 0)
         soc = rem_ah / full_ah * 100.0;
-    if (avg_cell_v <= 0 || current_a <= -0.5 || current_a >= 0.5)
+    if (!voltage_check || avg_cell_v <= 0 || current_a <= -0.5 ||
+        current_a >= 0.5)
         goto clamp;
     if (avg_cell_v <= pt[0][0])
         vsoc = pt[0][1];
@@ -69,7 +75,8 @@ void mf_system_add_charger(mf_system_totals_t *t, bool active, bool online,
 
 void mf_system_add_battery(mf_system_totals_t *t, bool active, bool online,
                            double pack_v, double current_a, double bms_soc,
-                           double rem_ah, double full_ah, int cell_count)
+                           double rem_ah, double full_ah, int cell_count,
+                           int voltage_check)
 {
     double avg_cell_v = cell_count > 0 ? pack_v / cell_count : 0.0;
     double soc, power_w;
@@ -79,7 +86,8 @@ void mf_system_add_battery(mf_system_totals_t *t, bool active, bool online,
         return;
     t->batteries_counted++;
 
-    soc = mf_display_soc(bms_soc, rem_ah, full_ah, avg_cell_v, current_a);
+    soc = mf_display_soc(bms_soc, rem_ah, full_ah, avg_cell_v, current_a,
+                         voltage_check);
     if (full_ah > 0.0 && pack_v > 0.0)
     {
         double full_wh = full_ah * pack_v;
@@ -98,6 +106,41 @@ void mf_system_add_battery(mf_system_totals_t *t, bool active, bool online,
         t->charge_w += power_w;
     else
         t->discharge_w -= power_w;
+}
+
+void mf_system_add_battery_limit(mf_system_totals_t *t, bool active,
+                                 bool online, double max_discharge_w)
+{
+    if (!active || !online || max_discharge_w <= 0.0)
+        return;
+    t->battery_limit_w += max_discharge_w;
+    t->battery_limit_n++;
+}
+
+void mf_system_add_inverter(mf_system_totals_t *t, bool active, bool online,
+                            double rated_w)
+{
+    t->inverters_total++;
+    if (!active || !online)
+        return;
+    t->inverters_counted++;
+    if (rated_w > 0.0)
+    {
+        t->inverter_rated_w += rated_w;
+        t->inverter_rated_n++;
+    }
+}
+
+/* A partial sum would understate the whole: known only when every counted
+ * pack (inverter) reported its figure. */
+int mf_system_battery_limit_known(const mf_system_totals_t *t)
+{
+    return t->batteries_counted > 0 && t->battery_limit_n == t->batteries_counted;
+}
+
+int mf_system_inverter_rated_known(const mf_system_totals_t *t)
+{
+    return t->inverters_counted > 0 && t->inverter_rated_n == t->inverters_counted;
 }
 
 void mf_system_finish(mf_system_totals_t *t)

@@ -58,6 +58,12 @@ static void add_inverter(cJSON *o, const mag_inverter_t *v)
     num(o, "fet_temp_c", v->fet_temp_c);
     num(o, "model", v->model);
     cJSON_AddStringToObject(o, "model_text", mag_model_text(v->model));
+    /* Its continuous rating, from the model (the system's inverter
+       capacity sums these). */
+    if (mag_model_rated_w(v->model) > 0)
+        num(o, "rated_w", mag_model_rated_w(v->model));
+    else
+        cJSON_AddNullToObject(o, "rated_w");
     num(o, "stackmode", v->stackmode);
     cJSON_AddStringToObject(o, "stackmode_text", mag_stackmode_text(v->stackmode));
     num(o, "revision", v->revision);
