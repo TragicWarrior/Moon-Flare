@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 project(moon-flare
-    VERSION 0.7.0
+    VERSION 0.8.0
     DESCRIPTION "Moon Flare: multi-kind energy dashboard (daemon, REST, plugins, TUI)"
     LANGUAGES C)
 
@@ -47,6 +47,8 @@ set(MF_WARN_PT -Wall -Wextra -Wshadow -Wconversion -Wno-unused-parameter)
 add_library(mf_cjson STATIC third_party/cJSON/cJSON.c)
 target_include_directories(mf_cjson PUBLIC ${CMAKE_SOURCE_DIR}/third_party/cJSON)
 target_compile_options(mf_cjson PRIVATE -w)
+# Plugins (shared libraries) link it too.
+set_target_properties(mf_cjson PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # Vendored picohttpparser (Kazuho Oku et al., MIT).
 add_library(mf_phr STATIC third_party/picohttpparser/picohttpparser.c)
@@ -236,6 +238,53 @@ else()
     message(STATUS "libcurl not found: skipping the weather.gov plugin")
 endif()
 
+# Magnum Energy inverter network: a read-only RS-485 tap, ported from
+# pymagnum (third_party/pymagnum).  Plugin, magtest-style dump tool, tests.
+set(MF_MAGNUM_SRC
+    src/magnum/mag_frame.c src/magnum/mag_decode.c src/magnum/mag_json.c)
+add_library(mf_inverter_magnum SHARED
+    src/plugins/inverter_magnum/plugin.c ${MF_MAGNUM_SRC}
+    src/magnum/mag_tty.c src/usb/usb_id.c)
+target_include_directories(mf_inverter_magnum PRIVATE
+    ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src/magnum
+    ${CMAKE_SOURCE_DIR}/src/usb ${CMAKE_SOURCE_DIR}/third_party/cJSON)
+target_link_libraries(mf_inverter_magnum PRIVATE mf_cjson m)
+set_target_properties(mf_inverter_magnum PROPERTIES
+    PREFIX "lib" OUTPUT_NAME "mf_inverter_magnum"
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/magnum_plugins)
+target_compile_definitions(mf_inverter_magnum PRIVATE _GNU_SOURCE)
+target_compile_options(mf_inverter_magnum PRIVATE ${MF_WARN})
+
+add_executable(mf_magnum_dump tools/mf_magnum_dump.c ${MF_MAGNUM_SRC}
+    src/magnum/mag_tty.c)
+target_include_directories(mf_magnum_dump PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/magnum ${CMAKE_SOURCE_DIR}/third_party/cJSON)
+target_link_libraries(mf_magnum_dump PRIVATE mf_cjson m)
+target_compile_definitions(mf_magnum_dump PRIVATE _GNU_SOURCE)
+target_compile_options(mf_magnum_dump PRIVATE ${MF_WARN})
+
+add_executable(test_magnum tests/test_magnum.c ${MF_MAGNUM_SRC})
+target_include_directories(test_magnum PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/magnum ${CMAKE_SOURCE_DIR}/third_party/cJSON)
+target_link_libraries(test_magnum PRIVATE mf_cjson m)
+target_compile_options(test_magnum PRIVATE ${MF_WARN})
+add_test(NAME magnum COMMAND test_magnum)
+
+add_executable(test_magnum_pty tests/test_magnum_pty.c)
+target_include_directories(test_magnum_pty PRIVATE
+    ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/third_party/cJSON)
+target_link_libraries(test_magnum_pty PRIVATE mf_cjson ${CMAKE_DL_LIBS} util m)
+target_compile_options(test_magnum_pty PRIVATE ${MF_WARN})
+add_test(NAME magnum_pty
+    COMMAND test_magnum_pty $<TARGET_FILE:mf_inverter_magnum>)
+find_program(MF_VALGRIND valgrind)
+if(MF_VALGRIND)
+    add_test(NAME magnum_pty_valgrind
+        COMMAND ${MF_VALGRIND} --quiet --error-exitcode=9 --leak-check=full
+                --errors-for-leak-kinds=definite
+                $<TARGET_FILE:test_magnum_pty> $<TARGET_FILE:mf_inverter_magnum> quick)
+endif()
+
 add_library(mf_battery_jk SHARED
     src/plugins/battery_jk/plugin.c
     src/jk/jk_proto.c)
@@ -383,7 +432,8 @@ add_test(NAME moonflare_dump_charger COMMAND moonflare --dump-layout charger)
 install(TARGETS moonflared moonflare RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(TARGETS mf_gatt RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR})
 # Match KD 20 / example plugin_dir: $prefix/lib/moon-flare, not multiarch LIBDIR.
-install(TARGETS mf_charger_classic mf_battery_xd mf_battery_jk
+install(TARGETS mf_magnum_dump RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS mf_charger_classic mf_battery_xd mf_battery_jk mf_inverter_magnum
         LIBRARY DESTINATION lib/moon-flare)
 if(TARGET mf_service_weathergov)
     install(TARGETS mf_service_weathergov LIBRARY DESTINATION lib/moon-flare)

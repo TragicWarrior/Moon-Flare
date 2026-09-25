@@ -118,6 +118,8 @@ Each pass of the main loop does the following:
    - `MF_STEP_ERROR`: the module is offline. The daemon calls `last_error(ctx)` for the reason shown to users.
 4. **Read out.** After every step that is not an error, the daemon calls `get_reading(ctx, …)`. That happens up to 20 times a second, so keep it cheap: format what you already have. Do no I/O there.
 
+A device that talks all the time, like the Magnum inverter bus ([`src/plugins/inverter_magnum/`](src/plugins/inverter_magnum/plugin.c)), fits the same loop. Return its port from `fd()` with `MF_IO_WANT_READ`, read until `EAGAIN` in each `step()`, and rebuild the reading on your own schedule. The kernel buffers whatever arrives between steps.
+
 `open()` and `close()` also run on the main thread. `open()` often runs inside an HTTP request, when a user adds a module. Both must return quickly. In `open()`, parse the configuration, allocate your context and start non-blocking work. Do the actual connecting in `step()`.
 
 The daemon calls `close(ctx)` when:
