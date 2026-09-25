@@ -20,9 +20,9 @@
 
 /* ── Config merge helpers ───────────────────────────────────────────── */
 
-/* Merge offline device config (from moonflared.json) into the device list
- * so configured-but-offline devices still appear in --list. */
-static cJSON *merge_offline_config(cJSON *devices, const char *config_override)
+/* Merge offline module config (from moonflared.json) into the module list
+ * so configured-but-offline modules still appear in --list. */
+static cJSON *merge_offline_config(cJSON *modules, const char *config_override)
 {
     cJSON *merged;
     cJSON *item;
@@ -30,14 +30,14 @@ static cJSON *merge_offline_config(cJSON *devices, const char *config_override)
     int i;
 
     /* If we can't load the daemon config, signal "no merge" (NULL) so the
-     * caller renders (and frees) the original list. Returning `devices` here
+     * caller renders (and frees) the original list. Returning `modules` here
      * would let the caller free the same object twice (double-free). */
     if (mf_config_load(config_override, &daemon_cfg) != 0)
         return NULL;
 
-    /* Already have all devices from the daemon; no merge needed
-     * unless there are configured-but-offline devices. */
-    merged = cJSON_Duplicate(devices, 1);
+    /* Already have all modules from the daemon; no merge needed
+     * unless there are configured-but-offline modules. */
+    merged = cJSON_Duplicate(modules, 1);
     if (!merged)
         return NULL;
 
@@ -60,16 +60,16 @@ static cJSON *merge_offline_config(cJSON *devices, const char *config_override)
 
         if (!found)
         {
-            /* Add the offline configured device. */
-            cJSON *dev = cJSON_CreateObject();
+            /* Add the offline configured module. */
+            cJSON *mod = cJSON_CreateObject();
             char online_str[8];
             snprintf(online_str, sizeof(online_str), "%s", "offline");
-            cJSON_AddStringToObject(dev, "id", uuid);
-            cJSON_AddStringToObject(dev, "name", daemon_cfg.devices[i].name);
-            cJSON_AddStringToObject(dev, "kind", daemon_cfg.devices[i].kind);
-            cJSON_AddStringToObject(dev, "driver", daemon_cfg.devices[i].driver);
-            cJSON_AddBoolToObject(dev, "online", 0);
-            cJSON_AddItemToArray(merged, dev);
+            cJSON_AddStringToObject(mod, "id", uuid);
+            cJSON_AddStringToObject(mod, "name", daemon_cfg.devices[i].name);
+            cJSON_AddStringToObject(mod, "kind", daemon_cfg.devices[i].kind);
+            cJSON_AddStringToObject(mod, "driver", daemon_cfg.devices[i].driver);
+            cJSON_AddBoolToObject(mod, "online", 0);
+            cJSON_AddItemToArray(merged, mod);
         }
         else
         {
@@ -84,7 +84,7 @@ static cJSON *merge_offline_config(cJSON *devices, const char *config_override)
     return merged;
 }
 
-/* ── Resolve device by name ─────────────────────────────────────────── */
+/* ── Resolve module by name ─────────────────────────────────────────── */
 
 static char *resolve_name_to_uuid(cli_ctx_t *ctx, const char *name)
 {
@@ -130,7 +130,7 @@ static char *resolve_name_to_uuid(cli_ctx_t *ctx, const char *name)
 
 /* ── Subcommand handlers ────────────────────────────────────────────── */
 
-static int cmd_list_devices(cli_ctx_t *ctx, const char *config_override)
+static int cmd_list_modules(cli_ctx_t *ctx, const char *config_override)
 {
     cli_http_resp_t resp;
     cJSON *root;
@@ -156,7 +156,7 @@ static int cmd_list_devices(cli_ctx_t *ctx, const char *config_override)
 
     if (!root)
     {
-        fprintf(stderr, "error: failed to parse device list\n");
+        fprintf(stderr, "error: failed to parse module list\n");
         return 1;
     }
 
@@ -166,17 +166,17 @@ static int cmd_list_devices(cli_ctx_t *ctx, const char *config_override)
         cJSON *merged = merge_offline_config(root, config_override);
         if (merged)
         {
-            rc = cli_render_list_devices(merged, 0);
+            rc = cli_render_list_modules(merged, 0);
             cJSON_Delete(merged);
         }
         else
         {
-            rc = cli_render_list_devices(root, 0);
+            rc = cli_render_list_modules(root, 0);
         }
     }
     else
     {
-        rc = cli_render_list_devices(root, 1);
+        rc = cli_render_list_modules(root, 1);
     }
 
     cJSON_Delete(root);
@@ -245,7 +245,7 @@ static int cmd_query(cli_ctx_t *ctx, const char *id_or_name)
         uuid = resolve_name_to_uuid(ctx, id_or_name);
         if (!uuid)
         {
-            fprintf(stderr, "error: device not found: %s\n", id_or_name);
+            fprintf(stderr, "error: module not found: %s\n", id_or_name);
             return 1;
         }
     }
@@ -269,7 +269,7 @@ static int cmd_query(cli_ctx_t *ctx, const char *id_or_name)
 
     if (resp.status == 404)
     {
-        fprintf(stderr, "error: device not found: %s\n", id_or_name);
+        fprintf(stderr, "error: module not found: %s\n", id_or_name);
         cli_http_resp_free(&resp);
         return 1;
     }
@@ -287,11 +287,11 @@ static int cmd_query(cli_ctx_t *ctx, const char *id_or_name)
 
         if (!root)
         {
-            fprintf(stderr, "error: failed to parse device\n");
+            fprintf(stderr, "error: failed to parse module\n");
             return 1;
         }
 
-        rc = cli_render_query_device(root, ctx->raw ? 1 : 0);
+        rc = cli_render_query_module(root, ctx->raw ? 1 : 0);
         cJSON_Delete(root);
     }
 
@@ -339,7 +339,7 @@ int main(int argc, char **argv)
 {
     const char *connect_flag = NULL;
     const char *config_override = NULL;
-    const char *list_what = "devices";
+    const char *list_what = "modules";
     const char *query_id = NULL;
     double timeout = 5.0;
     int raw = 0;
@@ -484,9 +484,17 @@ int main(int argc, char **argv)
         {
             rc = cmd_list_drivers(&ctx);
         }
+        /* "devices" is the name from before 0.9.0. */
+        else if (strcmp(list_what, "modules") == 0 ||
+                 strcmp(list_what, "devices") == 0)
+        {
+            rc = cmd_list_modules(&ctx, config_override);
+        }
         else
         {
-            rc = cmd_list_devices(&ctx, config_override);
+            fprintf(stderr, "error: --list takes \"modules\" or \"drivers\", "
+                    "not \"%s\"\n", list_what);
+            rc = 2;
         }
         return rc;
     }

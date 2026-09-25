@@ -5,6 +5,27 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-09-25
+
+### Changed
+
+- `moonflare-cli` and its MCP server now say "modules", as the TUI does.
+  - **MCP tools:** `list_modules`, `query_module` and `module_history`;
+    `status` is unchanged. The old names (`list_devices`, `query_device`,
+    `device_history`) still work but are no longer listed.
+  - **`--list`** takes `modules` (the default) or `drivers`. `devices`
+    still works; any other word is now an error instead of listing
+    modules.
+  - Help text and messages say "module".
+  - The REST paths (`/api/v1/devices`) are unchanged.
+- The README says Modules where it still said Devices (the menu, and
+  the System totals).
+
+### Fixed
+
+- The MCP server leaked memory on every `query_device` or
+  `device_history` call made without `arguments`.
+
 ## [0.8.0] - 2026-09-24
 
 ### Added

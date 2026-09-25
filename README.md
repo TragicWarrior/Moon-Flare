@@ -30,7 +30,7 @@ Plugins (`libmf_charger_classic.so`, `libmf_battery_xd.so`, `libmf_battery_jk.so
 
 To write your own plugin (a new battery, charger, inverter or service), see [PLUGINS.md](PLUGINS.md): the plugin ABI, the event loop, configuration and settings, readings, history capture and a complete example.
 
-The weather.gov service plugin (`libmf_service_weathergov.so`) needs libcurl: install `libcurl4-openssl-dev` to build it (it is skipped otherwise), and the target needs the `libcurl4` runtime. Add it with Devices → Add Module; it asks for a ZIP code and a contact email for the NWS User-Agent, and feeds the dashboard's Info panel. ZIP codes are looked up offline in `data/zcta.txt` (Census Bureau ZIP centroids, installed to `share/moon-flare/zcta.txt`); the plugin checks census.gov for a newer yearly table every `weather.zip_update_days` days (default 7) and keeps updates in `/var/lib/moonflare/weathergov/`.
+The weather.gov service plugin (`libmf_service_weathergov.so`) needs libcurl: install `libcurl4-openssl-dev` to build it (it is skipped otherwise), and the target needs the `libcurl4` runtime. Add it with Modules → Add Module; it asks for a ZIP code and a contact email for the NWS User-Agent, and feeds the dashboard's Info panel. ZIP codes are looked up offline in `data/zcta.txt` (Census Bureau ZIP centroids, installed to `share/moon-flare/zcta.txt`); the plugin checks census.gov for a newer yearly table every `weather.zip_update_days` days (default 7) and keeps updates in `/var/lib/moonflare/weathergov/`.
 
 ## Install
 
@@ -50,13 +50,13 @@ Config search (daemon `moonflared.json`, TUI `moonflare.json`): `--config`, then
 
 ### Where the daemon keeps its config
 
-The daemon owns its working config at `/var/lib/moonflare/moonflared.json` (`$STATE_DIRECTORY/moonflared.json` under systemd). On its first start it seeds that file from `/etc/moonflare/moonflared.json` (or `--config`), plus any older `settings.json` overlay. From then on it reads only the state file, and saves the whole thing whenever something changes: device settings, the active flag, and modules added or removed with Devices → Add Module / Remove Module in the TUI.
+The daemon owns its working config at `/var/lib/moonflare/moonflared.json` (`$STATE_DIRECTORY/moonflared.json` under systemd). On its first start it seeds that file from `/etc/moonflare/moonflared.json` (or `--config`), plus any older `settings.json` overlay. From then on it reads only the state file, and saves the whole thing whenever something changes: module settings, the active flag, and modules added or removed with Modules → Add Module / Remove Module in the TUI.
 
 `/etc/moonflare/moonflared.json` is only the first-run seed after that. To apply an edit to it, stop the daemon, move `/var/lib/moonflare/moonflared.json` aside, and start it again; it reseeds from `/etc`. The state file is mode 0600 because it holds JK app passcodes. If it ever fails to parse, the daemon renames it to `moonflared.json.bad` and reseeds.
 
 ## System totals
 
-The dashboard's System panel (and `moonflare-cli --status`, and the MCP `status` tool) shows site-wide Input, Capacity and Discharge. Only devices marked **active** count. A device that reports readings but isn't wired into the system (a pack on the bench, say) can stay enabled but inactive: select it on the dashboard and press **Space**, or `PUT /api/v1/devices/{id}/settings` with `{"active": false}`. The flag persists across restarts. The meters' full scale comes from `moonflared.json`:
+The dashboard's System panel (and `moonflare-cli --status`, and the MCP `status` tool) shows site-wide Input, Capacity and Discharge. Only modules marked **active** count. A module that reports readings but isn't wired into the system (a pack on the bench, say) can stay enabled but inactive: select it on the dashboard and press **Space**, or `PUT /api/v1/devices/{id}/settings` with `{"active": false}`. The flag persists across restarts. The meters' full scale comes from `moonflared.json`:
 
 ```json
 "system": { "input_max_w": 3500, "discharge_max_w": 3000 }

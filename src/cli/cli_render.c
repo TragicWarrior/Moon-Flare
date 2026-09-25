@@ -14,15 +14,15 @@
 #include <math.h>
 #include <time.h>
 
-/* ── --list devices ──────────────────────────────────────────────────── */
+/* ── --list modules ──────────────────────────────────────────────────── */
 
-int cli_render_list_devices(const cJSON *devices, int raw)
+int cli_render_list_modules(const cJSON *modules, int raw)
 {
     cJSON *item;
 
     if (raw)
     {
-        char *s = cJSON_PrintUnformatted(devices);
+        char *s = cJSON_PrintUnformatted(modules);
         if (s)
         {
             printf("%s\n", s);
@@ -31,13 +31,13 @@ int cli_render_list_devices(const cJSON *devices, int raw)
         return 0;
     }
 
-    if (!devices || !cJSON_IsArray(devices))
+    if (!modules || !cJSON_IsArray(modules))
         return -1;
 
     printf("%-38s %-10s %-8s %-10s %-6s %s\n",
         "ID", "NAME", "KIND", "DRIVER", "ONLINE", "ACTIVE");
 
-    cJSON_ArrayForEach(item, devices)
+    cJSON_ArrayForEach(item, modules)
     {
         const cJSON *id, *name, *kind, *driver, *online, *active;
         id = cJSON_GetObjectItemCaseSensitive(item, "id");
@@ -124,14 +124,14 @@ int cli_render_list_drivers(const cJSON *drivers, int raw)
 
 /* ── --query ─────────────────────────────────────────────────────────── */
 
-int cli_render_query_device(const cJSON *dev, int raw)
+int cli_render_query_module(const cJSON *mod, int raw)
 {
     char *s;
     const cJSON *name, *kind, *driver, *state, *data, *online;
 
     if (raw)
     {
-        s = cJSON_Print(dev);
+        s = cJSON_Print(mod);
         if (s)
         {
             printf("%s\n", s);
@@ -140,15 +140,15 @@ int cli_render_query_device(const cJSON *dev, int raw)
         return 0;
     }
 
-    if (!dev || !cJSON_IsObject(dev))
+    if (!mod || !cJSON_IsObject(mod))
         return -1;
 
-    name = cJSON_GetObjectItemCaseSensitive(dev, "name");
-    kind = cJSON_GetObjectItemCaseSensitive(dev, "kind");
-    driver = cJSON_GetObjectItemCaseSensitive(dev, "driver");
-    state = cJSON_GetObjectItemCaseSensitive(dev, "state");
-    data = cJSON_GetObjectItemCaseSensitive(dev, "data");
-    online = cJSON_GetObjectItemCaseSensitive(dev, "online");
+    name = cJSON_GetObjectItemCaseSensitive(mod, "name");
+    kind = cJSON_GetObjectItemCaseSensitive(mod, "kind");
+    driver = cJSON_GetObjectItemCaseSensitive(mod, "driver");
+    state = cJSON_GetObjectItemCaseSensitive(mod, "state");
+    data = cJSON_GetObjectItemCaseSensitive(mod, "data");
+    online = cJSON_GetObjectItemCaseSensitive(mod, "online");
 
     if (!cJSON_IsString(name) || !cJSON_IsString(kind) ||
         !cJSON_IsString(driver))
@@ -160,7 +160,7 @@ int cli_render_query_device(const cJSON *dev, int raw)
         const char *state_str = "unknown";
         if (state && cJSON_IsString(state) && state->valuestring)
             state_str = state->valuestring;
-        const cJSON *active = cJSON_GetObjectItemCaseSensitive(dev, "active");
+        const cJSON *active = cJSON_GetObjectItemCaseSensitive(mod, "active");
         printf("%s  (%s / %s)                     online \xc2\xb7 %s\n",
             name->valuestring, kind->valuestring, driver->valuestring,
             online->valueint ? state_str : "offline");
@@ -336,7 +336,7 @@ int cli_render_query_device(const cJSON *dev, int raw)
     }
     else
     {
-        printf("  (%s device)\n", kind->valuestring);
+        printf("  (%s module)\n", kind->valuestring);
     }
 
     return 0;
@@ -344,7 +344,7 @@ int cli_render_query_device(const cJSON *dev, int raw)
 
 /* ── --status ────────────────────────────────────────────────────────── */
 
-static void print_device_line(const char *prefix, const cJSON *item)
+static void print_module_line(const char *prefix, const cJSON *item)
 {
     const cJSON *name, *driver, *id, *online;
     name = cJSON_GetObjectItemCaseSensitive(item, "name");
@@ -383,7 +383,7 @@ static double sys_num(const cJSON *sys, const char *key)
     return cJSON_IsNumber(n) ? n->valuedouble : 0.0;
 }
 
-/* Totals over the devices marked active; absent from older daemons. */
+/* Totals over the modules marked active; absent from older daemons. */
 static void print_system(const cJSON *sys)
 {
     const cJSON *soc;
@@ -440,7 +440,7 @@ int cli_render_status(const cJSON *status, int raw)
         printf("\nBatteries:\n");
         cJSON_ArrayForEach(item, batteries)
         {
-            print_device_line("", item);
+            print_module_line("", item);
             pv = cJSON_GetObjectItemCaseSensitive(item, "pack_voltage_v");
             cv = cJSON_GetObjectItemCaseSensitive(item, "current_a");
             soc = cJSON_GetObjectItemCaseSensitive(item, "soc_pct");
@@ -461,7 +461,7 @@ int cli_render_status(const cJSON *status, int raw)
         printf("\nChargers:\n");
         cJSON_ArrayForEach(item, chargers)
         {
-            print_device_line("", item);
+            print_module_line("", item);
             bv = cJSON_GetObjectItemCaseSensitive(item, "battery_voltage_v");
             cw = cJSON_GetObjectItemCaseSensitive(item, "charging_watts");
             ks = cJSON_GetObjectItemCaseSensitive(item, "kwh_today");
@@ -484,7 +484,7 @@ int cli_render_status(const cJSON *status, int raw)
         printf("\nInverters:\n");
         cJSON_ArrayForEach(item, inverters)
         {
-            print_device_line("", item);
+            print_module_line("", item);
             printf("\n");
         }
     }
@@ -495,7 +495,7 @@ int cli_render_status(const cJSON *status, int raw)
         printf("\nActuators:\n");
         cJSON_ArrayForEach(item, actuators)
         {
-            print_device_line("", item);
+            print_module_line("", item);
             printf("\n");
         }
     }
@@ -511,7 +511,7 @@ int cli_render_status(const cJSON *status, int raw)
             const cJSON *t = cJSON_GetObjectItemCaseSensitive(wx, "temp_f");
             const cJSON *c = cJSON_GetObjectItemCaseSensitive(wx, "conditions");
 
-            print_device_line("", item);
+            print_module_line("", item);
             if (cJSON_IsNumber(t))
                 printf("   %.0f F", t->valuedouble);
             if (cJSON_IsString(c) && c->valuestring[0])
@@ -641,10 +641,11 @@ void cli_print_usage(const char *progname)
         "Usage: %s [GLOBAL OPTS] <command>\n"
         "\n"
         "Commands:\n"
-        "  -l, --list [WHAT]       list devices (WHAT defaults to \"devices\";\n"
+        "  -l, --list [WHAT]       list modules (WHAT defaults to \"modules\";\n"
         "                          also \"drivers\")\n"
-        "  -q, --query <ID>        full readout for one device\n"
-        "      --status            one-shot summary of all devices\n"
+        "  -q, --query <ID>        full readout for one module (uuid or exact\n"
+        "                          name)\n"
+        "      --status            one-shot summary of all modules\n"
         "      --mcp               run as an MCP server on stdio\n"
         "  -h, --help              usage\n"
         "      --version           print version and exit\n"

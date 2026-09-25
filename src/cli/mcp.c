@@ -116,7 +116,7 @@ static cJSON *fetch_get(cli_ctx_t *ctx, const char *path, int *http_status)
     return root;
 }
 
-static char *mcp_resolve_device(cli_ctx_t *ctx, const char *id_or_name)
+static char *mcp_resolve_module(cli_ctx_t *ctx, const char *id_or_name)
 {
     cJSON *root = NULL;
     cJSON *item;
@@ -145,10 +145,10 @@ static char *mcp_resolve_device(cli_ctx_t *ctx, const char *id_or_name)
 
     /* Fall back to name lookup. */
     {
-        cJSON *devs = fetch_get(ctx, "/api/v1/devices", NULL);
-        if (devs && cJSON_IsArray(devs))
+        cJSON *mods = fetch_get(ctx, "/api/v1/devices", NULL);
+        if (mods && cJSON_IsArray(mods))
         {
-            cJSON_ArrayForEach(item, devs)
+            cJSON_ArrayForEach(item, mods)
             {
                 const cJSON *nf = cJSON_GetObjectItemCaseSensitive(item, "name");
                 const cJSON *idf = cJSON_GetObjectItemCaseSensitive(item, "id");
@@ -160,8 +160,8 @@ static char *mcp_resolve_device(cli_ctx_t *ctx, const char *id_or_name)
                 }
             }
         }
-        if (devs)
-            cJSON_Delete(devs);
+        if (mods)
+            cJSON_Delete(mods);
     }
 
     return uuid;
@@ -169,15 +169,15 @@ static char *mcp_resolve_device(cli_ctx_t *ctx, const char *id_or_name)
 
 /* ── Tool handlers ──────────────────────────────────────────────────── */
 
-static cJSON *handle_list_devices(cli_ctx_t *ctx)
+static cJSON *handle_list_modules(cli_ctx_t *ctx)
 {
-    cJSON *devs = fetch_get(ctx, "/api/v1/devices", NULL);
+    cJSON *mods = fetch_get(ctx, "/api/v1/devices", NULL);
     char *text;
     cJSON *result, *content, *item;
 
-    if (!devs)
+    if (!mods)
     {
-        text = strdup("error: failed to fetch devices");
+        text = strdup("error: failed to fetch modules");
         result = cJSON_CreateObject();
         content = cJSON_CreateArray();
         item = cJSON_CreateObject();
@@ -190,7 +190,7 @@ static cJSON *handle_list_devices(cli_ctx_t *ctx)
         return result;
     }
 
-    text = cJSON_PrintUnformatted(devs);
+    text = cJSON_PrintUnformatted(mods);
     result = cJSON_CreateObject();
     content = cJSON_CreateArray();
     item = cJSON_CreateObject();
@@ -200,17 +200,17 @@ static cJSON *handle_list_devices(cli_ctx_t *ctx)
     cJSON_AddItemToObject(result, "content", content);
     cJSON_AddFalseToObject(result, "isError");
 
-    cJSON_Delete(devs);
+    cJSON_Delete(mods);
     free(text);
     return result;
 }
 
-static cJSON *handle_query_device(cli_ctx_t *ctx, const cJSON *args)
+static cJSON *handle_query_module(cli_ctx_t *ctx, const cJSON *args)
 {
     const cJSON *id_field = cJSON_GetObjectItemCaseSensitive(args, "id");
     char *uuid = NULL;
     char path[600];
-    cJSON *dev;
+    cJSON *mod;
     char *text;
     cJSON *result, *content, *item;
 
@@ -229,11 +229,11 @@ static cJSON *handle_query_device(cli_ctx_t *ctx, const cJSON *args)
         return result;
     }
 
-    uuid = mcp_resolve_device(ctx, id_field->valuestring);
+    uuid = mcp_resolve_module(ctx, id_field->valuestring);
     if (!uuid)
     {
         text = malloc(256);
-        snprintf(text, 256, "error: device not found: %s", id_field->valuestring);
+        snprintf(text, 256, "error: module not found: %s", id_field->valuestring);
         result = cJSON_CreateObject();
         content = cJSON_CreateArray();
         item = cJSON_CreateObject();
@@ -253,11 +253,11 @@ static cJSON *handle_query_device(cli_ctx_t *ctx, const cJSON *args)
     }
     free(uuid);
 
-    dev = fetch_get(ctx, path, NULL);
-    if (!dev)
+    mod = fetch_get(ctx, path, NULL);
+    if (!mod)
     {
         text = malloc(256);
-        snprintf(text, 256, "error: device not found: %s", id_field->valuestring);
+        snprintf(text, 256, "error: module not found: %s", id_field->valuestring);
         result = cJSON_CreateObject();
         content = cJSON_CreateArray();
         item = cJSON_CreateObject();
@@ -270,7 +270,7 @@ static cJSON *handle_query_device(cli_ctx_t *ctx, const cJSON *args)
         return result;
     }
 
-    text = cJSON_PrintUnformatted(dev);
+    text = cJSON_PrintUnformatted(mod);
     result = cJSON_CreateObject();
     content = cJSON_CreateArray();
     item = cJSON_CreateObject();
@@ -280,12 +280,12 @@ static cJSON *handle_query_device(cli_ctx_t *ctx, const cJSON *args)
     cJSON_AddItemToObject(result, "content", content);
     cJSON_AddFalseToObject(result, "isError");
 
-    cJSON_Delete(dev);
+    cJSON_Delete(mod);
     free(text);
     return result;
 }
 
-static cJSON *handle_device_history(cli_ctx_t *ctx, const cJSON *args)
+static cJSON *handle_module_history(cli_ctx_t *ctx, const cJSON *args)
 {
     const cJSON *id_field = cJSON_GetObjectItemCaseSensitive(args, "id");
     char *uuid = NULL;
@@ -309,11 +309,11 @@ static cJSON *handle_device_history(cli_ctx_t *ctx, const cJSON *args)
         return result;
     }
 
-    uuid = mcp_resolve_device(ctx, id_field->valuestring);
+    uuid = mcp_resolve_module(ctx, id_field->valuestring);
     if (!uuid)
     {
         text = malloc(256);
-        snprintf(text, 256, "error: device not found: %s", id_field->valuestring);
+        snprintf(text, 256, "error: module not found: %s", id_field->valuestring);
         result = cJSON_CreateObject();
         content = cJSON_CreateArray();
         item = cJSON_CreateObject();
@@ -418,48 +418,48 @@ static cJSON *build_tools_list(void)
     cJSON *tools = cJSON_CreateArray();
     cJSON *schema, *props, *id_prop, *req;
 
-    /* list_devices - no params. */
+    /* list_modules - no params. */
     schema = cJSON_CreateObject();
     cJSON_AddStringToObject(schema, "type", "object");
     props = cJSON_CreateObject();
     cJSON_AddItemToObject(schema, "properties", props);
     cJSON_AddFalseToObject(schema, "additionalProperties");
-    cJSON_AddItemToArray(tools, make_tool("list_devices",
-        "List all devices known to moonflared (id, name, kind, driver, online status, and "
-        "whether the device is active, i.e. counted in system totals).",
+    cJSON_AddItemToArray(tools, make_tool("list_modules",
+        "List all modules known to moonflared (id, name, kind, driver, online status, and "
+        "whether the module is active, i.e. counted in system totals).",
         schema));
 
-    /* query_device - id required. */
+    /* query_module - id required. */
     schema = cJSON_CreateObject();
     cJSON_AddStringToObject(schema, "type", "object");
     props = cJSON_CreateObject();
     id_prop = cJSON_CreateObject();
     cJSON_AddStringToObject(id_prop, "type", "string");
-    cJSON_AddStringToObject(id_prop, "description", "device uuid or exact name");
+    cJSON_AddStringToObject(id_prop, "description", "module uuid or exact name");
     cJSON_AddItemToObject(props, "id", id_prop);
     cJSON_AddItemToObject(schema, "properties", props);
     req = cJSON_CreateArray();
     cJSON_AddItemToArray(req, cJSON_CreateString("id"));
     cJSON_AddItemToObject(schema, "required", req);
     cJSON_AddFalseToObject(schema, "additionalProperties");
-    cJSON_AddItemToArray(tools, make_tool("query_device",
-        "Get the full live reading for one device by id or exact name.",
+    cJSON_AddItemToArray(tools, make_tool("query_module",
+        "Get the full live reading for one module by id or exact name.",
         schema));
 
-    /* device_history - id required. */
+    /* module_history - id required. */
     schema = cJSON_CreateObject();
     cJSON_AddStringToObject(schema, "type", "object");
     props = cJSON_CreateObject();
     id_prop = cJSON_CreateObject();
     cJSON_AddStringToObject(id_prop, "type", "string");
-    cJSON_AddStringToObject(id_prop, "description", "device uuid or exact name");
+    cJSON_AddStringToObject(id_prop, "description", "module uuid or exact name");
     cJSON_AddItemToObject(props, "id", id_prop);
     cJSON_AddItemToObject(schema, "properties", props);
     req = cJSON_CreateArray();
     cJSON_AddItemToArray(req, cJSON_CreateString("id"));
     cJSON_AddItemToObject(schema, "required", req);
     cJSON_AddFalseToObject(schema, "additionalProperties");
-    cJSON_AddItemToArray(tools, make_tool("device_history",
+    cJSON_AddItemToArray(tools, make_tool("module_history",
         "Get the recent time-series of one module's graph column (e.g. SOC for "
         "batteries, power for chargers, temperature for weather); the reply "
         "names the column.",
@@ -472,12 +472,12 @@ static cJSON *build_tools_list(void)
     cJSON_AddItemToObject(schema, "properties", props);
     cJSON_AddFalseToObject(schema, "additionalProperties");
     cJSON_AddItemToArray(tools, make_tool("status",
-        "One-shot summary of every device grouped by kind (batteries, chargers, inverters, "
+        "One-shot summary of every module grouped by kind (batteries, chargers, inverters, "
         "actuators, services; a weather service carries data.weather), plus a \"system\" object with "
-        "totals over the active, online devices: charger input watts, capacity-weighted "
-        "SOC, stored/capacity Wh, and battery charge/discharge watts. Devices marked "
+        "totals over the active, online modules: charger input watts, capacity-weighted "
+        "SOC, stored/capacity Wh, and battery charge/discharge watts. Modules marked "
         "\"active\": false still report readings but are left out of the totals. "
-        "A device with driver \"phantom\" is an estimate, not a measurement: it "
+        "A module with driver \"phantom\" is an estimate, not a measurement: it "
         "stands in for a unit moonflared cannot reach and reports the average of "
         "the modules listed in its \"phantom_of\" (it counts in the totals "
         "while active).",
@@ -488,33 +488,27 @@ static cJSON *build_tools_list(void)
 
 /* ── Tool dispatch ──────────────────────────────────────────────────── */
 
+/* The *_device(s) names are the tools' names before 0.9.0: still answered,
+ * no longer listed.  Missing or non-object "arguments" read as no "id". */
 static cJSON *dispatch_tool_call(cli_ctx_t *ctx, const cJSON *tool_name,
-                                  const cJSON *arguments)
+                                  const cJSON *args)
 {
     const char *name;
-    cJSON *args = (cJSON *)arguments;
 
     if (!cJSON_IsString(tool_name) || !tool_name->valuestring)
         return NULL;
 
     name = tool_name->valuestring;
 
-    if (strcmp(name, "list_devices") == 0)
-        return handle_list_devices(ctx);
+    if (strcmp(name, "list_modules") == 0 || strcmp(name, "list_devices") == 0)
+        return handle_list_modules(ctx);
 
-    if (strcmp(name, "query_device") == 0)
-    {
-        if (!args || !cJSON_IsObject(args))
-            args = cJSON_CreateObject();
-        return handle_query_device(ctx, args);
-    }
+    if (strcmp(name, "query_module") == 0 || strcmp(name, "query_device") == 0)
+        return handle_query_module(ctx, args);
 
-    if (strcmp(name, "device_history") == 0)
-    {
-        if (!args || !cJSON_IsObject(args))
-            args = cJSON_CreateObject();
-        return handle_device_history(ctx, args);
-    }
+    if (strcmp(name, "module_history") == 0 ||
+        strcmp(name, "device_history") == 0)
+        return handle_module_history(ctx, args);
 
     if (strcmp(name, "status") == 0)
         return handle_status(ctx);
