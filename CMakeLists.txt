@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 project(moon-flare
-    VERSION 0.11.1
+    VERSION 0.11.2
     DESCRIPTION "Moon Flare: multi-kind energy dashboard (daemon, REST, plugins, TUI)"
     LANGUAGES C)
 
@@ -71,7 +71,10 @@ if(LIBVIPER_VERSION VERSION_LESS MF_LIBVIPER_MIN)
     message(FATAL_ERROR
         "libviper at ${LIBVIPER_SOURCE_DIR} is ${LIBVIPER_VERSION}; Moon-Flare "
         "needs ${MF_LIBVIPER_MIN} or newer.  Update and rebuild it:\n"
-        "  cd ${LIBVIPER_SOURCE_DIR} && git pull && cmake . && make")
+        "  cd ${LIBVIPER_SOURCE_DIR} && git pull && cmake . && make\n"
+        "Check that git pull succeeded.  Before libviper 7.8.2, every build "
+        "rewrote its tracked libviper.pc and the next pull stops on that "
+        "change; run git checkout -- libviper.pc there first.")
 endif()
 # Built in place, or in a build/ directory inside the checkout.
 unset(LIBVIPER_LIBRARY)

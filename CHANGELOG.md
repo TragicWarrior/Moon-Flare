@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.2] - 2026-09-25
+
+### Fixed
+
+- When the libviper checkout is too old, the configure message also says
+  to check that `git pull` succeeded: before libviper 7.8.2 each build
+  rewrote the tracked `libviper.pc`, so the next pull stopped on that
+  change, and the build that followed rebuilt the old libviper. It gives
+  the command that clears it (`git checkout -- libviper.pc`).
+
 ## [0.11.1] - 2026-09-25
 
 Building and installing on other hosts.
