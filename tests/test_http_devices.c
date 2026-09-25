@@ -205,6 +205,9 @@ static pid_t spawn_daemon(const char *bin, const char *plugindir, int port,
             if (logfd != STDERR_FILENO)
                 close(logfd);
         }
+        /* Never touch a real /var/lib/moonflare: a temp state file. */
+        setenv("MF_STATE_CONFIG", "/tmp/mf-http-devices-state.json", 1);
+        unlink("/tmp/mf-http-devices-state.json");
         snprintf(spec, sizeof(spec), "127.0.0.1:%d", port);
         snprintf(portstr, sizeof(portstr), "%d", port);
         if (cfgpath && cfgpath[0])
@@ -233,6 +236,38 @@ static void stop_daemon(pid_t pid)
     }
     kill(pid, SIGKILL);
     waitpid(pid, NULL, 0);
+}
+
+/* One request with an optional JSON body; the response lands in resp. */
+static int request(int port, const char *method, const char *path,
+                   const char *body, char *resp, size_t cap)
+{
+    char req[2048];
+
+    snprintf(req, sizeof(req),
+             "%s %s HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n"
+             "Content-Length: %zu\r\nConnection: close\r\n\r\n%s",
+             method, path, body ? strlen(body) : 0, body ? body : "");
+    if (http_exchange(port, req, resp, cap) < 0)
+        return -1;
+    return status_of(resp);
+}
+
+/* The new module's id from a 201's Location header. */
+static void location_id(const char *resp, char *out, size_t cap)
+{
+    const char *loc = strstr(resp, "Location:");
+    const char *slash = loc ? strrchr(loc, '/') : NULL;
+    size_t n = 0;
+
+    out[0] = '\0';
+    if (!slash)
+        return;
+    slash++;
+    while (slash[n] && slash[n] != '\r' && n + 1 < cap)
+        n++;
+    memcpy(out, slash, n);
+    out[n] = '\0';
 }
 
 static uint64_t gen_of_body(const char *body)
@@ -329,9 +364,8 @@ int main(int argc, char **argv)
         FAIL("GET status");
     else if (status_of(resp) != 200)
         FAIL("status not 200");
-    else if (!strstr(body_of(resp), "\"inverters\":[]") ||
-             !strstr(body_of(resp), "\"phantoms\":[]"))
-        FAIL("status missing empty inverters/phantoms");
+    else if (!strstr(body_of(resp), "\"inverters\":[]"))
+        FAIL("status missing empty inverters");
     else if (!strstr(body_of(resp), "pack-cfg"))
         FAIL("startup did not open pack-cfg");
 
@@ -460,6 +494,53 @@ int main(int argc, char **argv)
             FAIL("GET device");
         else if (!strstr(body_of(resp), "\"data\""))
             FAIL("device missing data");
+    }
+
+    /* A phantom battery shadowing pack-cfg: its average, in the totals,
+     * no history, and only real modules of its kind as shadows. */
+    {
+        char ph[40], path[128], file[160];
+
+        if (request(port, "POST", "/api/v1/devices",
+                    "{\"name\":\"ghost\",\"kind\":\"battery\","
+                    "\"driver\":\"phantom\",\"phantom.shadows\":"
+                    "\"aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee01\"}",
+                    resp, sizeof(resp)) != 201)
+            FAIL("POST phantom battery");
+        location_id(resp, ph, sizeof(ph));
+        sleep_s(2.6);
+        if (request(port, "GET", "/api/v1/status", NULL, resp, sizeof(resp)) != 200)
+            FAIL("status with phantom");
+        else
+        {
+            const char *g = strstr(body_of(resp), "\"name\":\"ghost\"");
+
+            if (!g || !strstr(g, "\"phantom_of\":[\"pack-cfg\"]"))
+                FAIL("phantom does not report its shadow");
+            if (!g || !strstr(g, "\"soc_pct\":"))
+                FAIL("phantom has no averaged reading");
+        }
+        snprintf(file, sizeof(file), "/tmp/mf-http-devices-hist/%s.sqlite", ph);
+        if (ph[0] && access(file, F_OK) == 0)
+            FAIL("phantom got a history file");
+        snprintf(path, sizeof(path), "/api/v1/devices/%s/settings", ph);
+        if (request(port, "GET", path, NULL, resp, sizeof(resp)) != 200 ||
+            strstr(body_of(resp), "capture_interval_s"))
+            FAIL("phantom settings: no capture interval");
+        {
+            char bad[160];
+
+            snprintf(bad, sizeof(bad), "{\"phantom.shadows\":\"%s\"}", ph);
+            if (request(port, "PUT", path, bad, resp, sizeof(resp)) != 400)
+                FAIL("phantom shadowing a phantom should 400");
+        }
+        if (request(port, "PUT", path,
+                    "{\"phantom.shadows\":\"deadbeef-0000-4000-8000-000000000000\"}",
+                    resp, sizeof(resp)) != 400)
+            FAIL("phantom shadowing a missing module should 400");
+        snprintf(path, sizeof(path), "/api/v1/devices/%s", ph);
+        if (request(port, "DELETE", path, NULL, resp, sizeof(resp)) != 202)
+            FAIL("DELETE phantom");
     }
 
     {

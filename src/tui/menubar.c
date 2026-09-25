@@ -79,7 +79,7 @@ static void on_remove(void)
     mf_ui_remove_module();
 }
 
-static int g_dyn_cat[32];
+static int g_dyn_cat[40];               /* per dyn[] row, as large as dyn[] */
 
 static void on_dyn_item(void)
 {
@@ -197,6 +197,13 @@ static int on_drop_item(vk_widget_t *w, void *idxp)
     return 0;
 }
 
+/* A Modules-menu row for a phantom module. */
+static int is_phantom_item(const struct mb_item *t, int i)
+{
+    return t[i].fn == on_dyn_item &&
+           strcmp(mf_dash_catalog_driver(g_dyn_cat[i]), "phantom") == 0;
+}
+
 static void open_dropdown(int idx)
 {
     const struct mb_item *t;
@@ -239,7 +246,7 @@ static void open_dropdown(int idx)
     {
         if (t[i].label && t[i].fn)
         {
-            int len = (int)strlen(t[i].label);
+            int len = (int)strlen(t[i].label) + (is_phantom_item(t, i) ? 2 : 0);
             if (len + 2 > max_w)
                 max_w = len + 2;
             n++;
@@ -260,13 +267,21 @@ static void open_dropdown(int idx)
     vk_listbox_set_highlight_attrs(lb, A_BOLD);
     vk_widget_set_colors(VK_WIDGET(lb), COL_DROP_FG, COL_MENU_BG);
     vk_widget_set_attrs(VK_WIDGET(lb), A_BOLD);
+    /* A phantom module's row carries the marker at its right edge. */
+    vk_listbox_set_submenu_marker(lb, mf_ui_phantom_marker());
     for (i = 0; !t[i].end; i++)
     {
+        int row = vk_listbox_get_item_count(lb);
+
         if (!t[i].label && !t[i].fn)
             vk_listbox_add_separator(lb, VK_SEPARATOR_SINGLE);
         else if (t[i].label && t[i].fn)
+        {
             vk_listbox_add_item(lb, (char *)t[i].label, on_drop_item,
                                 (void *)(intptr_t)i);
+            if (is_phantom_item(t, i))
+                vk_listbox_set_item_submenu(lb, row, true);
+        }
     }
 
     snprintf(cap, sizeof(cap), " %s ", titles[idx]);

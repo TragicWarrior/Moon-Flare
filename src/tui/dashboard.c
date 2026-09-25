@@ -30,6 +30,7 @@ typedef struct {
     char id[40];
     char name[32];
     char kind[16];
+    char driver[16];
     bool active;
 } cat_dev_t;
 
@@ -121,6 +122,8 @@ static vk_frame_t *mk_card(int idx, char *cap)
     vk_listbox_set_highlight(lb, COLOR_BLACK, COLOR_CYAN);
     vk_listbox_set_unfocused(lb, COL_TEXT, COL_BG);
     vk_listbox_set_focused(lb, idx == g_sel_card);
+    /* Phantom rows carry the marker at their right edge. */
+    vk_listbox_set_submenu_marker(lb, mf_ui_phantom_marker());
     vk_frame_set_child(f, VK_WIDGET(lb), VK_INHERIT_NONE);
     vk_object_register_event(VK_OBJECT(f), VK_EVENT_ON_FINALIZE,
                              frame_caption, cap);
@@ -452,6 +455,10 @@ static void fill_lb(vk_listbox_t *lb, cJSON *arr, int card)
         int ci = cat_index(card, i);
         /* [x] counts toward the System totals; [ ] is inactive. */
         const char *mark = (ci < 0 || g_cat[ci].active) ? "[x] " : "[ ] ";
+        cJSON *drv = cJSON_GetObjectItemCaseSensitive(o, "driver");
+        /* A phantom (an estimate from the modules it shadows) is marked at
+           the row's right edge, which costs the row two columns. */
+        int ph = cJSON_IsString(drv) && strcmp(drv->valuestring, "phantom") == 0;
         char line[40], nm[20], row[48], rd[24];
         nm[0] = '\0';
         rd[0] = '\0';
@@ -495,6 +502,8 @@ static void fill_lb(vk_listbox_t *lb, cJSON *arr, int card)
 
             vk_widget_get_metrics(VK_WIDGET(lb), &lw, NULL);
             room = lw - 2 - (int)strlen(mark) - (rd[0] ? (int)strlen(rd) + 1 : 0);
+            if (ph)
+                room -= 2;
             if (room < 4)
                 room = 4;
             if ((int)strlen(nm) > room)
@@ -506,6 +515,10 @@ static void fill_lb(vk_listbox_t *lb, cJSON *arr, int card)
             snprintf(line, sizeof(line), "%s", nm);
         snprintf(row, sizeof(row), "%s%s", mark, line);
         vk_listbox_add_item(lb, row, NULL, NULL);
+        /* libviper draws the row marker (its "submenu" marker) at the
+           right edge, whatever the card's width. */
+        if (ph)
+            vk_listbox_set_item_submenu(lb, i, true);
     }
     vk_listbox_update(lb);
 }
@@ -625,6 +638,12 @@ static void cat_add(cJSON *arr, const char *kind)
             snprintf(d->id, sizeof(d->id), "%s", id->valuestring);
         if (cJSON_IsString(name) && name->valuestring)
             snprintf(d->name, sizeof(d->name), "%s", name->valuestring);
+        {
+            cJSON *drv = cJSON_GetObjectItemCaseSensitive(o, "driver");
+
+            if (cJSON_IsString(drv) && drv->valuestring)
+                snprintf(d->driver, sizeof(d->driver), "%s", drv->valuestring);
+        }
     }
 }
 
@@ -647,6 +666,16 @@ const char *mf_dash_catalog_kind(int i)
 int mf_dash_catalog_active(int i)
 {
     return (i >= 0 && i < g_ncat) ? g_cat[i].active : 1;
+}
+/* The phantom marker: an approximately-equal sign, or "~" without UTF-8. */
+const char *mf_ui_phantom_marker(void)
+{
+    return vdk_has_utf8() ? "\xe2\x89\x88" : "~";
+}
+
+const char *mf_dash_catalog_driver(int i)
+{
+    return (i >= 0 && i < g_ncat) ? g_cat[i].driver : "";
 }
 
 void mf_dash_set_visible(int vis)

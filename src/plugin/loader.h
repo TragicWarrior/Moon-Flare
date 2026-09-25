@@ -25,6 +25,10 @@ typedef struct mf_plugin_registry {
 
 int  mf_plugins_load_dir(mf_plugin_registry_t *reg, const char *dir);
 void mf_plugins_unload(mf_plugin_registry_t *reg);
+/* Register a module type compiled into the daemon (e.g. the phantom
+ * driver), after mf_plugins_load_dir().  0 ok, -1 when the table is full
+ * or the kind/driver pair is already taken. */
+int  mf_plugins_add_builtin(mf_plugin_registry_t *reg, const mf_plugin_ops_t *ops);
 const mf_plugin_ops_t *mf_plugins_find(const mf_plugin_registry_t *reg,
                                        const char *kind, const char *driver);
 

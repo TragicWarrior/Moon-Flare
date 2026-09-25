@@ -70,10 +70,9 @@ static void test_status(void)
               cJSON_GetArraySize(inverters) == 0,
               "inverters is empty array");
 
-        cJSON *phantoms = cJSON_GetObjectItem(root, "phantoms");
-        check(phantoms != NULL && cJSON_IsArray(phantoms) &&
-              cJSON_GetArraySize(phantoms) == 0,
-              "phantoms is empty array");
+        /* Phantoms show under their own kind; there is no list of them. */
+        check(cJSON_GetObjectItem(root, "phantoms") == NULL,
+              "no separate phantoms list");
 
         cJSON *batteries = cJSON_GetObjectItem(root, "batteries");
         check(batteries != NULL && cJSON_IsArray(batteries),

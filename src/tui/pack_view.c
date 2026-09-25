@@ -1080,7 +1080,22 @@ void mf_pack_update(const char *json)
     vk_label_update(g_chrome1);
     {
         const char *ep = jstr(root, "endpoint", "");
+        const cJSON *of = cJSON_GetObjectItemCaseSensitive(data_obj(root),
+                                                           "phantom_of");
+
         fmt_interface(ep, driver, line, sizeof(line));
+        /* A phantom has no interface: say what it stands in for. */
+        if (cJSON_IsArray(of) && cJSON_GetArraySize(of) > 0)
+        {
+            const cJSON *it;
+            size_t off = (size_t)snprintf(line, sizeof(line), "phantom of: ");
+
+            cJSON_ArrayForEach(it, of)
+                if (cJSON_IsString(it) && off < sizeof(line))
+                    off += (size_t)snprintf(line + off, sizeof(line) - off,
+                                            "%s%s", it == of->child ? "" : ", ",
+                                            it->valuestring);
+        }
         vk_label_set_text(g_chrome2, line);
         vk_label_update(g_chrome2);
     }

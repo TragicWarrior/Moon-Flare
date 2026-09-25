@@ -314,7 +314,6 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
     cJSON *batteries = cJSON_GetObjectItemCaseSensitive(root, "batteries");
     cJSON *chargers = cJSON_GetObjectItemCaseSensitive(root, "chargers");
     cJSON *inverters = cJSON_GetObjectItemCaseSensitive(root, "inverters");
-    cJSON *phantoms = cJSON_GetObjectItemCaseSensitive(root, "phantoms");
     cJSON *services = cJSON_GetObjectItemCaseSensitive(root, "services");
     cJSON *actuators = cJSON_GetObjectItemCaseSensitive(root, "actuators");
     cJSON *row = cJSON_CreateObject();
@@ -328,6 +327,13 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
     cJSON_AddNumberToObject(row, "seq", (double)d->seq);
     if (!d->online && d->last_error && d->last_error[0])
         cJSON_AddStringToObject(row, "last_error", d->last_error);
+    /* A phantom names the modules it averaged (it shows under its kind). */
+    {
+        const cJSON *of = cJSON_GetObjectItemCaseSensitive(data, "phantom_of");
+
+        if (cJSON_IsArray(of))
+            cJSON_AddItemToObject(row, "phantom_of", cJSON_Duplicate(of, 1));
+    }
 
     if (strcmp(d->kind, "charger") == 0)
     {
@@ -348,9 +354,6 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
     } else if (strcmp(d->kind, "inverter") == 0)
     {
         cJSON_AddItemToArray(inverters, row);
-    } else if (strcmp(d->kind, "phantom") == 0)
-    {
-        cJSON_AddItemToArray(phantoms, row);
     }
     else if (strcmp(d->kind, "service") == 0 ||
              strcmp(d->kind, "actuator") == 0)
@@ -454,7 +457,6 @@ static int handle_status(mf_rest_response_t *resp)
     cJSON_AddItemToObject(ctx.root, "batteries", cJSON_CreateArray());
     cJSON_AddItemToObject(ctx.root, "chargers", cJSON_CreateArray());
     cJSON_AddItemToObject(ctx.root, "inverters", cJSON_CreateArray());
-    cJSON_AddItemToObject(ctx.root, "phantoms", cJSON_CreateArray());
     cJSON_AddItemToObject(ctx.root, "services", cJSON_CreateArray());
     cJSON_AddItemToObject(ctx.root, "actuators", cJSON_CreateArray());
     mf_devices_visit_live(add_status_row, &ctx);

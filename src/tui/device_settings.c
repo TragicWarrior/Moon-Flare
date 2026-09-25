@@ -29,7 +29,9 @@
 
 #define MAX_ROWS 32
 
-enum { ROW_TEXT = 0, ROW_NUM, ROW_BOOL };
+/* ROW_MODULES: a comma-separated list of module UUIDs (a phantom's
+ * Shadows), shown by name and edited as a checklist. */
+enum { ROW_TEXT = 0, ROW_NUM, ROW_BOOL, ROW_MODULES };
 
 typedef struct {
     char key[48];
@@ -89,6 +91,8 @@ static struct {
 } g_plab[MAX_PLAB];
 static int          g_nplab;
 static char         g_payload[2048];
+/* The pack view's graph interval (TUI-only), kept across rebuilds. */
+static int          g_graph_min = 30;
 
 /* Containers only detach their children when destroyed, so each part of
  * the dialog remembers the widgets it built and frees them itself:
@@ -427,6 +431,8 @@ static int row_type(const char *key, const cJSON *it)
 
     if (pt && strcmp(pt, "bool") == 0)
         return ROW_BOOL;
+    if (pt && strcmp(pt, "modules") == 0)
+        return ROW_MODULES;
     if (pt && strcmp(pt, "number") == 0)
         return ROW_NUM;
     if (cJSON_IsBool(it))
@@ -524,9 +530,15 @@ static void build_rows(const char *json)
         add_row("retention_days", buf, it);
     }
 
+    /* A graph needs history: modules that record none (a phantom) have
+     * no capture interval, and no Graph Interval either. */
     if (!g_add_mode && (!g_kind[0] || strcmp(g_kind, "battery") == 0 ||
-                        strcmp(g_kind, "charger") == 0))
-        add_row("graph_interval_min", "30", NULL);
+                        strcmp(g_kind, "charger") == 0) &&
+        cJSON_GetObjectItemCaseSensitive(root, "capture_interval_s"))
+    {
+        snprintf(buf, sizeof(buf), "%d", g_graph_min);
+        add_row("graph_interval_min", buf, NULL);
+    }
 
     add_json_rows(root, 0);
 
@@ -585,13 +597,120 @@ static int list_text_w(void)
 }
 
 /* "Label ........ [value]", the value cut with an ellipsis to fit. */
+/* ---- module lists (a phantom's Shadows) ---------------------------- */
+
+static const char *module_name(const char *uuid)
+{
+    int i;
+
+    for (i = 0; i < mf_dash_catalog_n(); i++)
+        if (strcmp(mf_dash_catalog_id(i), uuid) == 0)
+            return mf_dash_catalog_name(i);
+    return NULL;
+}
+
+/* "uuid,uuid" -> "XD Battery, JK Battery" ("none" when empty). */
+static void modules_text(const char *ids, char *out, size_t cap)
+{
+    char buf[160], *tok, *save = NULL;
+    size_t off = 0;
+
+    out[0] = '\0';
+    snprintf(buf, sizeof(buf), "%s", ids);
+    for (tok = strtok_r(buf, ", ", &save); tok && off < cap;
+         tok = strtok_r(NULL, ", ", &save))
+    {
+        const char *nm = module_name(tok);
+
+        off += (size_t)snprintf(out + off, cap - off, "%s%s", off ? ", " : "",
+                                nm ? nm : "(removed)");
+    }
+    if (!out[0])
+        snprintf(out, cap, "none");
+}
+
+#define MAX_PICK 16
+static char g_pick_id[MAX_PICK][40];
+static char g_pick_name[MAX_PICK][40];
+static int  g_pick_on[MAX_PICK];
+static int  g_pick_inactive[MAX_PICK];
+static int  g_npick;
+
+static int id_in_list(const char *ids, const char *id)
+{
+    char buf[160], *tok, *save = NULL;
+
+    snprintf(buf, sizeof(buf), "%s", ids);
+    for (tok = strtok_r(buf, ", ", &save); tok; tok = strtok_r(NULL, ", ", &save))
+        if (strcmp(tok, id) == 0)
+            return 1;
+    return 0;
+}
+
+/* The real modules of this module's kind; phantoms and itself excluded.
+ * Chosen ones that no longer exist stay listed so they can be cleared. */
+static void pick_build(const char *ids)
+{
+    const char *kind = g_add_mode ? g_add_kind : g_kind;
+    char buf[160], *tok, *save = NULL;
+    int i;
+
+    g_npick = 0;
+    for (i = 0; i < mf_dash_catalog_n() && g_npick < MAX_PICK; i++)
+    {
+        if (strcmp(mf_dash_catalog_kind(i), kind) != 0 ||
+            strcmp(mf_dash_catalog_driver(i), "phantom") == 0 ||
+            strcmp(mf_dash_catalog_id(i), g_id) == 0)
+            continue;
+        snprintf(g_pick_id[g_npick], sizeof(g_pick_id[0]), "%s",
+                 mf_dash_catalog_id(i));
+        snprintf(g_pick_name[g_npick], sizeof(g_pick_name[0]), "%s",
+                 mf_dash_catalog_name(i));
+        g_pick_on[g_npick] = id_in_list(ids, g_pick_id[g_npick]);
+        g_pick_inactive[g_npick] = !mf_dash_catalog_active(i);
+        g_npick++;
+    }
+    snprintf(buf, sizeof(buf), "%s", ids);
+    for (tok = strtok_r(buf, ", ", &save); tok && g_npick < MAX_PICK;
+         tok = strtok_r(NULL, ", ", &save))
+    {
+        if (module_name(tok))
+            continue;
+        snprintf(g_pick_id[g_npick], sizeof(g_pick_id[0]), "%s", tok);
+        snprintf(g_pick_name[g_npick], sizeof(g_pick_name[0]), "(removed)");
+        g_pick_on[g_npick] = 1;
+        g_pick_inactive[g_npick] = 0;
+        g_npick++;
+    }
+}
+
+static void pick_text(int i, char *out, size_t cap)
+{
+    snprintf(out, cap, "[%c] %.39s%s", g_pick_on[i] ? 'x' : ' ', g_pick_name[i],
+             g_pick_inactive[i] ? "  (inactive)" : "");
+}
+
+static void pick_toggle(int i)
+{
+    char text[64];
+
+    if (!g_pop_lb || i < 0 || i >= g_npick)
+        return;
+    g_pick_on[i] = !g_pick_on[i];
+    pick_text(i, text, sizeof(text));
+    vk_listbox_set_item(g_pop_lb, i, text, NULL, NULL);
+}
+
 static void row_text(const row_t *r, char *out, size_t cap)
 {
     char lab[40], val[160];
     int w = list_text_w(), lw, vw, dots;
 
     field_caption(r->key, lab, sizeof(lab), NULL, 0);
-    snprintf(val, sizeof(val), "%s", r->value);
+    if (r->type == ROW_MODULES)
+        modules_text(r->value, val, sizeof(val));
+    else
+        snprintf(val, sizeof(val), "%s", r->value);
     lw = (int)strlen(lab);
     vw = (int)strlen(val);
     if (lw + vw + 6 > w)                /* " .. [" + "]" at least */
@@ -981,6 +1100,7 @@ static void pop_close(void)
     g_pop_in = NULL;
     g_pop_lb = NULL;
     g_pop_kind = POP_NONE;
+    g_npick = 0;
     front_restack();
     paint_dialog();
 }
@@ -1056,7 +1176,47 @@ static void modify_open(int ri)
     g_pop_btn = 0;
     g_pop_kind = POP_MODIFY;
     g_own_pop.n = 0;
-    if (r->type == ROW_BOOL)
+    if (r->type == ROW_MODULES)
+    {
+        char text[64];
+        vk_label_t *pl;
+        int i, rows;
+
+        pick_build(r->value);
+        if (g_npick == 0)
+        {
+            g_pop_kind = POP_NONE;
+            msg_show(" Shadows ", "No other modules of this kind",
+                     "to shadow yet.", 0);
+            return;
+        }
+        rows = g_npick < 8 ? g_npick : 8;
+        w = 46;
+        h = rows + 6;
+        g_pop = pop_new(w, h, title, COLOR_WHITE, COLOR_BLUE, "Apply", "Cancel");
+        g_pop_client = own(&g_own_pop,
+                           vk_box_create(w - 2, h - 5, VK_BOX_VERTICAL, 2), W_BOX);
+        vk_box_set_homogeneous(g_pop_client, false);
+        vk_widget_set_colors(VK_WIDGET(g_pop_client), COLOR_WHITE, COLOR_BLUE);
+        pl = own(&g_own_pop, vk_label_create(w - 2), W_LABEL);
+        vk_label_set_text(pl, "  Space toggles, Enter applies:");
+        vk_widget_set_colors(VK_WIDGET(pl), COLOR_WHITE, COLOR_BLUE);
+        vk_label_update(pl);
+        vk_box_set_widget(g_pop_client, 0, VK_WIDGET(pl), VK_INHERIT_NONE);
+        g_pop_lb = own(&g_own_pop, vk_listbox_create(w - 2, rows), W_LISTBOX);
+        vk_listbox_set_wrap(g_pop_lb, false);
+        vk_listbox_set_highlight(g_pop_lb, COLOR_BLACK, COLOR_RED);
+        vk_listbox_set_unfocused(g_pop_lb, COLOR_BLACK, COLOR_WHITE);
+        vk_widget_set_colors(VK_WIDGET(g_pop_lb), COLOR_WHITE, COLOR_BLUE);
+        for (i = 0; i < g_npick; i++)
+        {
+            pick_text(i, text, sizeof(text));
+            vk_listbox_add_item(g_pop_lb, text, NULL, NULL);
+        }
+        vk_listbox_set_curr(g_pop_lb, 0);
+        vk_box_set_widget(g_pop_client, 1, VK_WIDGET(g_pop_lb), VK_INHERIT_NONE);
+    }
+    else if (r->type == ROW_BOOL)
     {
         w = 36;
         h = 9;
@@ -1117,7 +1277,18 @@ static void modify_apply(void)
     row_t *r = &g_rows[g_pop_row];
     char val[160];
 
-    if (g_pop_lb)
+    if (r->type == ROW_MODULES)
+    {
+        size_t off = 0;
+        int i;
+
+        val[0] = '\0';
+        for (i = 0; i < g_npick; i++)
+            if (g_pick_on[i] && off < sizeof(val))
+                off += (size_t)snprintf(val + off, sizeof(val) - off, "%s%s",
+                                        off ? "," : "", g_pick_id[i]);
+    }
+    else if (g_pop_lb)
         snprintf(val, sizeof(val), "%s",
                  vk_listbox_get_curr(g_pop_lb) == 1 ? "false" : "true");
     else
@@ -1276,6 +1447,8 @@ static int pop_key(wint_t c)
             vk_listbox_set_prev(g_pop_lb);
         else if (c == KEY_DOWN)
             vk_listbox_set_next(g_pop_lb);
+        else if (c == ' ' && g_npick > 0)
+            pick_toggle(vk_listbox_get_curr(g_pop_lb));
         paint_dialog();
         return 1;
     }
@@ -1415,6 +1588,7 @@ void mf_devset_set_graph_interval(int minutes)
 {
     int i = row_find("graph_interval_min");
 
+    g_graph_min = minutes < 1 ? 1 : minutes;
     if (i < 0)
         return;
     snprintf(g_rows[i].value, sizeof(g_rows[i].value), "%d",
@@ -1918,6 +2092,8 @@ mf_devset_mouse(int x, int y, mmask_t bstate)
                 i >= 0 && i < vk_listbox_get_item_count(g_pop_lb))
             {
                 vk_listbox_set_curr(g_pop_lb, i);
+                if (g_npick > 0)
+                    pick_toggle(i);
                 g_pop_focus = 0;
                 paint_dialog();
             }
