@@ -93,6 +93,8 @@ The kind decides where a module appears on the dashboard, and which reading keys
 
 Any other kind still works through `/api/v1/devices`, settings, actions and history, but it gets no place on the dashboard.
 
+The driver name `phantom` is taken: moonflared has a built-in phantom driver for `battery`, `charger` and `inverter`, which averages the readings of real modules it shadows (see the README's *Phantom modules*).
+
 - **Battery and charger** modules count toward the system totals, but only while they are both online and marked active.
 - **The pack view** also shows these keys when present:
   - `cells`: an array of `{"index", "voltage_v", "balancing"}`
@@ -199,7 +201,7 @@ The daemon owns each module's configuration. It is kept in the state file, `/var
 
 - **`fields`** is the Add Module form, in order. It is also the set of settings the daemon saves (see [Settings](#settings)).
   - `key` is a dotted configuration path.
-  - `type` is `string`, `number` or `bool`.
+  - `type` is `string`, `number`, `bool` or `modules`. A `modules` field holds a comma-separated list of module UUIDs of the same kind as the module; the TUI shows it by name and edits it as a checklist (the built-in phantom driver's Shadows use it).
   - `label`, `hint`, `default` and `required` are optional.
   - Labels and hints also caption the settings form. Keep a hint to about 12 characters or it is clipped.
   - Include `poll_interval_s` if your module polls.

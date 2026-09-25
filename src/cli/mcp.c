@@ -476,7 +476,11 @@ static cJSON *build_tools_list(void)
         "actuators, services; a weather service carries data.weather), plus a \"system\" object with "
         "totals over the active, online devices: charger input watts, capacity-weighted "
         "SOC, stored/capacity Wh, and battery charge/discharge watts. Devices marked "
-        "\"active\": false still report readings but are left out of the totals.",
+        "\"active\": false still report readings but are left out of the totals. "
+        "A device with driver \"phantom\" is an estimate, not a measurement: it "
+        "stands in for a unit moonflared cannot reach and reports the average of "
+        "the modules listed in its \"phantom_of\" (it counts in the totals "
+        "while active).",
         schema));
 
     return tools;

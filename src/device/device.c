@@ -182,8 +182,9 @@ static void history_register(const mf_device_t *d)
 
     if (!mf_history_is_open())
         return;
+    /* A module that records nothing (a phantom, say) gets no file. */
     if (mf_capture_spec(d->ops, spec, sizeof(spec), NULL, NULL, NULL) != 0)
-        spec[0] = '\0';
+        return;
     if (mf_history_register(d->uuid, d->name, d->kind, d->driver, spec) != 0)
         LOG_W("history: register %s failed", d->uuid);
 }

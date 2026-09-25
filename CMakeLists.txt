@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 project(moon-flare
-    VERSION 0.6.0
+    VERSION 0.7.0
     DESCRIPTION "Moon Flare: multi-kind energy dashboard (daemon, REST, plugins, TUI)"
     LANGUAGES C)
 
@@ -55,7 +55,8 @@ target_compile_options(mf_phr PRIVATE -w)
 
 enable_testing()
 
-add_executable(moonflared src/moonflared.c src/http/http_pt.c src/plugin/loader.c src/config/config.c src/rest/routes.c src/rest/discover.c src/device/device.c src/system/system.c)
+add_executable(moonflared src/moonflared.c src/http/http_pt.c src/plugin/loader.c src/config/config.c src/rest/routes.c src/rest/discover.c src/device/device.c src/system/system.c
+    src/phantom/phantom.c src/phantom/average.c)
 target_include_directories(moonflared PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
@@ -64,10 +65,11 @@ target_include_directories(moonflared PRIVATE
     ${CMAKE_SOURCE_DIR}/src/plugin
     ${CMAKE_SOURCE_DIR}/src/config
     ${CMAKE_SOURCE_DIR}/src/device
+    ${CMAKE_SOURCE_DIR}/src/phantom
     ${CMAKE_SOURCE_DIR}/src/rest)
 target_compile_definitions(moonflared PRIVATE _GNU_SOURCE)
 target_compile_options(moonflared PRIVATE ${MF_WARN_PT})
-target_link_libraries(moonflared PRIVATE mf_phr mf_cjson ${CMAKE_DL_LIBS})
+target_link_libraries(moonflared PRIVATE mf_phr mf_cjson ${CMAKE_DL_LIBS} m)
 
 add_executable(moonflare
     src/moonflare.c
@@ -354,6 +356,13 @@ add_executable(test_tui_layout tests/test_tui_layout.c src/tui/layout.c)
 target_include_directories(test_tui_layout PRIVATE ${CMAKE_SOURCE_DIR}/src/tui)
 target_compile_options(test_tui_layout PRIVATE ${MF_WARN})
 add_test(NAME tui_layout COMMAND test_tui_layout)
+
+add_executable(test_phantom tests/test_phantom.c src/phantom/average.c)
+target_include_directories(test_phantom PRIVATE ${CMAKE_SOURCE_DIR}/src/phantom
+    ${CMAKE_SOURCE_DIR}/third_party/cJSON)
+target_compile_options(test_phantom PRIVATE ${MF_WARN})
+target_link_libraries(test_phantom PRIVATE mf_cjson m)
+add_test(NAME phantom COMMAND test_phantom)
 
 add_executable(test_system tests/test_system.c src/system/system.c)
 target_include_directories(test_system PRIVATE ${CMAKE_SOURCE_DIR}/src)

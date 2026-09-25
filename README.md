@@ -61,6 +61,16 @@ The dashboard's System panel (and `moonflare-cli --status`, and the MCP `status`
 "system": { "input_max_w": 3500, "discharge_max_w": 3000 }
 ```
 
+## Phantom modules
+
+A phantom module stands in for a unit that is wired into the system but that moonflared cannot reach: a second XD pack on a bus the daemon has no port for, say. It *shadows* one or more real modules of the same class and reports their average, so it counts toward the System totals as if it were measured.
+
+- Add one with **Modules → Add Module** and pick `battery phantom` (or `charger phantom`, `inverter phantom`). The form asks for a name and **Shadows**: a checklist of the real modules of the same class (Space toggles). Phantoms and the phantom itself are never offered.
+- Its reading is the average of the shadowed modules that are **active and online**, recomputed every poll interval (2 s by default): numbers are averaged (per cell and per temperature sensor too); text and on/off values come from the first. With none active and online, the phantom is offline and says why ("shadowed XD Battery is inactive").
+- It counts toward the totals like any module of its class while it is active (**Space** toggles it). It records no history, so it has no Capture Interval, Keep History or Graph Interval settings, and it has no actions (no MOSFET switches).
+- The dashboard and the Modules menu mark it with `≈` at the right edge of its row (`~` without UTF-8), its pack view says `phantom of: XD Battery`, and `/api/v1/status`, `moonflare-cli` and the MCP `status` tool report `"driver": "phantom"` with `"phantom_of": [...]`.
+- Over REST: `POST /api/v1/devices` with `{"name": "XD Battery 2", "kind": "battery", "driver": "phantom", "phantom.shadows": "<uuid>[,<uuid>...]"}`, and `PUT .../settings` with `{"phantom.shadows": "..."}` to change them. Shadows must be real modules of the same class.
+
 ## History
 
 Each module that supports it records its readings in its own SQLite file, `/var/lib/moonflare/history/<module-uuid>.sqlite`, so modules never share a table. A plugin advertises capture in its `describe()` (`"capture"`: default and minimum interval, which reading fields become columns, which column to graph); a module whose plugin advertises none records nothing and has no Capture Interval setting. `GET /api/v1/drivers` passes the spec through, and capturing drivers and modules list `history` in their `caps`.

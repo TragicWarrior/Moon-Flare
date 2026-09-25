@@ -42,6 +42,9 @@ const char *mf_dash_catalog_id(int i);
 const char *mf_dash_catalog_name(int i);
 const char *mf_dash_catalog_kind(int i);
 int  mf_dash_catalog_active(int i);
+const char *mf_dash_catalog_driver(int i);
+/* Marks a phantom module at the right edge of its row ("≈", or "~"). */
+const char *mf_ui_phantom_marker(void);
 
 /* Dashboard keys: arrows/Tab move the cursor, Enter opens, e edits the
  * selected module's settings, Space toggles whether it counts toward the

@@ -24,6 +24,7 @@
 #include "history.h"
 #include "http_pt.h"
 #include "loader.h"
+#include "phantom.h"
 #include "protothread.h"
 #include "rest.h"
 
@@ -311,6 +312,7 @@ int main(int argc, char **argv)
         plugin_dir = g_cfg.plugin_dir;
     if (plugin_dir)
         (void)mf_plugins_load_dir(&g_plugins, plugin_dir);
+    (void)mf_phantom_register(&g_plugins);
     warn_capture_without_policy();
 
     g_listen_fd = listen_tcp(listen_spec);

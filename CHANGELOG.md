@@ -5,6 +5,49 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-09-24
+
+### Added
+
+- Phantom modules: a built-in `phantom` driver for batteries, chargers
+  and inverters, for a unit that is wired into the system but that
+  moonflared cannot reach. A phantom shadows one or more real modules of
+  its class (the `phantom.shadows` setting, a checklist in the TUI) and
+  reports their average, recomputed every poll interval: numbers are
+  averaged, per cell and per temperature sensor too; text and on/off
+  values come from the first. Only shadowed modules that are active and
+  online are used; with none, the phantom is offline and says why. It
+  counts toward the system totals like any module of its class while
+  active, records no history, and has no actions. The dashboard and the
+  Modules menu mark it with `≈` at the right edge of its row (`~` without
+  UTF-8), its pack view shows `phantom of: …`, and
+  status rows carry `"phantom_of"`; `moonflare-cli` prints it and the MCP
+  `status` tool describes it as an estimate.
+- A `modules` field type for plugin settings: module UUIDs of the
+  module's own kind, shown by name and edited as a checklist.
+
+### Changed
+
+- The never-populated `phantoms` list is gone from `/api/v1/status` and
+  `moonflare-cli --status`; phantoms appear under their own class.
+- A module that records no history no longer gets an empty history
+  file.
+- Graph Interval appears only for modules that record history.
+
+### Fixed
+
+- The settings dialog kept resetting Graph Interval to 30 when the
+  module's settings arrived from the daemon.
+- The Modules menu wrote past the end of its row-to-module table with
+  more than 27 modules.
+- The http_devices test daemon wrote its config to the real
+  `/var/lib/moonflare/moonflared.json` path; it now uses a temp file.
+
+### Requires
+
+- libviper 7.8.0 (`vdk_has_utf8` and the right-edge row marker, for the
+  `≈` / `~` phantom marker).
+
 ## [0.6.0] - 2026-09-24
 
 ### Changed

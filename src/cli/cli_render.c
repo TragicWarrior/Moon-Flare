@@ -358,6 +358,23 @@ static void print_device_line(const char *prefix, const cJSON *item)
         cJSON_IsBool(online) ? (online->valueint ? "online" : "offline") : "?");
     if (cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(item, "active")))
         printf("  inactive");
+    {
+        /* A phantom: the average of the modules it shadows. */
+        const cJSON *of = cJSON_GetObjectItemCaseSensitive(item, "phantom_of");
+        const cJSON *it;
+        int first = 1;
+
+        if (cJSON_IsArray(of) && cJSON_GetArraySize(of) > 0)
+        {
+            printf("  phantom of ");
+            cJSON_ArrayForEach(it, of)
+            {
+                printf("%s%s", first ? "" : ", ",
+                       cJSON_IsString(it) ? it->valuestring : "?");
+                first = 0;
+            }
+        }
+    }
 }
 
 static double sys_num(const cJSON *sys, const char *key)
@@ -392,7 +409,7 @@ static void print_system(const cJSON *sys)
 
 int cli_render_status(const cJSON *status, int raw)
 {
-    const cJSON *batteries, *chargers, *inverters, *phantoms;
+    const cJSON *batteries, *chargers, *inverters;
     const cJSON *services, *actuators;
     cJSON *item;
     const cJSON *server;
@@ -466,17 +483,6 @@ int cli_render_status(const cJSON *status, int raw)
     {
         printf("\nInverters:\n");
         cJSON_ArrayForEach(item, inverters)
-        {
-            print_device_line("", item);
-            printf("\n");
-        }
-    }
-
-    phantoms = cJSON_GetObjectItemCaseSensitive(status, "phantoms");
-    if (cJSON_IsArray(phantoms) && cJSON_GetArraySize(phantoms) > 0)
-    {
-        printf("\nPhantoms:\n");
-        cJSON_ArrayForEach(item, phantoms)
         {
             print_device_line("", item);
             printf("\n");

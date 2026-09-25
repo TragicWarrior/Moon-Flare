@@ -167,3 +167,28 @@ const mf_plugin_ops_t *mf_plugins_find(const mf_plugin_registry_t *reg,
     }
     return NULL;
 }
+
+int mf_plugins_add_builtin(mf_plugin_registry_t *reg, const mf_plugin_ops_t *ops)
+{
+    mf_plugin_ops_t *slot;
+
+    if (!reg || !ops || !ops->kind || !ops->driver)
+        return -1;
+    if (reg->nops >= MF_MAX_PLUGIN_OPS)
+    {
+        LOG_W("builtin %s/%s: ops table full", ops->kind, ops->driver);
+        return -1;
+    }
+    if (mf_plugins_find(reg, ops->kind, ops->driver))
+    {
+        LOG_W("builtin %s/%s: a plugin already provides it", ops->kind,
+              ops->driver);
+        return -1;
+    }
+    slot = &reg->store[reg->nops];
+    memcpy(slot, ops, sizeof(*slot));
+    reg->ops[reg->nops++] = slot;
+    LOG_I("builtin kind=%s driver=%s ver=%s", ops->kind, ops->driver,
+          ops->version ? ops->version : "?");
+    return 0;
+}
