@@ -493,6 +493,17 @@ static void fill_lb(vk_listbox_t *lb, cJSON *arr, int card)
             if (!nm[0])
                 snprintf(nm, sizeof(nm), "chg");
         }
+        else if (strcmp(kind, "service") == 0)
+        {
+            /* A notification pathway (an SMS service) shows its credits. */
+            cJSON *cr = cJSON_GetObjectItemCaseSensitive(
+                cJSON_GetObjectItemCaseSensitive(o, "data"), "credits_remaining");
+
+            if (cJSON_IsNumber(cr))
+                snprintf(rd, sizeof(rd), "%.0f credits", cr->valuedouble);
+            if (!nm[0])
+                snprintf(nm, sizeof(nm), "svc");
+        }
         else if (!nm[0])
             snprintf(nm, sizeof(nm), "inv");
         /* Shorten the name, not the reading, when the row is too narrow. */

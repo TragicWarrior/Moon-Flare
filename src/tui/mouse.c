@@ -59,7 +59,8 @@ mf_mouse_handle(const MEVENT *mev)
     if (mf_devset_open())
     {
         int r = mf_devset_mouse(x, y, bstate);
-        return r == 2 ? 2 : 1;
+        /* 2: save (or add); 3: run an action row. */
+        return r == 2 || r == 3 ? r : 1;
     }
     if (mf_ui_settings_open())
     {

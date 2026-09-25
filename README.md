@@ -26,7 +26,7 @@ cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on
 | `mf_gatt` | BlueZ helper (`/usr/local/libexec/mf_gatt`; never `$PATH`) |
 | `mf_magnum_dump` | Magnum RS-485 bus viewer and recorder (read-only; like pymagnum's `magtest`) |
 
-Plugins (`libmf_charger_classic.so`, `libmf_battery_xd.so`, `libmf_battery_jk.so`, `libmf_inverter_magnum.so`) live in one `--plugin-dir` (default `/usr/local/lib/moon-flare`). The build tree splits them under `build/*_plugins/` so tests load one driver at a time. The demo plugin (`libmf_demo.so`, a fake battery and charger for development) is built but not installed unless you configure with `-DMF_INSTALL_DEMO=ON`; to use it without installing, point `--plugin-dir` at `build/demo_plugins`.
+Plugins (`libmf_charger_classic.so`, `libmf_battery_xd.so`, `libmf_battery_jk.so`, `libmf_inverter_magnum.so`, `libmf_service_weathergov.so`, `libmf_service_textbelt.so`) live in one `--plugin-dir` (default `/usr/local/lib/moon-flare`). The build tree splits them under `build/*_plugins/` so tests load one driver at a time. The demo plugin (`libmf_demo.so`, a fake battery and charger for development) is built but not installed unless you configure with `-DMF_INSTALL_DEMO=ON`; to use it without installing, point `--plugin-dir` at `build/demo_plugins`.
 
 To write your own plugin (a new battery, charger, inverter or service), see [PLUGINS.md](PLUGINS.md): the plugin ABI, the event loop, configuration and settings, readings, history capture and a complete example.
 
@@ -87,6 +87,45 @@ Inverters are listed on the dashboard but don't count toward the System totals y
 - every reading field, with its pymagnum name;
 - what the offline messages mean;
 - the planned inverter view and totals.
+
+## Textbelt SMS alerts
+
+`libmf_service_textbelt.so` (kind `service`, driver `textbelt`) sends text messages through [Textbelt](https://textbelt.com). It needs libcurl to build, like the weather plugin.
+
+It is a *notification pathway*: it advertises the `notify` capability. A script, or the planned logic engine, can send alerts through it with the `notify` action; see [PLUGINS.md](PLUGINS.md), *Notification pathways*. It keeps no list of recipients: whoever raises an alert decides whom it goes to.
+
+Add it with **Modules → Add Module → service textbelt**. Its settings:
+
+| Setting | Key | Meaning |
+| --- | --- | --- |
+| **API Key** | `textbelt.key` | From textbelt.com. A secret: the settings, `GET /api/v1/config` and the TUI show it masked (`********` and its last four characters). Only the daemon's state file, which is mode 0600, holds it in full. |
+| **Max Texts/Hour** | `textbelt.max_per_hour` | Default 20; 0 means no limit. The REST API has no authentication, so the cap protects your credits. |
+| **Check Credits** | the poll interval | How often it asks Textbelt how many credits are left: default 3600 s, at least 60. |
+
+**Send Test SMS**, a row in its settings, asks for a phone number and texts it a test message. The result shows when it's done, for example "Sent to ***2222. 38 credits left." A test costs a credit.
+
+**Credits left** come with every reply from Textbelt. The module also checks them when it starts, when the key changes, and every Check Credits interval. They appear on the dashboard's Services card, in `moonflare-cli --status`, and as Credits Left and Last Text in its settings.
+
+It goes **offline** when:
+- there is no key;
+- Textbelt doesn't know the key;
+- textbelt.com can't be reached;
+- no credits are left.
+
+As with any module, the reason is shown.
+
+Over REST (`.../actions/` is short for `/api/v1/devices/{id}/actions/`):
+- `POST .../actions/test` with `{"to": "5551234567"}` sends a test;
+- `POST .../actions/notify` with `{"message": "...", "title": "...", "to": "..."}` sends an alert. `to` is required: a number, a comma-separated list, or an array (up to 8). US and Canada numbers can be 10 digits; others need `+` and the country code. `title` is optional.
+- `POST .../actions/refresh` checks the credits now.
+
+The reading has:
+- `channel` (`sms`) and `ready`;
+- `credits_remaining` and `credits_ts`;
+- `texts_sent`, `texts_failed`, `texts_queued`;
+- `last_text`: its `kind`, `to` (masked as `***1234`), `ok`, `text_id`, `error` and `ts`.
+
+It never holds the key or a full phone number.
 
 ## History
 

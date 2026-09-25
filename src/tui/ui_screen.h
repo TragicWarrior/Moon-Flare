@@ -101,6 +101,17 @@ int  mf_devset_mouse(int x, int y, mmask_t bstate);
 const char *mf_devset_id(void);
 const char *mf_devset_poll_text(void);
 const char *mf_devset_payload(void);
+/* An action row that was run (mf_devset_key/mouse returned 3): POST
+ * mf_devset_action_body() to mf_devset_action_path(), hand the reply to
+ * mf_devset_action_reply(), then, while mf_devset_action_waiting(), fetch
+ * the settings about once a second and hand each reply to
+ * mf_devset_action_poll() until it is done or mf_devset_action_timeout(). */
+const char *mf_devset_action_path(void);
+const char *mf_devset_action_body(void);
+void mf_devset_action_reply(const char *json);
+int  mf_devset_action_waiting(void);
+void mf_devset_action_poll(const char *json);
+void mf_devset_action_timeout(void);
 int mf_devset_get_graph_interval(void);   /* 0 when not shown */
 void mf_devset_set_kind(const char *kind);
 void mf_devset_set_graph_interval(int minutes);

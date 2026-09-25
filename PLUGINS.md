@@ -19,6 +19,7 @@ The guide ends with [a complete example plugin](#complete-example). It reports t
 - [Readings](#readings)
 - [History capture and pruning](#history-capture-and-pruning)
 - [Actions](#actions)
+- [Notification pathways](#notification-pathways)
 - [Capabilities](#capabilities)
 - [Probes (discovery)](#probes-discovery)
 - [Files, processes and privileges](#files-processes-and-privileges)
@@ -203,15 +204,27 @@ The daemon owns each module's configuration. It is kept in the state file, `/var
 
 - **`fields`** is the Add Module form, in order. It is also the set of settings the daemon saves (see [Settings](#settings)).
   - `key` is a dotted configuration path.
-  - `type` is `string`, `number`, `bool` or `modules`. A `modules` field holds a comma-separated list of module UUIDs of the same kind as the module; the TUI shows it by name and edits it as a checklist (the built-in phantom driver's Shadows use it).
+  - `type` is `string`, `number`, `bool`, `modules`, `secret` or `action`:
+    - `modules` holds a comma-separated list of module UUIDs of the same kind as the module. The TUI shows it by name and edits it as a checklist (the built-in phantom driver's Shadows use it).
+    - `secret` is a value that clients never read back, such as an API key.
+      - Settings (`GET .../settings`) and `GET /api/v1/config` show it masked: `********`, plus the last four characters when the value is at least 12 long.
+      - A mask sent back, in a settings PUT or a config PUT, means "unchanged".
+      - The TUI shows it masked and sends it only when it was changed.
+      - Mask it in your own `get_settings` too.
+    - `action` is not a setting but a button in the settings form.
+      - `"action"` names the action it runs, `"param"` the key the user's value goes under, and `"button"` the popup's button text (default `Run`).
+      - The TUI asks for the value (with the field's hint), POSTs `{"<param>": "<value>"}` to the action, and shows how it went (see *Action results* under [Settings](#settings)).
+  - `"readonly": true` marks a value to show, not to change, such as credits left. Return it from `get_settings`; the form shows it in gray.
+  - Buttons and read-only values never appear in the Add Module form, and are never saved.
   - `label`, `hint`, `default` and `required` are optional.
   - Labels and hints also caption the settings form. Keep a hint to about 12 characters or it is clipped.
   - Include `poll_interval_s` if your module polls.
 - **`bus`** is optional. It is a short transport name stored with the module, such as `usb-serial`, `ble` or `modbus-tcp`.
 - **`capture`** is optional. It declares history recording; see [History capture and pruning](#history-capture-and-pruning).
+- **`notify`** is optional: a notification pathway's contract. See [Notification pathways](#notification-pathways).
 - **No `describe()`** means the form asks only for a name and a poll interval.
 
-`GET /api/v1/drivers` passes `bus`, `fields` and `capture` through to clients.
+`GET /api/v1/drivers` passes `bus`, `fields`, `capture` and `notify` through to clients.
 
 ## Settings
 
@@ -223,7 +236,12 @@ A module's settings form combines the daemon's own settings (name, poll and capt
   - **Validate every key before changing anything.** Returning an error must leave the module unchanged.
   - Return `MF_ERR_INVAL` with a reason for bad values.
   - The daemon calls it only when the body has at least one key that isn't the daemon's.
-- **Persistence.** After a successful PUT, the daemon saves only the keys your `describe()` declares as fields. Other keys are treated as live device writes: they reach the device but are not saved and not replayed on restart. A BMS protection register is an example. That split is deliberate: configuration keys go in `fields`, and live device settings go only through `get_settings` and `put_settings`.
+- **Action results.** An action run from a form button may finish later; a text, for example, still has to go out.
+  - Report it in `get_settings` as `"_action": {"name": "test", "seq": 3, "state": "running", "text": "Sending a test..."}`.
+  - Raise `seq` on each run. `state` is `running`, `done` or `failed`.
+  - After starting an action, the form fetches the settings about once a second (for up to 30 s). It shows `text` once a newer `seq` is no longer `running`.
+  - Keys that start with `_` are never shown as fields.
+- **Persistence.** After a successful PUT, the daemon saves only the keys your `describe()` declares as fields (not buttons or read-only values). Other keys are treated as live device writes: they reach the device but are not saved and not replayed on restart. A BMS protection register is an example. That split is deliberate: configuration keys go in `fields`, and live device settings go only through `get_settings` and `put_settings`.
 
 ## Readings
 
@@ -280,6 +298,38 @@ Two conventions:
 
 Return `MF_ERR_UNSUPPORTED` for names you don't know. Advertise what you support with [capabilities](#capabilities).
 
+## Notification pathways
+
+A module that can deliver a message to people, such as the Textbelt SMS service, advertises itself as a *notification pathway*. Other parts of moon-flare (a logic engine is planned), and scripts, can then send alerts through it without knowing how it works.
+
+- **Capability:** `MF_CAP_NOTIFY` (`"notify"` in `caps`).
+- **`describe()`:** a `notify` block with the pathway's contract, for example `{"channel": "sms", "action": "notify", "max_chars": 320}`.
+  - `channel` names the medium: `sms` now, and later perhaps `email` or `push`.
+  - `action` is the action to call.
+  - `max_chars` is the longest message the pathway takes; longer ones are cut.
+- **The action:** `notify`, with `{"message": "...", "title": "...", "to": ...}`.
+  - `message` is required. `title` is optional; an SMS sends `title: message`.
+  - `to` is required: one address, or a list (a comma-separated string or an array). A pathway keeps no recipients of its own. Whoever raises an alert (the logic engine) decides whom it goes to.
+  - Return `MF_OK` as soon as the message is accepted (queued). Never wait for delivery: the loop must not block.
+  - Otherwise return an error code:
+
+    | Code | When | The daemon answers |
+    | --- | --- | --- |
+    | `MF_ERR_INVAL` | a bad request: no message, no `to`, a bad address | 400 |
+    | `MF_ERR_BUSY` | a rate limit is reached or the queue is full | 409 |
+    | `MF_ERR_OFFLINE` | the pathway cannot send at all | 409 |
+
+    The answer carries your error text.
+- **The reading:** carry `"channel"` and `"ready"` (whether it can send right now), and report how sends went. The Textbelt module has `texts_sent`, `texts_failed` and `last_text`. Leave addresses out, or mask them: readings are served without authentication and may be recorded in history.
+- **Limits:** the REST API has no authentication, so anyone on the network can call the action. Cap how many messages you send per hour, to protect the account behind the pathway.
+
+For example:
+
+```sh
+curl -XPOST -d '{"title":"Moon Flare","message":"Battery low: 19%"}' \
+    http://127.0.0.1:5250/api/v1/devices/<uuid>/actions/notify
+```
+
 ## Capabilities
 
 `caps(ctx)` returns `MF_CAP_*` bits. Clients receive them as strings in `caps`.
@@ -293,6 +343,7 @@ Return `MF_ERR_UNSUPPORTED` for names you don't know. Advertise what you support
 | `MF_CAP_PROBE` | `probe` | Has a probe. |
 | `MF_CAP_AUTO_PORT` | `auto_port` | Finds its USB device again if the port changes. |
 | `MF_CAP_AUTO_NET` | `auto_net` | Finds its device on the network. |
+| `MF_CAP_NOTIFY` | `notify` | A notification pathway: supports the `notify` action. See [Notification pathways](#notification-pathways). |
 
 The daemon adds `history` itself when your `describe()` has a valid `capture` block.
 

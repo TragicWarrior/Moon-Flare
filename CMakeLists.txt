@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 project(moon-flare
-    VERSION 0.9.0
+    VERSION 0.10.0
     DESCRIPTION "Moon Flare: multi-kind energy dashboard (daemon, REST, plugins, TUI)"
     LANGUAGES C)
 
@@ -57,7 +57,7 @@ target_compile_options(mf_phr PRIVATE -w)
 
 enable_testing()
 
-add_executable(moonflared src/moonflared.c src/http/http_pt.c src/plugin/loader.c src/config/config.c src/rest/routes.c src/rest/discover.c src/device/device.c src/system/system.c
+add_executable(moonflared src/moonflared.c src/http/http_pt.c src/plugin/loader.c src/config/config.c src/rest/routes.c src/rest/secret.c src/rest/discover.c src/device/device.c src/system/system.c
     src/phantom/phantom.c src/phantom/average.c)
 target_include_directories(moonflared PRIVATE
     ${CMAKE_SOURCE_DIR}
@@ -234,9 +234,46 @@ if(CURL_FOUND)
         LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/weather_plugins)
     target_compile_definitions(mf_service_weathergov PRIVATE _GNU_SOURCE)
     target_compile_options(mf_service_weathergov PRIVATE ${MF_WARN})
+
+    # Textbelt SMS service: a notification pathway (MF_CAP_NOTIFY).  Its
+    # test runs the plugin against a fake Textbelt on 127.0.0.1.
+    add_library(mf_service_textbelt SHARED
+        src/plugins/service_textbelt/plugin.c
+        src/textbelt/tb.c)
+    target_include_directories(mf_service_textbelt PRIVATE
+        ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/third_party/cJSON
+        ${CMAKE_SOURCE_DIR}/src/textbelt)
+    target_link_libraries(mf_service_textbelt PRIVATE CURL::libcurl mf_cjson)
+    set_target_properties(mf_service_textbelt PROPERTIES
+        PREFIX "lib" OUTPUT_NAME "mf_service_textbelt"
+        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/textbelt_plugins)
+    target_compile_definitions(mf_service_textbelt PRIVATE _GNU_SOURCE)
+    target_compile_options(mf_service_textbelt PRIVATE ${MF_WARN})
+    add_executable(test_textbelt_plugin tests/test_textbelt_plugin.c)
+    target_include_directories(test_textbelt_plugin PRIVATE
+        ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/third_party/cJSON)
+    target_link_libraries(test_textbelt_plugin PRIVATE mf_cjson ${CMAKE_DL_LIBS})
+    target_compile_options(test_textbelt_plugin PRIVATE ${MF_WARN})
+    add_test(NAME textbelt_plugin
+        COMMAND test_textbelt_plugin $<TARGET_FILE:mf_service_textbelt>)
 else()
-    message(STATUS "libcurl not found: skipping the weather.gov plugin")
+    message(STATUS "libcurl not found: skipping the weather.gov and Textbelt plugins")
 endif()
+
+# Textbelt's phone numbers, form bodies and replies; secret, action and
+# read-only plugin fields in the daemon.  Neither needs the network.
+add_executable(test_textbelt tests/test_textbelt.c src/textbelt/tb.c)
+target_include_directories(test_textbelt PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/textbelt ${CMAKE_SOURCE_DIR}/third_party/cJSON)
+target_link_libraries(test_textbelt PRIVATE mf_cjson)
+target_compile_options(test_textbelt PRIVATE ${MF_WARN})
+add_test(NAME textbelt COMMAND test_textbelt)
+add_executable(test_secret tests/test_secret.c src/rest/secret.c)
+target_include_directories(test_secret PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/rest ${CMAKE_SOURCE_DIR}/third_party/cJSON)
+target_link_libraries(test_secret PRIVATE mf_cjson)
+target_compile_options(test_secret PRIVATE ${MF_WARN})
+add_test(NAME secret COMMAND test_secret)
 
 # Magnum Energy inverter network: a read-only RS-485 tap, ported from
 # pymagnum (third_party/pymagnum).  Plugin, magtest-style dump tool, tests.
@@ -283,6 +320,13 @@ if(MF_VALGRIND)
         COMMAND ${MF_VALGRIND} --quiet --error-exitcode=9 --leak-check=full
                 --errors-for-leak-kinds=definite
                 $<TARGET_FILE:test_magnum_pty> $<TARGET_FILE:mf_inverter_magnum> quick)
+    if(TARGET mf_service_textbelt)
+        add_test(NAME textbelt_plugin_valgrind
+            COMMAND ${MF_VALGRIND} --quiet --error-exitcode=9 --leak-check=full
+                    --errors-for-leak-kinds=definite
+                    $<TARGET_FILE:test_textbelt_plugin>
+                    $<TARGET_FILE:mf_service_textbelt>)
+    endif()
 endif()
 
 add_library(mf_battery_jk SHARED
@@ -352,7 +396,7 @@ set_target_properties(test_history PROPERTIES BUILD_RPATH
     ${CMAKE_SOURCE_DIR}/third_party/sqlite/lib)
 add_test(NAME history COMMAND test_history)
 
-add_executable(test_routes tests/test_routes.c src/rest/routes.c src/rest/discover.c src/device/device.c src/plugin/loader.c src/config/config.c src/history/history.c src/system/system.c)
+add_executable(test_routes tests/test_routes.c src/rest/routes.c src/rest/secret.c src/rest/discover.c src/device/device.c src/plugin/loader.c src/config/config.c src/history/history.c src/system/system.c)
 target_include_directories(test_routes PRIVATE
     ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/rest
     ${CMAKE_SOURCE_DIR}/src/device ${CMAKE_SOURCE_DIR}/src/plugin
@@ -456,6 +500,9 @@ install(TARGETS mf_gatt RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR})
 install(TARGETS mf_magnum_dump RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(TARGETS mf_charger_classic mf_battery_xd mf_battery_jk mf_inverter_magnum
         LIBRARY DESTINATION lib/moon-flare)
+if(TARGET mf_service_textbelt)
+    install(TARGETS mf_service_textbelt LIBRARY DESTINATION lib/moon-flare)
+endif()
 if(TARGET mf_service_weathergov)
     install(TARGETS mf_service_weathergov LIBRARY DESTINATION lib/moon-flare)
     install(FILES data/zcta.txt DESTINATION ${CMAKE_INSTALL_DATADIR}/moon-flare)

@@ -6,6 +6,7 @@
 #include "device.h"
 #include "discover.h"
 #include "history.h"
+#include "secret.h"
 #include "system/system.h"
 
 #include <cJSON.h>
@@ -109,7 +110,17 @@ static void cfg_patch_plugin_keys(mf_config_device_t *d, const cJSON *body)
 
         if (!cJSON_IsString(k) || !(dot = strchr(k->valuestring, '.')))
             continue;
+        /* Buttons and values to show are not settings; a secret sent back
+         * masked is unchanged. */
+        if (mf_field_not_setting(cJSON_GetObjectItemCaseSensitive(desc, "fields"),
+                                 k->valuestring))
+            continue;
         v = cJSON_GetObjectItemCaseSensitive(body, k->valuestring);
+        if (cJSON_IsString(v) &&
+            mf_field_is_secret(cJSON_GetObjectItemCaseSensitive(desc, "fields"),
+                               k->valuestring) &&
+            mf_secret_is_mask(v->valuestring))
+            continue;
         if (!v || (size_t)(dot - k->valuestring) >= sizeof(ns))
             continue;
         snprintf(ns, sizeof(ns), "%.*s", (int)(dot - k->valuestring),
@@ -420,6 +431,8 @@ static void add_caps(cJSON *arr, unsigned caps)
         cJSON_AddItemToArray(arr, cJSON_CreateString("auto_port"));
     if (caps & MF_CAP_AUTO_NET)
         cJSON_AddItemToArray(arr, cJSON_CreateString("auto_net"));
+    if (caps & MF_CAP_NOTIFY)
+        cJSON_AddItemToArray(arr, cJSON_CreateString("notify"));
 }
 
 static cJSON *system_json(const mf_system_totals_t *t)
@@ -504,6 +517,10 @@ static void add_driver_schema(cJSON *o, const mf_plugin_ops_t *ops)
         cJSON_AddItemToObject(o, "capture", capture);
     else
         cJSON_Delete(capture);
+    /* A notification pathway's contract (MF_CAP_NOTIFY). */
+    if (cJSON_IsObject(cJSON_GetObjectItemCaseSensitive(d, "notify")))
+        cJSON_AddItemToObject(o, "notify",
+            cJSON_DetachItemFromObjectCaseSensitive(d, "notify"));
     cJSON_Delete(d);
 }
 
@@ -654,6 +671,13 @@ static int handle_devices_create(const mf_rest_request_t *req, mf_rest_response_
     snprintf(namebuf, sizeof(namebuf), "%s", name);
     snprintf(kindbuf, sizeof(kindbuf), "%s", kind);
     snprintf(driverbuf, sizeof(driverbuf), "%s", driver);
+    {
+        cJSON *d = plugin_describe(mf_plugins_find(mf_devices_registry(),
+                                                   kindbuf, driverbuf));
+
+        mf_secret_clean_body(root, cJSON_GetObjectItemCaseSensitive(d, "fields"));
+        cJSON_Delete(d);
+    }
     nest_dotted_keys(root);
     if (!cJSON_GetObjectItemCaseSensitive(root, "bus"))
     {
@@ -821,6 +845,8 @@ static int handle_settings_get(const char *id, mf_rest_response_t *resp)
 
         if (!root)
             root = cJSON_Parse("{}");
+        /* Secrets never leave the daemon. */
+        mf_secret_mask_settings(root, cJSON_GetObjectItemCaseSensitive(desc, "fields"));
         /* The plugin's field labels, for the settings form (an array, so the
            form never shows or sends it back). */
         cJSON_AddItemToObject(root, "_fields",
@@ -850,6 +876,23 @@ static int handle_settings_put(const char *id, const mf_rest_request_t *req,
     char body[4096];
     int st;
     copy_body(req, body, sizeof(body));
+    {
+        /* Masks sent back and non-settings (buttons, shown values) go. */
+        cJSON *b = cJSON_Parse(body);
+        cJSON *d = plugin_describe(device_ops(id));
+        char *s;
+
+        if (cJSON_IsObject(b))
+        {
+            mf_secret_clean_body(b, cJSON_GetObjectItemCaseSensitive(d, "fields"));
+            s = cJSON_PrintUnformatted(b);
+            if (s && strlen(s) < sizeof(body))
+                snprintf(body, sizeof(body), "%s", s);
+            free(s);
+        }
+        cJSON_Delete(b);
+        cJSON_Delete(d);
+    }
     st = mf_devices_put_settings(id, body, err, sizeof(err));
     if (st != 200)
     {
@@ -938,11 +981,56 @@ static int handle_config_get(mf_rest_response_t *resp)
     free(s);
     if (!root)
         root = cJSON_CreateObject();
+    {
+        cJSON *dev;
+
+        cJSON_ArrayForEach(dev, cJSON_GetObjectItemCaseSensitive(root, "devices"))
+        {
+            const cJSON *k = cJSON_GetObjectItemCaseSensitive(dev, "kind");
+            const cJSON *dr = cJSON_GetObjectItemCaseSensitive(dev, "driver");
+            cJSON *d;
+
+            if (!cJSON_IsString(k) || !cJSON_IsString(dr))
+                continue;
+            d = plugin_describe(mf_plugins_find(mf_devices_registry(),
+                                                k->valuestring, dr->valuestring));
+            mf_secret_mask_module(dev, cJSON_GetObjectItemCaseSensitive(d, "fields"));
+            cJSON_Delete(d);
+        }
+    }
     cJSON_AddNumberToObject(root, "config_gen", (double)live->config_gen);
     cJSON_AddBoolToObject(root, "pending_apply", mf_devices_any_dying());
     set_json(resp, 200, root, NULL);
     set_etag_gen(resp, live->config_gen);
     return 0;
+}
+
+/* A GET /config that went back as a PUT has its secrets masked: keep the
+ * live values wherever a module's secret came back as a mask or not at all. */
+static void restore_secrets(mf_daemon_config_t *next, const mf_daemon_config_t *live)
+{
+    int i, j;
+
+    for (i = 0; i < next->n_devices; i++)
+    {
+        mf_config_device_t *nd = &next->devices[i];
+        char out[MF_DEV_EXTRA_SIZE];
+        cJSON *d;
+
+        for (j = 0; j < live->n_devices; j++)
+            if (strcmp(live->devices[j].uuid, nd->uuid) == 0)
+                break;
+        if (j == live->n_devices)
+            continue;
+        d = plugin_describe(mf_plugins_find(mf_devices_registry(), nd->kind,
+                                            nd->driver));
+        if (mf_secret_restore_extra(nd->extra_json, live->devices[j].extra_json,
+                                    cJSON_GetObjectItemCaseSensitive(d, "fields"),
+                                    out, sizeof(out)) == 0)
+            snprintf(nd->extra_json, sizeof(nd->extra_json), "%s",
+                     strcmp(out, "{}") == 0 ? "" : out);
+        cJSON_Delete(d);
+    }
 }
 
 static int handle_config_put(const mf_rest_request_t *req, mf_rest_response_t *resp)
@@ -974,6 +1062,7 @@ static int handle_config_put(const mf_rest_request_t *req, mf_rest_response_t *r
     next = *live;
     mf_config_apply_json(&next, root);
     cJSON_Delete(root);
+    restore_secrets(&next, live);
     if (mf_devices_validate_config(next.devices, next.n_devices,
                                    err, sizeof(err)) != 0)
     {
