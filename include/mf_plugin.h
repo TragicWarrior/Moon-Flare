@@ -15,6 +15,8 @@ enum {
     MF_CAP_PROBE          = 1u << 4,
     MF_CAP_AUTO_PORT      = 1u << 5,  /* USB unique-id relocate */
     MF_CAP_AUTO_NET       = 1u << 6,  /* Classic IP:port discover */
+    MF_CAP_NOTIFY         = 1u << 7,  /* a notification pathway: action
+                                         "notify" (PLUGINS.md) */
 };
 
 #define MF_IO_WANT_READ  1u

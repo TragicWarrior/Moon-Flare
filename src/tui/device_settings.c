@@ -30,8 +30,12 @@
 #define MAX_ROWS 32
 
 /* ROW_MODULES: a comma-separated list of module UUIDs (a phantom's
- * Shadows), shown by name and edited as a checklist. */
-enum { ROW_TEXT = 0, ROW_NUM, ROW_BOOL, ROW_MODULES };
+ * Shadows), shown by name and edited as a checklist.  ROW_SECRET: a
+ * "secret" field (an API key), which the daemon shows masked; it is sent
+ * only when changed.  ROW_ACTION: an "action" field, not a setting: it
+ * asks for a value, runs the plugin's action with it, and shows how it
+ * went. */
+enum { ROW_TEXT = 0, ROW_NUM, ROW_BOOL, ROW_MODULES, ROW_SECRET, ROW_ACTION };
 
 typedef struct {
     char key[48];
@@ -88,9 +92,21 @@ static struct {
     char lab[32];
     char hint[32];
     char type[12];
+    char act[24];       /* "action" fields: the action to run, */
+    char param[24];     /* the key the value goes under, */
+    char button[12];    /* and the popup's button */
+    int  ro;            /* "readonly": shown, never edited or saved */
 } g_plab[MAX_PLAB];
 static int          g_nplab;
 static char         g_payload[2048];
+/* An action row that was run: ui_screen POSTs it, then the result shows
+ * up in the module's settings as "_action" (see mf_devset_action_poll). */
+static char         g_act_path[192];
+static char         g_act_body[256];
+static char         g_act_name[24];
+static char         g_act_title[48];
+static int          g_act_wait;         /* 1: POST out, 2: waiting on result */
+static double       g_act_seen;         /* "_action" seq already accounted */
 /* The pack view's graph interval (TUI-only), kept across rebuilds. */
 static int          g_graph_min = 30;
 
@@ -294,6 +310,31 @@ static void field_caption(const char *key, char *lab, size_t lab_cap,
         snprintf(lab, lab_cap, "%s", key);
 }
 
+static int plab_find(const char *key)
+{
+    int i;
+
+    for (i = 0; key && i < g_nplab; i++)
+        if (strcmp(g_plab[i].key, key) == 0)
+            return i;
+    return -1;
+}
+
+/* A plugin value to show, never to edit ("readonly": true). */
+static int plab_ro(const char *key)
+{
+    int i = plab_find(key);
+
+    return i >= 0 && g_plab[i].ro;
+}
+
+static int plab_action(const char *key)
+{
+    int i = plab_find(key);
+
+    return i >= 0 && strcmp(g_plab[i].type, "action") == 0;
+}
+
 static int skip_form_key(const char *k)
 {
     /* Added by hand below: graph interval is TUI-only, RCV and the
@@ -304,6 +345,8 @@ static int skip_form_key(const char *k)
                  strcmp(k, "cell_rcv_v") == 0 ||
                  (strcmp(k, "ble.adapter") == 0 && !g_add_mode) ||
                  (strcmp(k, "active") == 0 && strcmp(g_kind, "service") == 0) ||
+                 /* A new module has nothing to show and nothing to run. */
+                 (g_add_mode && (plab_ro(k) || plab_action(k))) ||
                  strcmp(k, "graph_interval_min") == 0);
 }
 
@@ -326,6 +369,8 @@ static int field_readonly(const char *key)
     /* A new device's transport is exactly what the form is for. */
     if (g_add_mode)
         return strcmp(key, "uuid") == 0;
+    if (plab_ro(key))
+        return 1;
     for (i = 0; i < sizeof(ro) / sizeof(ro[0]); i++)
     {
         if (strcmp(key, ro[i]) == 0)
@@ -433,6 +478,10 @@ static int row_type(const char *key, const cJSON *it)
         return ROW_BOOL;
     if (pt && strcmp(pt, "modules") == 0)
         return ROW_MODULES;
+    if (pt && strcmp(pt, "secret") == 0)
+        return ROW_SECRET;
+    if (pt && strcmp(pt, "action") == 0)
+        return ROW_ACTION;
     if (pt && strcmp(pt, "number") == 0)
         return ROW_NUM;
     if (cJSON_IsBool(it))
@@ -541,6 +590,16 @@ static void build_rows(const char *json)
     }
 
     add_json_rows(root, 0);
+
+    /* The plugin's buttons ("Send Test SMS"), once the module exists. */
+    if (!g_add_mode)
+    {
+        int i;
+
+        for (i = 0; i < g_nplab; i++)
+            if (strcmp(g_plab[i].type, "action") == 0 && g_plab[i].act[0])
+                add_row(g_plab[i].key, "", NULL);
+    }
 
     json_field_text("cell_rcv_v",
                     cJSON_GetObjectItemCaseSensitive(root, "cell_rcv_v"),
@@ -701,6 +760,23 @@ static void pick_toggle(int i)
     vk_listbox_set_item(g_pop_lb, i, text, NULL, NULL);
 }
 
+/* A secret as the list shows it: the daemon's mask as it came, a newly
+ * typed one masked the same way ("********" and the last four characters
+ * of a long one). */
+static void secret_text(const char *v, char *out, size_t cap)
+{
+    size_t n = strlen(v);
+
+    if (!n)
+        snprintf(out, cap, "not set");
+    else if (strncmp(v, "********", 8) == 0)
+        snprintf(out, cap, "%.16s", v);         /* the daemon's mask */
+    else if (n >= 12)
+        snprintf(out, cap, "********%s", v + n - 4);
+    else
+        snprintf(out, cap, "********");
+}
+
 static void row_text(const row_t *r, char *out, size_t cap)
 {
     char lab[40], val[160];
@@ -709,6 +785,10 @@ static void row_text(const row_t *r, char *out, size_t cap)
     field_caption(r->key, lab, sizeof(lab), NULL, 0);
     if (r->type == ROW_MODULES)
         modules_text(r->value, val, sizeof(val));
+    else if (r->type == ROW_SECRET)
+        secret_text(r->value, val, sizeof(val));
+    else if (r->type == ROW_ACTION)
+        snprintf(val, sizeof(val), "Enter");
     else
         snprintf(val, sizeof(val), "%s", r->value);
     lw = (int)strlen(lab);
@@ -1238,23 +1318,37 @@ static void modify_open(int ri)
     else
     {
         vk_label_t *pl;
+        int pi = plab_find(r->key);
+        const char *btn = "Apply";
 
         w = 48;
         h = 9;
-        g_pop = pop_new(w, h, title, COLOR_WHITE, COLOR_BLUE, "Apply", "Cancel");
+        if (r->type == ROW_ACTION)
+        {
+            snprintf(title, sizeof(title), " %s ", lab);
+            btn = pi >= 0 && g_plab[pi].button[0] ? g_plab[pi].button : "Run";
+        }
+        g_pop = pop_new(w, h, title, COLOR_WHITE, COLOR_BLUE, btn, "Cancel");
         g_pop_client = own(&g_own_pop,
                            vk_box_create(w - 2, h - 5, VK_BOX_VERTICAL, 2), W_BOX);
         vk_box_set_homogeneous(g_pop_client, false);
         vk_widget_set_colors(VK_WIDGET(g_pop_client), COLOR_WHITE, COLOR_BLUE);
         pl = own(&g_own_pop, vk_label_create(w - 2), W_LABEL);
-        snprintf(prompt, sizeof(prompt), "  %s%s:", lab, hint);
+        if (r->type == ROW_SECRET)
+            snprintf(prompt, sizeof(prompt), "  New %s (empty keeps it):", lab);
+        else
+            snprintf(prompt, sizeof(prompt), "  %s%s:", lab, hint);
         vk_label_set_text(pl, prompt);
         vk_widget_set_colors(VK_WIDGET(pl), COLOR_WHITE, COLOR_BLUE);
         vk_label_update(pl);
         vk_box_set_widget(g_pop_client, 0, VK_WIDGET(pl), VK_INHERIT_NONE);
         g_pop_in = own(&g_own_pop, vk_input_create(w - 4), W_INPUT);
         vk_input_set_border_style(g_pop_in, VK_BORDER_SINGLE);
-        vk_input_set_text(g_pop_in, r->value);
+        /* A secret is never shown back; an action starts empty. */
+        vk_input_set_text(g_pop_in, r->type == ROW_ACTION ||
+                          (r->type == ROW_SECRET &&
+                           strncmp(r->value, "********", 8) == 0)
+                          ? "" : r->value);
         vk_box_set_widget(g_pop_client, 1, VK_WIDGET(g_pop_in), VK_INHERIT_NONE);
     }
     pop_show(g_pop, g_pop_client, w, h);
@@ -1272,7 +1366,48 @@ static int numeric(const char *s)
     return *end == '\0';
 }
 
-static void modify_apply(void)
+/* Run an action row with the value given: 3 tells ui_screen to POST it
+ * (mf_devset_action_path/body); 0 keeps the popup open. */
+static int action_start(const row_t *r, const char *val)
+{
+    int pi = plab_find(r->key);
+    char lab[40], v[160];
+    size_t n;
+    cJSON *b;
+    char *js;
+
+    while (*val == ' ')
+        val++;
+    snprintf(v, sizeof(v), "%s", val);
+    n = strlen(v);
+    while (n && v[n - 1] == ' ')
+        v[--n] = '\0';
+    if (pi < 0 || !g_plab[pi].act[0])
+        return 0;
+    if (!v[0])
+    {
+        msg_show(" Error ", "Enter a value first.", NULL, 1);
+        return 0;
+    }
+    field_caption(r->key, lab, sizeof(lab), NULL, 0);
+    b = cJSON_CreateObject();
+    cJSON_AddStringToObject(b, g_plab[pi].param[0] ? g_plab[pi].param : "value", v);
+    js = cJSON_PrintUnformatted(b);
+    cJSON_Delete(b);
+    snprintf(g_act_body, sizeof(g_act_body), "%s",
+             js && strlen(js) < sizeof(g_act_body) ? js : "{}");
+    free(js);
+    snprintf(g_act_path, sizeof(g_act_path), "/api/v1/devices/%s/actions/%s",
+             g_id, g_plab[pi].act);
+    snprintf(g_act_name, sizeof(g_act_name), "%s", g_plab[pi].act);
+    snprintf(g_act_title, sizeof(g_act_title), " %s ", lab);
+    g_act_wait = 1;
+    pop_close();
+    msg_show(g_act_title, "Working...", NULL, 0);
+    return 3;
+}
+
+static int modify_apply(void)
 {
     row_t *r = &g_rows[g_pop_row];
     char val[160];
@@ -1294,6 +1429,10 @@ static void modify_apply(void)
     else
         snprintf(val, sizeof(val), "%s",
                  g_pop_in ? vk_input_get_text(g_pop_in) : "");
+    if (r->type == ROW_ACTION)
+        return action_start(r, val);
+    if (r->type == ROW_SECRET && !val[0])
+        snprintf(val, sizeof(val), "%s", r->value);     /* empty keeps it */
     if (r->type == ROW_NUM && !numeric(val))
     {
         char lab[40], l1[96];
@@ -1301,12 +1440,13 @@ static void modify_apply(void)
         field_caption(r->key, lab, sizeof(lab), NULL, 0);
         snprintf(l1, sizeof(l1), "%s must be a number.", lab);
         msg_show(" Error ", l1, NULL, 1);
-        return;
+        return 0;
     }
     snprintf(r->value, sizeof(r->value), "%s", val);
     pop_close();
     rebuild_list();
     paint_dialog();
+    return 0;
 }
 
 static void confirm_open(int kind)
@@ -1414,9 +1554,8 @@ static int pop_key(wint_t c)
         if (g_pop_kind == POP_MODIFY)
         {
             if (apply)
-                modify_apply();
-            else
-                pop_close();
+                return modify_apply() == 3 ? 3 : 1;
+            pop_close();
             return 1;
         }
         if (g_pop_kind == POP_DISCARD)
@@ -1535,6 +1674,7 @@ void mf_devset_close(void)
     g_open = 0;
     g_add_mode = 0;
     g_saving = 0;
+    g_act_wait = 0;
     g_nplab = 0;
     g_nrows = 0;
     mf_ui_front_clear();
@@ -1598,42 +1738,45 @@ void mf_devset_set_graph_interval(int minutes)
     paint_dialog();
 }
 
+/* The rows as a settings PUT (or Add) body: numbers and true/false bare
+ * where the row is a number or a switch, everything else as a JSON string
+ * (a phone number is text).  Fields that would not fit are left out. */
 const char *mf_devset_payload(void)
 {
-    size_t off = 1;
+    cJSON *o = cJSON_CreateObject();
+    char *s = NULL;
     int i;
 
-    g_payload[0] = '{';
-    g_payload[1] = '\0';
-    for (i = 0; i < g_nrows; i++)
+    for (i = 0; o && i < g_nrows; i++)
     {
         const row_t *r = &g_rows[i];
-        char piece[256];
-        int n;
 
-        /* Read-only rows and the TUI-only graph interval stay home. */
-        if (r->ro || strcmp(r->key, "graph_interval_min") == 0)
+        /* Read-only rows, buttons and the TUI-only graph interval stay
+         * home; a secret goes only when it was changed. */
+        if (r->ro || r->type == ROW_ACTION ||
+            strcmp(r->key, "graph_interval_min") == 0 ||
+            (r->type == ROW_SECRET && strcmp(r->value, r->orig) == 0))
             continue;
-        if (json_bare(r->value))
-            n = snprintf(piece, sizeof(piece), "%s\"%s\":%s",
-                         off > 1 ? "," : "", r->key, r->value);
+        if ((r->type == ROW_NUM || r->type == ROW_BOOL) && json_bare(r->value))
+            cJSON_AddRawToObject(o, r->key, r->value);
         else
-            n = snprintf(piece, sizeof(piece), "%s\"%s\":\"%s\"",
-                         off > 1 ? "," : "", r->key, r->value);
-        if (n < 0 || (size_t)n >= sizeof(piece))
-            continue;   /* value too long to encode safely; skip this field */
-        n = snprintf(g_payload + off, sizeof(g_payload) - off, "%s", piece);
-        if (n < 0)
-            break;
-        off += (size_t)n;
-        if (off >= sizeof(g_payload) - 2)
-            break;
+            cJSON_AddStringToObject(o, r->key, r->value);
     }
-    if (off < sizeof(g_payload) - 1)
+    while (o && (s = cJSON_PrintUnformatted(o)) != NULL &&
+           strlen(s) >= sizeof(g_payload) && o->child)
     {
-        g_payload[off] = '}';
-        g_payload[off + 1] = '\0';
+        cJSON *last = o->child;
+
+        while (last->next)
+            last = last->next;
+        cJSON_Delete(cJSON_DetachItemViaPointer(o, last));
+        free(s);
+        s = NULL;
     }
+    snprintf(g_payload, sizeof(g_payload), "%s",
+             s && strlen(s) < sizeof(g_payload) ? s : "{}");
+    free(s);
+    cJSON_Delete(o);
     return g_payload;
 }
 
@@ -1649,9 +1792,20 @@ static void load_plugin_labels(const cJSON *arr)
         const cJSON *l = cJSON_GetObjectItemCaseSensitive(f, "label");
         const cJSON *h = cJSON_GetObjectItemCaseSensitive(f, "hint");
         const cJSON *t = cJSON_GetObjectItemCaseSensitive(f, "type");
+        const cJSON *a = cJSON_GetObjectItemCaseSensitive(f, "action");
+        const cJSON *pa = cJSON_GetObjectItemCaseSensitive(f, "param");
+        const cJSON *bt = cJSON_GetObjectItemCaseSensitive(f, "button");
 
         if (g_nplab >= MAX_PLAB || !cJSON_IsString(k))
             continue;
+        snprintf(g_plab[g_nplab].act, sizeof(g_plab[0].act), "%s",
+                 cJSON_IsString(a) ? a->valuestring : "");
+        snprintf(g_plab[g_nplab].param, sizeof(g_plab[0].param), "%s",
+                 cJSON_IsString(pa) ? pa->valuestring : "");
+        snprintf(g_plab[g_nplab].button, sizeof(g_plab[0].button), "%s",
+                 cJSON_IsString(bt) ? bt->valuestring : "");
+        g_plab[g_nplab].ro = cJSON_IsTrue(
+            cJSON_GetObjectItemCaseSensitive(f, "readonly"));
         snprintf(g_plab[g_nplab].key, sizeof(g_plab[0].key), "%s", k->valuestring);
         snprintf(g_plab[g_nplab].lab, sizeof(g_plab[0].lab), "%s",
                  cJSON_IsString(l) ? l->valuestring : "");
@@ -1711,6 +1865,96 @@ void mf_devset_show_add(const char *kind, const char *driver, const char *json,
     snprintf(g_add_driver, sizeof(g_add_driver), "%s", driver ? driver : "");
     snprintf(cap, sizeof(cap), "Add %s / %s", g_add_kind, g_add_driver);
     show_form("", cap, json);
+}
+
+/* ---- action rows ---------------------------------------------------- */
+
+const char *mf_devset_action_path(void)
+{
+    return g_act_path;
+}
+
+const char *mf_devset_action_body(void)
+{
+    return g_act_body;
+}
+
+/* The daemon's answer to the action's POST: an error, or started (the
+ * result then shows up in the module's settings). */
+void mf_devset_action_reply(const char *json)
+{
+    cJSON *root;
+    const cJSON *err;
+
+    if (!g_open || g_act_wait != 1)
+        return;
+    root = json ? cJSON_Parse(json) : NULL;
+    err = cJSON_GetObjectItemCaseSensitive(root, "error");
+    if (!root || cJSON_IsString(err))
+    {
+        char l2[80];
+
+        g_act_wait = 0;
+        snprintf(l2, sizeof(l2), "%.70s",
+                 cJSON_IsString(err) ? err->valuestring : "no reply");
+        msg_show(g_act_title, "It did not start:", l2, 1);
+    }
+    else
+        g_act_wait = 2;
+    cJSON_Delete(root);
+}
+
+int mf_devset_action_waiting(void)
+{
+    return g_open && g_act_wait == 2;
+}
+
+/* A settings reply.  Its "_action" ({"name", "seq", "state", "text"}) is
+ * how the plugin's last action went: while waiting, show the result once
+ * a newer one than any seen has finished; otherwise just note its seq. */
+void mf_devset_action_poll(const char *json)
+{
+    cJSON *root = json ? cJSON_Parse(json) : NULL;
+    const cJSON *a = cJSON_GetObjectItemCaseSensitive(root, "_action");
+    const cJSON *nm = cJSON_GetObjectItemCaseSensitive(a, "name");
+    const cJSON *seq = cJSON_GetObjectItemCaseSensitive(a, "seq");
+    const cJSON *st = cJSON_GetObjectItemCaseSensitive(a, "state");
+    const cJSON *tx = cJSON_GetObjectItemCaseSensitive(a, "text");
+
+    if (!g_open || !cJSON_IsNumber(seq) || !cJSON_IsString(st))
+    {
+        cJSON_Delete(root);
+        return;
+    }
+    if (g_act_wait != 2)
+    {
+        if (!g_act_wait && seq->valuedouble > g_act_seen)
+            g_act_seen = seq->valuedouble;
+    }
+    else if (seq->valuedouble > g_act_seen && cJSON_IsString(nm) &&
+             strcmp(nm->valuestring, g_act_name) == 0 &&
+             strcmp(st->valuestring, "running") != 0)
+    {
+        char l[80];
+
+        g_act_wait = 0;
+        g_act_seen = seq->valuedouble;
+        snprintf(l, sizeof(l), "%.76s", cJSON_IsString(tx) ? tx->valuestring : "");
+        if (strcmp(st->valuestring, "done") == 0)
+            msg_show(g_act_title, l[0] ? l : "Done.", NULL, 0);
+        else
+            msg_show(g_act_title, "It did not go through:", l, 1);
+    }
+    cJSON_Delete(root);
+}
+
+/* No result in time. */
+void mf_devset_action_timeout(void)
+{
+    if (!g_open || !g_act_wait)
+        return;
+    g_act_wait = 0;
+    msg_show(g_act_title, "No result yet.", "It may still finish.", 0);
 }
 
 int mf_devset_is_add(void)

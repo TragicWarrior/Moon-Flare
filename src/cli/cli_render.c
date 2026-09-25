@@ -334,6 +334,23 @@ int cli_render_query_module(const cJSON *mod, int raw)
             printf("   stage: %s", st->valuestring);
         printf("\n");
     }
+    else if (cJSON_IsObject(data) &&
+             cJSON_IsString(cJSON_GetObjectItemCaseSensitive(data, "channel")))
+    {
+        /* A notification pathway: what it sends, and how that has gone. */
+        const cJSON *cr = cJSON_GetObjectItemCaseSensitive(data, "credits_remaining");
+        const cJSON *sent = cJSON_GetObjectItemCaseSensitive(data, "texts_sent");
+        const cJSON *bad = cJSON_GetObjectItemCaseSensitive(data, "texts_failed");
+
+        printf("  Notify   %s", cJSON_GetObjectItemCaseSensitive(data, "channel")->valuestring);
+        if (cJSON_IsNumber(cr))
+            printf("   %.0f credits left", cr->valuedouble);
+        if (cJSON_IsNumber(sent))
+            printf("   %.0f sent", sent->valuedouble);
+        if (cJSON_IsNumber(bad) && bad->valuedouble > 0)
+            printf("   %.0f failed", bad->valuedouble);
+        printf("\n");
+    }
     else
     {
         printf("  (%s module)\n", kind->valuestring);
@@ -511,11 +528,17 @@ int cli_render_status(const cJSON *status, int raw)
             const cJSON *t = cJSON_GetObjectItemCaseSensitive(wx, "temp_f");
             const cJSON *c = cJSON_GetObjectItemCaseSensitive(wx, "conditions");
 
+            const cJSON *cr = cJSON_GetObjectItemCaseSensitive(
+                cJSON_GetObjectItemCaseSensitive(item, "data"), "credits_remaining");
+
             print_module_line("", item);
             if (cJSON_IsNumber(t))
                 printf("   %.0f F", t->valuedouble);
             if (cJSON_IsString(c) && c->valuestring[0])
                 printf("   %s", c->valuestring);
+            /* A notification pathway (an SMS service). */
+            if (cJSON_IsNumber(cr))
+                printf("   %.0f credits", cr->valuedouble);
             printf("\n");
         }
     }

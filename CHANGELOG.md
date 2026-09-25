@@ -5,6 +5,50 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-09-25
+
+### Added
+
+- A Textbelt SMS service (`libmf_service_textbelt.so`, kind `service`,
+  driver `textbelt`), the first notification pathway.
+  - **Settings:** the API key, a cap on texts an hour (default 20), and how
+    often to check credits. It keeps no recipients: whoever raises an alert
+    says whom it goes to.
+  - **Send Test SMS**, a row in its settings, texts a number you give and
+    shows how it went.
+  - **Credits left** come from every reply from Textbelt and from a regular
+    check. They show on the dashboard's Services card, in
+    `moonflare-cli --status` and `-q`, and in its settings.
+  - **Actions:** `test` (`{"to"}`), `notify` (`{"message", "title", "to"}`,
+    `title` optional) and `refresh`.
+  - Built only when libcurl is present, like the weather plugin.
+- Notification pathways, so a logic engine (planned) can send alerts
+  through any module that delivers messages:
+  - a new capability, `MF_CAP_NOTIFY` (`"notify"` in `caps`);
+  - a `notify` block in `describe()` (channel, action, longest message),
+    which `GET /api/v1/drivers` passes through;
+  - the `notify` action's contract.
+
+  See PLUGINS.md.
+- Plugin field types for the settings form:
+  - `secret`: never shown back. Settings and `GET /api/v1/config` show a
+    mask (`********`, plus the last four characters of a long value), and
+    a mask sent back in a settings or config PUT keeps the real value.
+  - `action`: a button that runs one of the plugin's actions with a value
+    the user gives, and shows the result the plugin reports as `_action`
+    in its settings.
+  - `"readonly": true`: a value to show, such as credits left.
+
+  Buttons and read-only values are left out of the Add Module form and
+  never saved.
+
+### Fixed
+
+- The settings form sent any value that looked like a number (a phone
+  number, a numeric name, a tap label or passcode) as a JSON number, and a
+  value with a quote in it broke the request. Now only number and on/off
+  rows are sent bare; everything else goes as JSON-escaped text.
+
 ## [0.9.0] - 2026-09-25
 
 ### Changed

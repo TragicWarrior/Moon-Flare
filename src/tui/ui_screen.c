@@ -96,6 +96,13 @@ static double g_devset_put_deadline;
 static char   g_devset_put_path[192];
 static char   g_devset_put_body[2048];
 #define DEVSET_PUT_TMO_S 10.0
+/* A settings-form action (Send Test SMS): 1 while its POST is out; then
+ * the module's settings are fetched every second until the result shows
+ * or DEVSET_ACT_TMO_S passes. */
+static int    g_devset_act;
+static double g_devset_act_deadline;
+static double g_devset_act_next;
+#define DEVSET_ACT_TMO_S 30.0
 /* Add Module: 1 = want GET /drivers, 2 = sent; g_add_wait = POST pending. */
 static int g_add_fetch;
 static int g_add_wait;
@@ -1694,6 +1701,12 @@ static void add_form_seed(const cJSON *fields, const cJSON *capture,
 
         if (!cJSON_IsString(k) || cJSON_GetObjectItemCaseSensitive(o, k->valuestring))
             continue;
+        /* Buttons and values to show have nothing to fill in. */
+        if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(f, "readonly")) ||
+            (cJSON_IsString(cJSON_GetObjectItemCaseSensitive(f, "type")) &&
+             strcmp(cJSON_GetObjectItemCaseSensitive(f, "type")->valuestring,
+                    "action") == 0))
+            continue;
         if (v)
             cJSON_AddItemToObject(o, k->valuestring, cJSON_Duplicate(v, 1));
         else
@@ -1862,6 +1875,19 @@ static void put_devset(void)
         g_devset_put_pending = 0;
     if (gi > 0)
         mf_pack_set_graph_interval(gi);
+}
+
+/* Run the settings form's action; the form shows how it went. */
+static void post_devset_action(void)
+{
+    g_devset_act = 1;
+    g_devset_act_deadline = mono_now() + DEVSET_PUT_TMO_S;
+    if (mf_http_cli_post(&g_cli, mf_devset_action_path(),
+                         mf_devset_action_body()) < 0)
+    {
+        g_devset_act = 0;
+        mf_devset_action_reply("{\"error\":\"not connected to moonflared\"}");
+    }
 }
 
 static void add_reply(const char *json)
@@ -2340,6 +2366,29 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
                     g_devset_next_try = t + 1.0;
                 }
             }
+            if (g_devset_act && !mf_devset_open())
+                g_devset_act = 0;
+            if (g_devset_act && t > g_devset_act_deadline)
+            {
+                g_devset_act = 0;
+                mf_devset_action_reply("{\"error\":\"no reply from moonflared\"}");
+            }
+            if (mf_devset_action_waiting() && t > g_devset_act_deadline)
+                mf_devset_action_timeout();
+            if (mf_devset_action_waiting() && !g_devset_fetch &&
+                !g_cli.inflight && g_cli.state == MF_CONN_UP &&
+                t >= g_devset_act_next)
+            {
+                char spath[192];
+
+                snprintf(spath, sizeof(spath),
+                         "/api/v1/devices/%s/settings", mf_devset_id());
+                if (mf_http_cli_get(&g_cli, spath) == 1)
+                {
+                    g_devset_fetch = 1;
+                    g_devset_act_next = t + 1.0;
+                }
+            }
             if (dirty)
             {
                 int is_status = last_json[0] &&
@@ -2366,9 +2415,20 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
                     mf_devset_put_result(last_json);
                     g_last_get = 0;
                 }
+                else if (g_devset_act && mf_devset_open() && !is_status &&
+                         (strstr(last_json, "\"status\"") ||
+                          strstr(last_json, "\"error\"")))
+                {
+                    g_devset_act = 0;
+                    mf_devset_action_reply(last_json);
+                    g_devset_act_next = t + 1.0;
+                    g_devset_act_deadline = t + DEVSET_ACT_TMO_S;
+                }
                 else if (g_devset_fetch && mf_devset_open())
                 {
                     g_devset_fetch = 0;
+                    if (is_devset)
+                        mf_devset_action_poll(last_json);
                     if (is_devset && !mf_devset_touched())
                     {
                         mf_devset_apply_json(last_json);
@@ -2438,6 +2498,8 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
             }
             else if (mr == 2 && mf_devset_open())
                 put_devset();
+            else if (mr == 3 && mf_devset_open())
+                post_devset_action();
             continue;
         }
         if (key <= 0)
@@ -2496,6 +2558,8 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
                 }
                 else if (sr == 2)
                     put_devset();
+                else if (sr == 3)
+                    post_devset_action();
                 continue;
             }
             if (g_settings_open && settings_key((wint_t)key))
