@@ -1,7 +1,7 @@
 {
   "profiles": [
-    { "name": "local",      "host": "127.0.0.1", "port": 5250 },
-    { "name": "batteryman", "host": "10.100.0.6", "port": 5250 }
+    { "name": "local",  "host": "127.0.0.1",  "port": 5250 },
+    { "name": "remote", "host": "192.0.2.10", "port": 5250 }
   ],
   "default_profile": "local",
   "refresh_interval_s": 1.0

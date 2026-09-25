@@ -29,6 +29,12 @@
 #define CELL_RETRY_S 8.0
 #define CELL_STALE_S 15.0
 
+/* The installed helper, when the daemon passes no gatt_bin; CMake sets it
+ * from CMAKE_INSTALL_PREFIX. */
+#ifndef MF_GATT_BIN
+#define MF_GATT_BIN "/usr/local/libexec/mf_gatt"
+#endif
+
 enum {
     ST_IDLE = 0,
     ST_CONNECTING,
@@ -139,7 +145,7 @@ static int helper_spawn(jk_ctx_t *c)
     if (h->st == H_UP)
         return 0;
     if (!bin || !bin[0])
-        bin = "/usr/local/libexec/mf_gatt";
+        bin = MF_GATT_BIN;
     pid = fork();
     if (pid < 0)
         return -1;

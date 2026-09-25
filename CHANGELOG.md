@@ -5,6 +5,46 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.1] - 2026-09-25
+
+Building and installing on other hosts.
+
+### Fixed
+
+- The TUI reads libviper's headers from the top of the libviper checkout,
+  laid out as an installed libviper has them, instead of through its
+  `vdk/` and `vkmio/` links. Those links pointed into one machine's
+  checkout (libviper 7.8.1 makes them relative), so on any other host the
+  compiler fell back to whatever `vdk.h` was in `/usr/local/include`, and
+  an old one there failed the build with dozens of API errors.
+- Configuring checks the libviper checkout, and stops with the commands to
+  run when it is missing, older than 7.8.0, not built, or not rebuilt
+  since its last update. A libviper built in a `build/` directory inside
+  its checkout works too.
+- The daemon links the system's SQLite: `libsqlite3-dev` when installed,
+  else the `libsqlite3.so.0` runtime with the bundled header. It linked the
+  bundled x86-64 library, which failed on ARM and other hosts; that
+  library is now only a last resort on x86-64.
+- The systemd unit is generated at configure time. `ExecStart` follows
+  `CMAKE_INSTALL_PREFIX`; `User=` is `-DMF_SERVICE_USER` (default: whoever
+  configured the build) instead of a fixed account; `SupplementaryGroups=`
+  lists whichever of `dialout` (or `uucp`) and `bluetooth` the system has
+  (`-DMF_SERVICE_GROUPS` overrides), so the unit starts on distributions
+  without them.
+- The daemon's default `plugin_dir` and `gatt_bin`, and the JK plugin's
+  `mf_gatt` path, follow `CMAKE_INSTALL_PREFIX` instead of assuming
+  `/usr/local`. The example `moonflared.json` no longer sets them.
+- `cmake --install` puts a copy of libvdk in the plugin directory and
+  points the installed `moonflare-tui` at it, so the TUI runs without
+  libviper installed system-wide. It installs `moonflare-cli` too.
+
+### Changed
+
+- The README lists the build prerequisites and how to clone and build
+  libviper beside Moon Flare, and uses the TUI's current name,
+  `moonflare-tui`. The example `moonflare.json` no longer carries a site's
+  daemon address.
+
 ## [0.11.0] - 2026-09-25
 
 ### Added

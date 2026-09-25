@@ -1,7 +1,5 @@
 {
   "listen": "0.0.0.0:5250",
-  "plugin_dir": "/usr/local/lib/moon-flare",
-  "gatt_bin": "/usr/local/libexec/mf_gatt",
   "history": {
     "path": "/var/lib/moonflare/history.sqlite",
     "enabled": true

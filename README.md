@@ -13,20 +13,38 @@ Moon Flare’s daemon listens on **:5250** (plain HTTP REST). It does not bind 5
 
 ## Build
 
+Linux, with CMake 3.14 or newer, a C11 compiler and pkg-config. On Debian or Ubuntu:
+
 ```
+sudo apt install build-essential cmake pkg-config git \
+    libncurses-dev libsystemd-dev libsqlite3-dev libcurl4-openssl-dev zlib1g-dev
+```
+
+libcurl and zlib are for the weather.gov and Textbelt plugins, which are skipped without them. Without `libsqlite3-dev` the daemon links the system's `libsqlite3.so.0` with a bundled header. `libgpm-dev` is optional: libviper uses it for mouse support on the Linux console.
+
+The TUI is built on [libviper](https://github.com/TragicWarrior/libviper) 7.8.0 or newer. Clone it beside Moon Flare and build it in place; Moon Flare builds against that checkout and does not need libviper installed:
+
+```
+git clone https://github.com/TragicWarrior/libviper.git
+git clone https://github.com/TragicWarrior/Moon-Flare.git
+(cd libviper && cmake . && make)
+cd Moon-Flare
 cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on-failure
 ```
+
+For a libviper somewhere else, configure with `-DLIBVIPER_SOURCE_DIR=/path/to/libviper`. If libviper is missing, older than 7.8.0, or not rebuilt since its last `git pull`, the configure step stops and says what to run.
 
 ## Binaries
 
 | Name | Role |
 | --- | --- |
 | `moonflared` | daemon (`--listen 127.0.0.1:5250 --foreground`) |
-| `moonflare` | TUI (`--connect 172.16.0.65:5250`; F10 menubar) |
-| `mf_gatt` | BlueZ helper (`/usr/local/libexec/mf_gatt`; never `$PATH`) |
+| `moonflare-tui` | TUI (`--connect 127.0.0.1:5250`; F10 menubar) |
+| `moonflare-cli` | command-line client and read-only MCP server (`--mcp`) |
+| `mf_gatt` | BlueZ helper (`$prefix/libexec/mf_gatt`; never `$PATH`) |
 | `mf_magnum_dump` | Magnum RS-485 bus viewer and recorder (read-only; like pymagnum's `magtest`) |
 
-Plugins (`libmf_charger_classic.so`, `libmf_battery_xd.so`, `libmf_battery_jk.so`, `libmf_inverter_magnum.so`, `libmf_service_weathergov.so`, `libmf_service_textbelt.so`) live in one `--plugin-dir` (default `/usr/local/lib/moon-flare`). The build tree splits them under `build/*_plugins/` so tests load one driver at a time. The demo plugin (`libmf_demo.so`, a fake battery and charger for development) is built but not installed unless you configure with `-DMF_INSTALL_DEMO=ON`; to use it without installing, point `--plugin-dir` at `build/demo_plugins`.
+Plugins (`libmf_charger_classic.so`, `libmf_battery_xd.so`, `libmf_battery_jk.so`, `libmf_inverter_magnum.so`, `libmf_service_weathergov.so`, `libmf_service_textbelt.so`) live in one `--plugin-dir` (default `$prefix/lib/moon-flare`, which is `/usr/local/lib/moon-flare` unless you set `CMAKE_INSTALL_PREFIX`). The build tree splits them under `build/*_plugins/` so tests load one driver at a time. The demo plugin (`libmf_demo.so`, a fake battery and charger for development) is built but not installed unless you configure with `-DMF_INSTALL_DEMO=ON`; to use it without installing, point `--plugin-dir` at `build/demo_plugins`.
 
 To write your own plugin (a new battery, charger, inverter or service), see [PLUGINS.md](PLUGINS.md): the plugin ABI, the event loop, configuration and settings, readings, history capture and a complete example.
 
@@ -34,7 +52,7 @@ The weather.gov service plugin (`libmf_service_weathergov.so`) needs libcurl: in
 
 ## Install
 
-`cmake --install build` puts binaries under `$prefix` (default `/usr/local`), plugins in `/usr/local/lib/moon-flare`, `mf_gatt` in `/usr/local/libexec`, and the unit + examples in `/usr/local/share/moon-flare`. **It does not install or enable a systemd unit.** Copy those yourself:
+`sudo cmake --install build` puts the binaries in `$prefix/bin` (`$prefix` is `CMAKE_INSTALL_PREFIX`, default `/usr/local`), the plugins in `$prefix/lib/moon-flare` along with the TUI's own copy of libvdk, `mf_gatt` in `$prefix/libexec`, and the unit + examples in `$prefix/share/moon-flare`. The daemon's default plugin directory and `mf_gatt` path follow the prefix, so the example config does not set them. **It does not install or enable a systemd unit.** Copy those yourself:
 
 ```
 sudo mkdir -p /etc/moonflare
@@ -43,6 +61,8 @@ sudo cp /usr/local/share/moon-flare/moonflare.json.example /etc/moonflare/moonfl
 sudo cp /usr/local/share/moon-flare/moonflared.service /etc/systemd/system/
 sudo systemctl daemon-reload
 ```
+
+The unit runs the daemon as the user who configured the build, with whichever of the `dialout` (or `uucp`) and `bluetooth` groups the system has, for serial adapters and BlueZ. To choose, configure with `-DMF_SERVICE_USER=<user>` and `-DMF_SERVICE_GROUPS="<groups>"`, or edit the copy in `/etc/systemd/system`.
 
 Do not `systemctl enable --now moonflared` until the soak stage below matches the live site. The example config enables **Classic only**; `pack-xd` and `pack-jk` are `"enabled": false` so an accidental start cannot steal ttyUSB0 or the JK MAC from `xd_bmsd` / `jkbmsd`. The two Magnum taps (`magnum-1`, `magnum-2`) are disabled too, and carry placeholder adapter serials.
 
@@ -169,11 +189,11 @@ Order from the design Rollout. Do not skip to JK.
 | 2. batteryman, Classic | `libmf_charger_classic.so` + demo | **keep** `xd_bmsd` and `jkbmsd` | Classic is unused by the prototypes. One Modbus TCP client — drop Local App / HA on :502 first. Confirm register 4209 and watts against `pyclassic.py`. |
 | 3. XD USB | `libmf_battery_xd.so` | stop using ttyUSB0 in `xd_bmsd`, **or** leave `pack-xd` disabled | USB can be opened by two processes — do not. Prefer a recorded PTY first, then a maintenance window. |
 | 4. JK BLE | `libmf_battery_jk.so` + `mf_gatt` | `systemctl stop jkbmsd` **only at this cutover** | BLE is exclusive per MAC (`28:D4:1E:A7:23:39`). Last. |
-| 5. Daily driver | `moonflare --connect 172.16.0.65:5250` | remain installed for rollback | Operator retires prototypes in a later phase. |
+| 5. Daily driver | `moonflare-tui --connect 172.16.0.65:5250` | remain installed for rollback | Operator retires prototypes in a later phase. |
 
 Health: `curl -sS http://127.0.0.1:5250/api/v1/health`.
 
-systemd unit: `contrib/moonflared.service` (`User=bryanc`, `SupplementaryGroups=dialout bluetooth`). **Additive.** No `Conflicts=` on `xd_bmsd` / `jkbmsd`. Never `systemctl disable` those from this repo.
+systemd unit: `contrib/moonflared.service.in`, configured on batteryman as `User=bryanc`, `SupplementaryGroups=dialout bluetooth`. **Additive.** No `Conflicts=` on `xd_bmsd` / `jkbmsd`. Never `systemctl disable` those from this repo.
 
 ### Rollback
 

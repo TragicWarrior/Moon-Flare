@@ -17,6 +17,15 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+/* Where an install puts the plugins and mf_gatt; CMake passes the real
+ * ones from CMAKE_INSTALL_PREFIX. */
+#ifndef MF_PLUGIN_DIR
+#define MF_PLUGIN_DIR "/usr/local/lib/moon-flare"
+#endif
+#ifndef MF_GATT_BIN
+#define MF_GATT_BIN "/usr/local/libexec/mf_gatt"
+#endif
+
 /* ─── helpers ─────────────────────────────────────────────── */
 
 static void cJSON_AddStringOrNull(cJSON *obj, const char *key, const char *val)
@@ -43,10 +52,8 @@ void mf_config_defaults(mf_daemon_config_t *cfg)
 {
     memset(cfg, 0, sizeof(*cfg));
     strncpy(cfg->listen, "0.0.0.0:5250", sizeof(cfg->listen) - 1);
-    strncpy(cfg->plugin_dir, "/usr/local/lib/moon-flare",
-            sizeof(cfg->plugin_dir) - 1);
-    strncpy(cfg->gatt_bin, "/usr/local/libexec/mf_gatt",
-            sizeof(cfg->gatt_bin) - 1);
+    strncpy(cfg->plugin_dir, MF_PLUGIN_DIR, sizeof(cfg->plugin_dir) - 1);
+    strncpy(cfg->gatt_bin, MF_GATT_BIN, sizeof(cfg->gatt_bin) - 1);
     strncpy(cfg->history.path, "/var/lib/moonflare/history.sqlite",
             sizeof(cfg->history.path) - 1);
     strncpy(cfg->history.dir, "/var/lib/moonflare/history",

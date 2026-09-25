@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 project(moon-flare
-    VERSION 0.11.0
+    VERSION 0.11.1
     DESCRIPTION "Moon Flare: multi-kind energy dashboard (daemon, REST, plugins, TUI)"
     LANGUAGES C)
 
@@ -26,17 +26,79 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(NCURSESW REQUIRED IMPORTED_TARGET ncursesw)
 pkg_check_modules(LIBSYSTEMD REQUIRED IMPORTED_TARGET libsystemd)
 
-# libviper/VDK drives the TUI (PR-7). Point at a sibling ../libviper by
-# default; override with -DLIBVIPER_SOURCE_DIR=/path at configure time.
-# TUI consumes a sibling libviper checkout (same as xd-battery).
+# Where an install puts the plugins and mf_gatt.  The daemon and the JK
+# plugin compile these in as their defaults, so any CMAKE_INSTALL_PREFIX
+# works without plugin_dir / gatt_bin in moonflared.json.  The plugin dir is
+# $prefix/lib/moon-flare, not the multiarch LIBDIR (KD 20).
+set(MF_PLUGIN_SUBDIR lib/moon-flare)
+set(MF_PLUGIN_DIR "${CMAKE_INSTALL_PREFIX}/${MF_PLUGIN_SUBDIR}")
+set(MF_GATT_BIN "${CMAKE_INSTALL_FULL_LIBEXECDIR}/mf_gatt")
+add_compile_definitions(MF_PLUGIN_DIR="${MF_PLUGIN_DIR}" MF_GATT_BIN="${MF_GATT_BIN}")
+
+# libviper/VDK drives the TUI.  It builds against a libviper checkout, by
+# default one cloned beside this one (../libviper) and built in place
+# (cmake . && make there); -DLIBVIPER_SOURCE_DIR=<path> points elsewhere.
+# The headers come from the checkout's top directory, laid out as an
+# installed libviper has them, so an older vdk.h in /usr/local/include
+# cannot stand in for them.
+set(MF_LIBVIPER_MIN 7.8.0)
 set(LIBVIPER_SOURCE_DIR "${PROJECT_SOURCE_DIR}/../libviper"
-    CACHE PATH "Path to the libviper source tree (contains vdk/, vkmio/, libvdk.so)")
+    CACHE PATH "Path to a libviper checkout, built in place (holds vdk.h and libvdk.so)")
 get_filename_component(LIBVIPER_SOURCE_DIR "${LIBVIPER_SOURCE_DIR}" ABSOLUTE)
-if(NOT EXISTS "${LIBVIPER_SOURCE_DIR}/libvdk.so")
+if(NOT EXISTS "${LIBVIPER_SOURCE_DIR}/vdk.h" OR NOT EXISTS "${LIBVIPER_SOURCE_DIR}/vkmio.h")
     message(FATAL_ERROR
-        "libvdk.so not found at ${LIBVIPER_SOURCE_DIR}/libvdk.so. "
-        "Build libviper first, or pass -DLIBVIPER_SOURCE_DIR=<path>.")
+        "No libviper checkout at ${LIBVIPER_SOURCE_DIR}.  Clone it beside "
+        "Moon-Flare and build it there:\n"
+        "  git clone https://github.com/TragicWarrior/libviper.git\n"
+        "  cd libviper && cmake . && make\n"
+        "or pass -DLIBVIPER_SOURCE_DIR=<path>.")
 endif()
+file(STRINGS "${LIBVIPER_SOURCE_DIR}/CMakeLists.txt" _mf_lv_lines
+     REGEX "PROJECT_VERSION [0-9]|project\\(.* VERSION [0-9]|SOVERSION [0-9]")
+string(REGEX MATCH "(PROJECT_VERSION|project\\([^)]* VERSION) ([0-9]+\\.[0-9]+\\.[0-9]+)"
+       _mf_lv "${_mf_lv_lines}")
+set(LIBVIPER_VERSION "${CMAKE_MATCH_2}")
+string(REGEX MATCH "SOVERSION ([0-9]+)" _mf_lv "${_mf_lv_lines}")
+set(LIBVIPER_SOVERSION "${CMAKE_MATCH_1}")
+if(NOT LIBVIPER_SOVERSION)
+    string(REGEX MATCH "^[0-9]+" LIBVIPER_SOVERSION "${LIBVIPER_VERSION}")
+endif()
+if(NOT LIBVIPER_VERSION)
+    message(FATAL_ERROR
+        "Cannot read libviper's version from ${LIBVIPER_SOURCE_DIR}/CMakeLists.txt.")
+endif()
+if(LIBVIPER_VERSION VERSION_LESS MF_LIBVIPER_MIN)
+    message(FATAL_ERROR
+        "libviper at ${LIBVIPER_SOURCE_DIR} is ${LIBVIPER_VERSION}; Moon-Flare "
+        "needs ${MF_LIBVIPER_MIN} or newer.  Update and rebuild it:\n"
+        "  cd ${LIBVIPER_SOURCE_DIR} && git pull && cmake . && make")
+endif()
+# Built in place, or in a build/ directory inside the checkout.
+unset(LIBVIPER_LIBRARY)
+foreach(_mf_dir "${LIBVIPER_SOURCE_DIR}" "${LIBVIPER_SOURCE_DIR}/build")
+    if(NOT LIBVIPER_LIBRARY AND EXISTS "${_mf_dir}/libvdk.so")
+        set(LIBVIPER_LIBRARY "${_mf_dir}/libvdk.so")
+    endif()
+endforeach()
+if(NOT LIBVIPER_LIBRARY)
+    message(FATAL_ERROR
+        "libviper at ${LIBVIPER_SOURCE_DIR} is not built (no libvdk.so):\n"
+        "  cd ${LIBVIPER_SOURCE_DIR} && cmake . && make")
+endif()
+get_filename_component(LIBVIPER_LIBRARY_DIR "${LIBVIPER_LIBRARY}" DIRECTORY)
+# A library built before the last pull does not match the headers.
+get_filename_component(_mf_vdk_real "${LIBVIPER_LIBRARY}" REALPATH)
+get_filename_component(_mf_vdk_soname
+    "${LIBVIPER_LIBRARY_DIR}/libvdk.so.${LIBVIPER_SOVERSION}" REALPATH)
+get_filename_component(_mf_vdk_name "${_mf_vdk_real}" NAME)
+if(NOT _mf_vdk_name STREQUAL "libvdk.so.${LIBVIPER_VERSION}"
+   OR NOT _mf_vdk_soname STREQUAL _mf_vdk_real)
+    message(FATAL_ERROR
+        "${LIBVIPER_LIBRARY} is ${_mf_vdk_name}, but the libviper checkout is "
+        "${LIBVIPER_VERSION}.  Rebuild it:\n"
+        "  cmake --build ${LIBVIPER_LIBRARY_DIR}")
+endif()
+message(STATUS "libviper ${LIBVIPER_VERSION}: ${LIBVIPER_LIBRARY_DIR}")
 
 set(MF_WARN -Wall -Wextra -Wpedantic -Wshadow -Wconversion)
 # protothread.h uses GCC labels-as-values; drop -Wpedantic there.
@@ -93,15 +155,18 @@ target_include_directories(moonflare PRIVATE
     ${CMAKE_SOURCE_DIR}/src/tui
     ${CMAKE_SOURCE_DIR}/src/config
     ${CMAKE_SOURCE_DIR}/include)
-target_include_directories(moonflare SYSTEM PRIVATE
-    ${LIBVIPER_SOURCE_DIR}/vdk ${LIBVIPER_SOURCE_DIR}/vkmio)
+target_include_directories(moonflare SYSTEM PRIVATE ${LIBVIPER_SOURCE_DIR})
 target_link_libraries(moonflare PRIVATE
-    mf_cjson "${LIBVIPER_SOURCE_DIR}/libvdk.so" PkgConfig::NCURSESW m)
+    mf_cjson "${LIBVIPER_LIBRARY}" PkgConfig::NCURSESW m)
 target_compile_definitions(moonflare PRIVATE _GNU_SOURCE)
 target_compile_options(moonflare PRIVATE ${MF_WARN})
+# Installed, the TUI finds its own copy of libvdk in the plugin dir (see
+# the install rules), wherever the prefix is.
+file(RELATIVE_PATH _mf_tui_rpath "${CMAKE_INSTALL_FULL_BINDIR}" "${MF_PLUGIN_DIR}")
 set_target_properties(moonflare PROPERTIES
     OUTPUT_NAME moonflare-tui
-    BUILD_RPATH ${LIBVIPER_SOURCE_DIR}
+    BUILD_RPATH ${LIBVIPER_LIBRARY_DIR}
+    INSTALL_RPATH "$ORIGIN/${_mf_tui_rpath}"
     ENABLE_EXPORTS ON)
 
 add_executable(moonflare-cli
@@ -377,8 +442,31 @@ set_target_properties(mf_stub PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/stub_plugins)
 target_compile_options(mf_stub PRIVATE ${MF_WARN})
 
-set(MF_SQLITE_INC ${CMAKE_SOURCE_DIR}/third_party/sqlite/include)
-set(MF_SQLITE_LIB ${CMAKE_SOURCE_DIR}/third_party/sqlite/lib/libsqlite3.so.0.8.6)
+# SQLite for history: the system's development package (libsqlite3-dev)
+# when present; else the system library (libsqlite3.so.0) with the bundled
+# header.  The bundled library is x86-64 only, a last resort for running
+# from the build tree; installed, the daemon uses the system's.
+pkg_check_modules(SQLITE3 QUIET IMPORTED_TARGET sqlite3)
+set(MF_SQLITE_RPATH "")
+if(SQLITE3_FOUND)
+    set(MF_SQLITE_INC "")
+    set(MF_SQLITE_LIB PkgConfig::SQLITE3)
+else()
+    set(MF_SQLITE_INC ${CMAKE_SOURCE_DIR}/third_party/sqlite/include)
+    find_library(MF_SQLITE_SYSTEM NAMES sqlite3 libsqlite3.so.0)
+    if(MF_SQLITE_SYSTEM)
+        set(MF_SQLITE_LIB ${MF_SQLITE_SYSTEM})
+    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+        set(MF_SQLITE_LIB ${CMAKE_SOURCE_DIR}/third_party/sqlite/lib/libsqlite3.so.0.8.6)
+        set(MF_SQLITE_RPATH ${CMAKE_SOURCE_DIR}/third_party/sqlite/lib)
+        message(WARNING "No system SQLite; using the bundled x86-64 library. "
+                        "Hosts that run moonflared need libsqlite3.so.0 (libsqlite3-0).")
+    else()
+        message(FATAL_ERROR "SQLite not found: install libsqlite3-dev (Debian, "
+                            "Ubuntu) or your distribution's SQLite development package.")
+    endif()
+endif()
+message(STATUS "SQLite: ${MF_SQLITE_LIB}")
 
 # Compile the history subsystem into the daemon and link SQLite so the
 # poll loop can capture samples.
@@ -386,15 +474,13 @@ target_sources(moonflared PRIVATE ${CMAKE_SOURCE_DIR}/src/history/history.c)
 target_include_directories(moonflared PRIVATE
     ${CMAKE_SOURCE_DIR}/src/history ${MF_SQLITE_INC})
 target_link_libraries(moonflared PRIVATE ${MF_SQLITE_LIB})
-set_target_properties(moonflared PROPERTIES BUILD_RPATH
-    ${CMAKE_SOURCE_DIR}/third_party/sqlite/lib)
+set_target_properties(moonflared PROPERTIES BUILD_RPATH "${MF_SQLITE_RPATH}")
 
 add_executable(test_history tests/test_history.c src/history/history.c)
 target_include_directories(test_history PRIVATE
     ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/history ${MF_SQLITE_INC} third_party/cJSON)
 target_link_libraries(test_history PRIVATE ${MF_SQLITE_LIB} mf_cjson)
-set_target_properties(test_history PROPERTIES BUILD_RPATH
-    ${CMAKE_SOURCE_DIR}/third_party/sqlite/lib)
+set_target_properties(test_history PROPERTIES BUILD_RPATH "${MF_SQLITE_RPATH}")
 add_test(NAME history COMMAND test_history)
 
 add_executable(test_routes tests/test_routes.c src/rest/routes.c src/rest/secret.c src/rest/discover.c src/device/device.c src/plugin/loader.c src/config/config.c src/history/history.c src/system/system.c)
@@ -495,26 +581,64 @@ add_test(NAME moonflare_dump COMMAND moonflare --dump-layout)
 add_test(NAME moonflare_dump_pack COMMAND moonflare --dump-layout pack)
 add_test(NAME moonflare_dump_charger COMMAND moonflare --dump-layout charger)
 
-install(TARGETS moonflared moonflare RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS moonflared moonflare moonflare-cli
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(TARGETS mf_gatt RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR})
-# Match KD 20 / example plugin_dir: $prefix/lib/moon-flare, not multiarch LIBDIR.
 install(TARGETS mf_magnum_dump RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(TARGETS mf_charger_classic mf_battery_xd mf_battery_jk mf_inverter_magnum
-        LIBRARY DESTINATION lib/moon-flare)
+        LIBRARY DESTINATION ${MF_PLUGIN_SUBDIR})
 if(TARGET mf_service_textbelt)
-    install(TARGETS mf_service_textbelt LIBRARY DESTINATION lib/moon-flare)
+    install(TARGETS mf_service_textbelt LIBRARY DESTINATION ${MF_PLUGIN_SUBDIR})
 endif()
 if(TARGET mf_service_weathergov)
-    install(TARGETS mf_service_weathergov LIBRARY DESTINATION lib/moon-flare)
+    install(TARGETS mf_service_weathergov LIBRARY DESTINATION ${MF_PLUGIN_SUBDIR})
     install(FILES data/zcta.txt DESTINATION ${CMAKE_INSTALL_DATADIR}/moon-flare)
 endif()
 # The demo plugin fakes a battery and a charger for development.  Keep it
 # out of production plugin dirs unless asked for.
 option(MF_INSTALL_DEMO "Install the demo plugin (libmf_demo.so)" OFF)
 if(MF_INSTALL_DEMO)
-    install(TARGETS mf_demo LIBRARY DESTINATION lib/moon-flare)
+    install(TARGETS mf_demo LIBRARY DESTINATION ${MF_PLUGIN_SUBDIR})
 endif()
-install(FILES contrib/moonflared.service
+# The TUI's own libvdk, under its soname, so the installed moonflare-tui
+# runs without libviper installed system-wide.  The daemon loads only
+# libmf_*.so from this directory.
+install(PROGRAMS "${_mf_vdk_real}" DESTINATION ${MF_PLUGIN_SUBDIR}
+        RENAME "libvdk.so.${LIBVIPER_SOVERSION}")
+
+# The systemd unit, installed as an example (never enabled).  It runs the
+# daemon as MF_SERVICE_USER (default: whoever configured the build) with
+# the serial-port and Bluetooth groups this system has.
+set(_mf_user "$ENV{USER}")
+if(NOT _mf_user)
+    set(_mf_user root)
+endif()
+set(MF_SERVICE_USER "${_mf_user}" CACHE STRING "User that moonflared.service runs the daemon as")
+if(NOT DEFINED MF_SERVICE_GROUPS)
+    set(_mf_groups "")
+    foreach(_mf_group dialout uucp bluetooth)
+        # uucp owns serial ports where dialout does not exist (Arch, SUSE).
+        if(_mf_group STREQUAL "uucp" AND "dialout" IN_LIST _mf_groups)
+            continue()
+        endif()
+        execute_process(COMMAND getent group ${_mf_group}
+                        RESULT_VARIABLE _mf_rc OUTPUT_QUIET ERROR_QUIET)
+        if(_mf_rc EQUAL 0)
+            list(APPEND _mf_groups ${_mf_group})
+        endif()
+    endforeach()
+    string(REPLACE ";" " " _mf_groups "${_mf_groups}")
+    set(MF_SERVICE_GROUPS "${_mf_groups}" CACHE STRING
+        "Supplementary groups for moonflared.service (serial ports, Bluetooth)")
+endif()
+if(MF_SERVICE_GROUPS)
+    set(MF_SERVICE_GROUPS_LINE "SupplementaryGroups=${MF_SERVICE_GROUPS}")
+else()
+    set(MF_SERVICE_GROUPS_LINE "")
+endif()
+configure_file(contrib/moonflared.service.in moonflared.service @ONLY)
+message(STATUS "moonflared.service: User=${MF_SERVICE_USER} ${MF_SERVICE_GROUPS_LINE}")
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/moonflared.service
         DESTINATION ${CMAKE_INSTALL_DATADIR}/moon-flare)
 install(FILES etc/moonflared.json.example etc/moonflare.json.example
         DESTINATION ${CMAKE_INSTALL_DATADIR}/moon-flare)

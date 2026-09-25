@@ -31,9 +31,14 @@
 #
 # Health: curl -sS http://127.0.0.1:5250/api/v1/health
 #
-# User=bryanc from t=0 (unlike xd_bmsd, which is root). dialout for
-# USB-RS485; bluetooth for BlueZ/D-Bus. StateDirectory is the overlay
-# + history path when /etc/moonflare/ is not writable.
+# CMake fills this in from contrib/moonflared.service.in: ExecStart from
+# the install prefix, User= from -DMF_SERVICE_USER (default: whoever
+# configured the build; batteryman runs it as bryanc, unlike xd_bmsd,
+# which is root), SupplementaryGroups= from -DMF_SERVICE_GROUPS (default:
+# whichever of dialout, or uucp, and bluetooth the system has). The
+# serial group is for USB-RS485; bluetooth for BlueZ/D-Bus.
+# StateDirectory is the overlay + history path when /etc/moonflare/ is
+# not writable.
 
 [Unit]
 Description=Moon Flare collector (moonflared)
@@ -42,10 +47,10 @@ Wants=bluetooth.service
 
 [Service]
 Type=simple
-User=bryanc
-SupplementaryGroups=dialout bluetooth
+User=@MF_SERVICE_USER@
+@MF_SERVICE_GROUPS_LINE@
 StateDirectory=moonflare
-ExecStart=/usr/local/bin/moonflared --foreground --config /etc/moonflare/moonflared.json
+ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/moonflared --foreground --config /etc/moonflare/moonflared.json
 Restart=always
 RestartSec=5
 TimeoutStopSec=10

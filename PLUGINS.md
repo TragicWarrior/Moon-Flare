@@ -67,7 +67,7 @@ plugin /usr/local/lib/moon-flare/libmf_service_loadavg.so kind=service driver=lo
 
 ## Loading and naming
 
-- **File name.** The daemon loads every `libmf_*.so` in its plugin directory. The directory is `/usr/local/lib/moon-flare` by default, or whatever `--plugin-dir` gives. Name yours `libmf_<kind>_<driver>.so`.
+- **File name.** The daemon loads every `libmf_*.so` in its plugin directory. The directory is `$prefix/lib/moon-flare` by default (`/usr/local/lib/moon-flare` unless Moon Flare was built with another `CMAKE_INSTALL_PREFIX`), or whatever `--plugin-dir` gives. Name yours `libmf_<kind>_<driver>.so`.
 - **Entry point.** Export exactly one symbol:
 
   ```c
