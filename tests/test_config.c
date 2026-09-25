@@ -228,9 +228,10 @@ static void test_roundtrip_example(void)
     int rc = mf_config_load(cfg_path, &cfg);
     assert_int_eq(0, rc, "roundtrip: load example");
 
-    /* Production starter: Classic on; XD/JK templates stay disabled.  No
-     * demo device (the demo plugin is not installed by default). */
-    assert_int_eq(3, cfg.n_devices, "roundtrip: 3 devices");
+    /* Production starter: Classic on; XD/JK and the two Magnum taps stay
+     * disabled.  No demo device (the demo plugin is not installed by
+     * default). */
+    assert_int_eq(5, cfg.n_devices, "roundtrip: 5 devices");
 
     const mf_config_device_t *classic = find_dev(
         &cfg, "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0003");
@@ -238,14 +239,22 @@ static void test_roundtrip_example(void)
         &cfg, "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0001");
     const mf_config_device_t *jk = find_dev(
         &cfg, "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0002");
-    assert_int_eq(1, classic && xd && jk ? 1 : 0,
-                  "roundtrip: all three example uuids present");
+    const mf_config_device_t *mag1 = find_dev(
+        &cfg, "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0004");
+    const mf_config_device_t *mag2 = find_dev(
+        &cfg, "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0005");
+    assert_int_eq(1, classic && xd && jk && mag1 && mag2 ? 1 : 0,
+                  "roundtrip: all five example uuids present");
     for (int i = 0; i < cfg.n_devices; i++)
         assert_int_eq(0, strcmp(cfg.devices[i].driver, "demo") == 0,
                       "roundtrip: no demo device in the example");
     assert_int_eq(1, classic->enabled ? 1 : 0, "roundtrip: classic-1 enabled");
     assert_int_eq(0, xd->enabled ? 1 : 0, "roundtrip: pack-xd disabled");
     assert_int_eq(0, jk->enabled ? 1 : 0, "roundtrip: pack-jk disabled");
+    assert_int_eq(0, mag1->enabled || mag2->enabled ? 1 : 0,
+                  "roundtrip: magnum taps disabled");
+    assert_int_eq(0, strncmp(mag1->usb.path, "/dev/serial/by-id/", 18),
+                  "roundtrip: magnum tap on a by-id path");
 
     assert_str_eq("172.16.0.20", classic->modbus.ip,
                   "roundtrip: classic modbus ip");
@@ -281,6 +290,11 @@ static void test_roundtrip_example(void)
                       "roundtrip: pack-xd stayed disabled");
         assert_int_eq(0, jk2->enabled ? 1 : 0,
                       "roundtrip: pack-jk stayed disabled");
+        const mf_config_device_t *mag2b = find_dev(
+            &cfg2, "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0005");
+        assert_int_eq(1, mag2b && !mag2b->enabled &&
+                      strstr(mag2b->extra_json, "inverter 2 link") ? 1 : 0,
+                      "roundtrip: magnum tap label survived round-trip");
     }
 
     free(json);

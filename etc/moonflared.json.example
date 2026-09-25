@@ -60,6 +60,40 @@
         "write_response": false,
         "connect_timeout_s": 20
       }
+    },
+    {
+      "uuid": "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0004",
+      "name": "magnum-1",
+      "kind": "inverter",
+      "driver": "magnum",
+      "enabled": false,
+      "poll_interval_s": 1.0,
+      "bus": "usb-serial",
+      "usb": {
+        "path": "/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_XXXXXXX1-if00-port0",
+        "serial_id": "XXXXXXX1",
+        "auto_port": true
+      },
+      "magnum": {
+        "tap": "ARTR accessory port"
+      }
+    },
+    {
+      "uuid": "3b2c0e5a-7c1d-4f2a-9b11-0c9e4d1a0005",
+      "name": "magnum-2",
+      "kind": "inverter",
+      "driver": "magnum",
+      "enabled": false,
+      "poll_interval_s": 1.0,
+      "bus": "usb-serial",
+      "usb": {
+        "path": "/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_XXXXXXX2-if00-port0",
+        "serial_id": "XXXXXXX2",
+        "auto_port": true
+      },
+      "magnum": {
+        "tap": "inverter 2 link at the ARTR"
+      }
     }
   ]
 }

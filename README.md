@@ -1,6 +1,6 @@
 # Moon Flare
 
-Linux C11 daemon + libviper/VDK TUI for a mixed energy site: batteries, chargers, and (later) inverters.
+Linux C11 daemon + libviper/VDK TUI for a mixed energy site: batteries, chargers, and inverters (Magnum, read-only so far).
 
 Phase-1 design: [`docs/design.md`](docs/design.md).
 
@@ -24,8 +24,9 @@ cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on
 | `moonflared` | daemon (`--listen 127.0.0.1:5250 --foreground`) |
 | `moonflare` | TUI (`--connect 172.16.0.65:5250`; F10 menubar) |
 | `mf_gatt` | BlueZ helper (`/usr/local/libexec/mf_gatt`; never `$PATH`) |
+| `mf_magnum_dump` | Magnum RS-485 bus viewer and recorder (read-only; like pymagnum's `magtest`) |
 
-Plugins (`libmf_charger_classic.so`, `libmf_battery_xd.so`, `libmf_battery_jk.so`) live in one `--plugin-dir` (default `/usr/local/lib/moon-flare`). The build tree splits them under `build/*_plugins/` so tests load one driver at a time. The demo plugin (`libmf_demo.so`, a fake battery and charger for development) is built but not installed unless you configure with `-DMF_INSTALL_DEMO=ON`; to use it without installing, point `--plugin-dir` at `build/demo_plugins`.
+Plugins (`libmf_charger_classic.so`, `libmf_battery_xd.so`, `libmf_battery_jk.so`, `libmf_inverter_magnum.so`) live in one `--plugin-dir` (default `/usr/local/lib/moon-flare`). The build tree splits them under `build/*_plugins/` so tests load one driver at a time. The demo plugin (`libmf_demo.so`, a fake battery and charger for development) is built but not installed unless you configure with `-DMF_INSTALL_DEMO=ON`; to use it without installing, point `--plugin-dir` at `build/demo_plugins`.
 
 To write your own plugin (a new battery, charger, inverter or service), see [PLUGINS.md](PLUGINS.md): the plugin ABI, the event loop, configuration and settings, readings, history capture and a complete example.
 
@@ -43,7 +44,7 @@ sudo cp /usr/local/share/moon-flare/moonflared.service /etc/systemd/system/
 sudo systemctl daemon-reload
 ```
 
-Do not `systemctl enable --now moonflared` until the soak stage below matches the live site. The example config enables **Classic only**; `pack-xd` and `pack-jk` are `"enabled": false` so an accidental start cannot steal ttyUSB0 or the JK MAC from `xd_bmsd` / `jkbmsd`.
+Do not `systemctl enable --now moonflared` until the soak stage below matches the live site. The example config enables **Classic only**; `pack-xd` and `pack-jk` are `"enabled": false` so an accidental start cannot steal ttyUSB0 or the JK MAC from `xd_bmsd` / `jkbmsd`. The two Magnum taps (`magnum-1`, `magnum-2`) are disabled too, and carry placeholder adapter serials.
 
 Config search (daemon `moonflared.json`, TUI `moonflare.json`): `--config`, then `~/.config/moonflare/`, then `/etc/moonflare/`. systemd `StateDirectory=moonflare` is `/var/lib/moonflare` (history + the daemon's working config).
 
@@ -71,6 +72,22 @@ A phantom module stands in for a unit that is wired into the system but that moo
 - The dashboard and the Modules menu mark it with `≈` at the right edge of its row (`~` without UTF-8), its pack view says `phantom of: XD Battery`, and `/api/v1/status`, `moonflare-cli` and the MCP `status` tool report `"driver": "phantom"` with `"phantom_of": [...]`.
 - Over REST: `POST /api/v1/devices` with `{"name": "XD Battery 2", "kind": "battery", "driver": "phantom", "phantom.shadows": "<uuid>[,<uuid>...]"}`, and `PUT .../settings` with `{"phantom.shadows": "..."}` to change them. Shadows must be real modules of the same class.
 
+## Magnum inverters
+
+`libmf_inverter_magnum.so` reads Magnum Energy inverters from passive RS-485 taps, one module per tap. It also reads the remote, router, AGS, BMK and PT-100 on the same network. It is a C port of [pymagnum](https://github.com/CharlesGodwin/pymagnum).
+
+- **Read-only.** It never writes to the bus.
+- **Stable paths only.** It opens only `/dev/serial/by-id/` paths, never `/dev/ttyUSBn` (the XD BMS owns `/dev/ttyUSB0`).
+- **One reader per port.** It won't open a port that another module has open or another reader has locked.
+
+`mf_magnum_dump` watches a tap the way pymagnum's `magtest` does, and records captures for replay.
+
+Inverters are listed on the dashboard but don't count toward the System totals yet. [docs/magnum.md](docs/magnum.md) covers:
+- setting up a tap;
+- every reading field, with its pymagnum name;
+- what the offline messages mean;
+- the planned inverter view and totals.
+
 ## History
 
 Each module that supports it records its readings in its own SQLite file, `/var/lib/moonflare/history/<module-uuid>.sqlite`, so modules never share a table. A plugin advertises capture in its `describe()` (`"capture"`: default and minimum interval, which reading fields become columns, which column to graph); a module whose plugin advertises none records nothing and has no Capture Interval setting. `GET /api/v1/drivers` passes the spec through, and capturing drivers and modules list `history` in their `caps`.
@@ -85,6 +102,7 @@ Defaults:
 | --- | --- | --- | --- |
 | Batteries (XD, JK) | 10 s | 60 days | `soc` |
 | Chargers (Classic) | 10 s | 60 days | `power_w` |
+| Inverters (Magnum) | 10 s | 60 days | `dc_power_w` |
 | weather.gov | 600 s (at least 60) | 60 days | `temp_f`, plus humidity, wind, conditions, icon, station |
 
 Change them per module in the settings form (Capture Interval, Keep History), or `PUT /api/v1/devices/{id}/settings` with `{"capture_interval_s": N}` (0 = off) or `{"retention_days": N}` (whole days, 0 = forever).

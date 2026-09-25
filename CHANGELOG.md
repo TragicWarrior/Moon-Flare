@@ -5,6 +5,38 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-09-24
+
+### Added
+
+- Magnum Energy inverters: `libmf_inverter_magnum.so` (kind `inverter`,
+  driver `magnum`), a C port of pymagnum 2.0.8 by Charles Godwin
+  (BSD-3-Clause, see `third_party/pymagnum/`). Each module is one passive
+  RS-485 tap (an FTDI USB-RS485 adapter on a splitter), and it never writes
+  to the bus.
+  - **What it reads:** the inverter, plus the remote, router, AGS, BMK and
+    PT-100 on the same network.
+  - **Framing:** packets are framed by content, not timing, so daemon
+    jitter or a stall loses nothing.
+  - **The reading:** one JSON object under 4 KB with unit-suffixed keys, a
+    `last_seen_s` per device, and `diag` counters (bytes, packets per device,
+    bad packets, unknown bytes, resyncs, `0xFF` bytes). The `refresh` action
+    resets the counters.
+  - **Ports:** it opens only `/dev/serial/by-id/` paths (or finds the
+    adapter by `usb.serial_id`) and refuses `/dev/ttyUSBn`. It won't open a
+    port that another module has open or another reader has locked.
+  - **Offline:** until the first inverter packet, and again after 5 s
+    without one; the error says why.
+  - **History:** 10 s, kept 60 days, graphing `dc_power_w`.
+
+  Setup, every field with its pymagnum name, and the differences from
+  pymagnum: `docs/magnum.md`.
+- `mf_magnum_dump`, a read-only Magnum bus viewer like pymagnum's `magtest`.
+  It records captures (`--capture`) and replays them, or pymagnum packet
+  files (`--replay`).
+- Two disabled example taps, `magnum-1` and `magnum-2`, in
+  `etc/moonflared.json.example`.
+
 ## [0.7.0] - 2026-09-24
 
 ### Added
