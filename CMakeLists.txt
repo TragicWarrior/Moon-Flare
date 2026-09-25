@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 project(moon-flare
-    VERSION 0.8.0
+    VERSION 0.9.0
     DESCRIPTION "Moon Flare: multi-kind energy dashboard (daemon, REST, plugins, TUI)"
     LANGUAGES C)
 
@@ -400,6 +400,27 @@ add_test(NAME mf_gatt_help COMMAND mf_gatt --help)
 
 add_test(NAME moonflared_help COMMAND moonflared --help)
 add_test(NAME moonflare_help COMMAND moonflare --help)
+
+# moonflare-cli without a daemon (port 9 refuses): the help text, --list's
+# argument, and an MCP session -- the tools list, the pre-0.9.0 tool names
+# still answering, and calls without "arguments".
+add_test(NAME moonflare_cli_help COMMAND moonflare-cli --help)
+set_tests_properties(moonflare_cli_help PROPERTIES
+    PASS_REGULAR_EXPRESSION "list modules")
+add_test(NAME moonflare_cli_list_arg
+    COMMAND moonflare-cli --connect 127.0.0.1:9 --list gadgets)
+set_tests_properties(moonflare_cli_list_arg PROPERTIES
+    PASS_REGULAR_EXPRESSION "--list takes \"modules\" or \"drivers\"")
+set(MF_CLI_MCP_RUN
+    "$<TARGET_FILE:moonflare-cli> --mcp --connect 127.0.0.1:9 --timeout 1 < ${CMAKE_SOURCE_DIR}/tests/cli_mcp_session.jsonl")
+add_test(NAME moonflare_cli_mcp COMMAND sh -c "${MF_CLI_MCP_RUN}")
+set_tests_properties(moonflare_cli_mcp PROPERTIES
+    PASS_REGULAR_EXPRESSION "\"list_modules\".*\"query_module\".*\"module_history\".*\"status\".*failed to fetch modules.*missing required parameter: id.*missing required parameter: id"
+    FAIL_REGULAR_EXPRESSION "unknown tool|\"list_devices\"|\"query_device\"|\"device_history\"")
+if(MF_VALGRIND)
+    add_test(NAME moonflare_cli_mcp_valgrind
+        COMMAND sh -c "${MF_VALGRIND} --quiet --error-exitcode=9 --leak-check=full --errors-for-leak-kinds=definite ${MF_CLI_MCP_RUN}")
+endif()
 
 add_executable(test_tui_layout tests/test_tui_layout.c src/tui/layout.c)
 target_include_directories(test_tui_layout PRIVATE ${CMAKE_SOURCE_DIR}/src/tui)
