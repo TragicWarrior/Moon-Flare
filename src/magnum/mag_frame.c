@@ -12,8 +12,10 @@
  * packet told apart from a REMOTE_00 by byte 20 == 0x00 plus the model and
  * revision learned from the first inverter packet.  pymagnum's precedence
  * bug in that test (Standby inverter packets become REMOTE_00) is not
- * reproduced.  The 22->21 / 17->16 trimming and cleanup()'s merging of
- * split packets repair timing-based framing and are not needed here.
+ * reproduced.  cleanup()'s merging of split packets repairs timing-based
+ * framing and is not needed here.  Of the 22->21 / 17->16 trimming, one
+ * case is still needed: an inverter that sends a 0xFF after its packet
+ * (after_inv()).
  */
 
 #include "mag_frame.h"
@@ -180,6 +182,17 @@ static size_t after_inv(mag_frame_t *f)
 
     if (f->len < MAG_REMOTE_LEN)
         return 0;
+    /* Some inverters send a 0xFF after their packet (an MS4448PAE stack
+     * master does; pymagnum trims those 22-byte bursts to 21).  Drop it
+     * when the remote packet, or the next inverter packet, lines up
+     * behind it; taken as the remote's first byte it shifts every field. */
+    if (p[0] == 0xFF)
+    {
+        if (f->len < MAG_REMOTE_LEN + 1)
+            return 0;
+        if (remote_type_ok(p[MAG_REMOTE_LEN]) || mag_frame_is_inverter(f, p + 1))
+            return 1;
+    }
     /* A byte-20 0x00 packet is a REMOTE_00 unless it is the next
      * inverter packet (the remote said nothing this cycle). */
     if (remote_type_ok(p[20]) && !(p[20] == 0x00 && mag_frame_is_inverter(f, p)))

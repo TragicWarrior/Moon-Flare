@@ -265,11 +265,13 @@ Not ported:
 
 - the old 16-byte protocol (INV_C and REMOTE_C);
 - the experimental `--flip` option;
-- the timing repairs, which content framing doesn't need: 22 → 21 and 17 → 16 trimming, and merging split packets.
+- the timing repairs that content framing doesn't need: 17 → 16 trimming, and merging split packets.
+
+The 22 → 21 trim is kept in effect. Some inverters send a `0xFF` right after their packet; an MS4448PAE parallel-stack master does. The framer drops that byte when the remote packet, or the next inverter packet, lines up behind it. Read as the remote packet's first byte, it would shift every remote field by one.
 
 **To check against real captures:**
 
-- **The sign of `dc_current_a`.**
+- **The sign of `dc_current_a`.** Inverting, it is positive: 23 A at 1205 W, read at batteryman. Charging is unconfirmed.
 - **`lbco_v` on a 48 V system:** pymagnum applies no multiplier.
 - **`eq_v` with a preset battery type.**
 
@@ -320,14 +322,19 @@ It can't open a port that a running module holds, and a module can't open a port
 
 ## Not done yet
 
-This release only adds the module. The daemon and the TUI treat inverters as they did before: listed on the dashboard, and not counted in the System totals. The next steps:
+Done since the module was added:
 
-- **Dashboard row.** Show AC output power and `mode_text`. This needs an `ac_out_w` key (`ac_out_v × ac_out_a`, apparent power).
-- **Inverter view.** A detail view in the TUI, like the pack and charger views: DC and AC values, temperatures, stack role, remote and AGS settings, and the `diag` counters with a Refresh action.
+- **Inverter view.** Enter on an inverter opens it, like the pack and charger views. The Inverter window shows DC volts and amps and a power meter scaled to the rating, then mode and fault, AC out and in, temperatures, model and stack role, and the remote's charger settings. Below it, Power History charts `dc_power_w`, with the same zoom as the charger.
+- **Status rows.** `/api/v1/status` inverter rows carry `dc_voltage_v`, `dc_current_a`, `dc_power_w`, `ac_out_v`, `ac_out_a` and `mode_text`. The dashboard row shows DC watts; `moonflare-cli --status` shows volts, amps, watts and mode.
+
+Still to do:
+
+- **Dashboard AC power.** AC output power on the row needs an `ac_out_w` key (`ac_out_v × ac_out_a`, apparent power).
+- **More in the view.** AGS settings, and the `diag` counters with a Refresh action.
 - **System totals.**
   - A Load value, the sum of the active inverters' AC output.
   - AC charging through the inverter, as a second input source next to the chargers.
   - No double counting: the battery current already includes the inverter's DC draw, so inverter DC power stays out of the discharge total.
 - **DC current sign.** Confirm it from real captures before any total uses it.
-- **Clients.** `moonflare-cli --status` and the MCP `status` tool should describe inverters.
+- **MCP.** The `status` tool's description should name the inverter fields.
 - **Settings over REST.** `usb.*` changes in a settings PUT aren't saved to the config; this affects the XD module too.

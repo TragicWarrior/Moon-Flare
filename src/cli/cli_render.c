@@ -498,10 +498,23 @@ int cli_render_status(const cJSON *status, int raw)
     inverters = cJSON_GetObjectItemCaseSensitive(status, "inverters");
     if (cJSON_IsArray(inverters) && cJSON_GetArraySize(inverters) > 0)
     {
+        const cJSON *dv, *dc, *dw, *mt;
         printf("\nInverters:\n");
         cJSON_ArrayForEach(item, inverters)
         {
             print_module_line("", item);
+            dv = cJSON_GetObjectItemCaseSensitive(item, "dc_voltage_v");
+            dc = cJSON_GetObjectItemCaseSensitive(item, "dc_current_a");
+            dw = cJSON_GetObjectItemCaseSensitive(item, "dc_power_w");
+            mt = cJSON_GetObjectItemCaseSensitive(item, "mode_text");
+            if (cJSON_IsNumber(dv))
+                printf("   %.1f V", dv->valuedouble);
+            if (cJSON_IsNumber(dc))
+                printf("   %.1f A", dc->valuedouble);
+            if (cJSON_IsNumber(dw))
+                printf("   %d W", (int)dw->valuedouble);
+            if (cJSON_IsString(mt) && mt->valuestring)
+                printf("   %s", mt->valuestring);
             printf("\n");
         }
     }

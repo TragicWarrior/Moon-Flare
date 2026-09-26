@@ -364,6 +364,39 @@ static void test_two_inverters(void)
     CHECK(r.s.other_inverter_packets == 5, "counts the slave's packets");
 }
 
+/* An MS4448PAE stack master that sends a 0xFF after every packet (read at
+ * batteryman): the byte is dropped, not glued onto the remote packet. */
+static void test_trailing_ff(void)
+{
+    static const char *INV = "4000020C001778B801003D19322873010008025800";
+    static const char *REM80 = "000028893C0F2A100079FF89001C101000002800" "80";
+    static const char *REM11 = "000028893C0F2A100079FF89001C148700000000" "11";
+    stream_t s = { .n = 0 };
+    rig_t r;
+    int i;
+
+    for (i = 0; i < 3; i++)
+    {
+        put(&s, INV); put(&s, "FF"); put(&s, REM80);
+    }
+    put(&s, INV); put(&s, "FF");                    /* the remote is silent */
+    put(&s, INV); put(&s, "FF"); put(&s, REM11);
+    rig_init(&r);
+    feed(&r, &s, 0);
+    CHECK(r.f.st.packets[MAG_PKT_INVERTER] == 5 && r.f.st.packets[MAG_PKT_REMOTE] == 4,
+          "trailing 0xFF: five inverter and four remote packets");
+    CHECK(r.f.st.bad_packets == 0 && r.f.st.unknown_bytes == 0 && r.f.st.resyncs == 0,
+          "trailing 0xFF: nothing bad, skipped or resynced");
+    CHECK(r.s.rem.battery_size == 400 && NEAR(r.s.rem.absorb_v, 54.8),
+          "trailing 0xFF: the remote's fields line up");
+    CHECK(r.s.rem.have_clock && r.s.rem.clock_min == 16 * 60 + 16,
+          "trailing 0xFF: the remote's clock (16:16)");
+    rig_init(&r);
+    feed(&r, &s, 1);                                /* a byte at a time */
+    CHECK(r.f.st.packets[MAG_PKT_REMOTE] == 4 && r.f.st.unknown_bytes == 0,
+          "trailing 0xFF: same fed a byte at a time");
+}
+
 /* 0xFF-heavy input (crossed A/B): no packets, counted. */
 static void test_polarity_noise(void)
 {
@@ -500,6 +533,7 @@ int main(void)
     test_truncated_tail();
     test_standby_inverter();
     test_silent_remote();
+    test_trailing_ff();
     test_two_inverters();
     test_polarity_noise();
     test_reading_json();

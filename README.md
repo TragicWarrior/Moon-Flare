@@ -113,11 +113,11 @@ A phantom module stands in for a unit that is wired into the system but that moo
 
 `mf_magnum_dump` watches a tap the way pymagnum's `magtest` does, and records captures for replay.
 
-Inverters are listed on the dashboard but don't count toward the System totals yet. [docs/magnum.md](docs/magnum.md) covers:
+On the dashboard each inverter shows its DC watts, and Enter opens the inverter view: DC volts, amps and watts, mode and fault, AC in and out, temperatures, model and stack role, the remote's charger settings, and a Power History chart. An inverter that has no tap yet (the second of a parallel stack, say) can be a phantom that shadows the first. Inverters don't count toward the System totals yet. [docs/magnum.md](docs/magnum.md) covers:
 - setting up a tap;
 - every reading field, with its pymagnum name;
 - what the offline messages mean;
-- the planned inverter view and totals.
+- what is still planned, including the totals.
 
 ## Textbelt SMS alerts
 

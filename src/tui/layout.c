@@ -247,6 +247,24 @@ void mf_tui_paint_charger(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1])
     put_str(grid, 24, 0, "Esc dashboard");
 }
 
+void mf_tui_paint_inverter(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1])
+{
+    fill_blank(grid);
+    put_str(grid, 0, 1, "File  Modules  Help");
+    put_str(grid, 1, 0, "Magnum 1  inverter/magnum  streaming  seq 4");
+    put_str(grid, 2, 0, "interface: usb  /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_XXXXXXX1-if00-port0");
+    draw_box(grid, 3, 0, 80, 9, "Inverter");
+    put_str(grid, 4, 2, "DC    52.4 V                          +23.0 A");
+    put_str(grid, 5, 2, "Watts 1205 W");
+    put_str(grid, 6, 2, "mode INVERT   fault None   LEDs: inverter on, charger off");
+    put_str(grid, 7, 2, "AC out 121 V 8 A   AC in 182 V 0 A   60 Hz");
+    put_str(grid, 8, 2, "Batt 25  Tfmr 50  FET 40");
+    put_str(grid, 9, 2, "MS4448PAE  4400 W  Parallel stack - master  rev 6.1");
+    put_str(grid, 10, 2, "remote: absorb 54.8 V  float 54.8 V  charge 60%  AC in 15 A");
+    draw_box(grid, 12, 0, 80, 11, "Power History");
+    put_str(grid, 24, 0, "+/- zoom (30m)  e settings  Esc dashboard");
+}
+
 void mf_tui_paint_devsettings(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
                               const char *name)
 {

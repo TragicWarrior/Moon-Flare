@@ -58,6 +58,20 @@ static vk_frame_t *g_cf_batt, *g_cf_chg;   /* flat cyan/blue client frames */
 static vk_window_t *g_fr_soc;                    /* SOC History window */
 static vk_box_t *g_batt_box;               /* vbox holding Pack + Cells + SOC */
 static char g_hist_id[64];
+/* Inverter view: an Inverter window over a Power History chart, laid out
+   like the charger's. */
+#define INV_H 9                                  /* 7 body rows + borders */
+static vk_frame_t *g_cf_inv;
+static vk_box_t *g_inv_box;                      /* Inverter + Power History */
+static vk_window_t *g_fr_inv, *g_fr_ipow;
+static vk_box_t *g_iv_body, *g_iv_dc_row, *g_iv_w_row;
+static vk_filler_t *g_iv_rfill0, *g_iv_rfill1;
+static vk_meter_t *g_mt_idc, *g_mt_iw;
+static vk_label_t *g_lb_nidc, *g_lb_vidc, *g_lb_icur, *g_lb_niw, *g_lb_viw;
+static vk_label_t *g_lb_imode, *g_lb_iac, *g_lb_itemp, *g_lb_imodel, *g_lb_irem;
+static vk_box_t *g_ipow_body, *g_iv_graph_row;
+static vk_graph_t *g_iv_graph;
+static vk_filler_t *g_iv_pad_l, *g_iv_pad_r, *g_iv_pad_t, *g_iv_pad_b;
 
 static void style_frame(vk_window_t *w)
 {
@@ -157,6 +171,110 @@ static void destroy_w(vk_widget_t *w)
         return;
     vk_screen_detach_widget(mf_ui_screen(), 0, w);
     vk_widget_destroy(w);
+}
+
+/* A 1-cell blue margin beside a chart.  vk_filler_create() sets EXPAND,
+   which would split the box evenly with the graph; clear it so the pad
+   stays 1 cell (as the charger's pads below do by hand). */
+static vk_filler_t *mk_pad(void)
+{
+    vk_filler_t *p = vk_filler_create();
+
+    vk_widget_set_colors(VK_WIDGET(p), COL_TEXT, COL_BG);
+    vk_widget_resize(VK_WIDGET(p), 1, 1);
+    vk_widget_set_state(VK_WIDGET(p),
+        (uint32_t)(vk_widget_get_state(VK_WIDGET(p)) & ~VK_STATE_EXPAND));
+    return p;
+}
+
+/* The Inverter and Power History windows (mf_pack_init). */
+static void inverter_init(int cols, int iw)
+{
+    g_fr_inv = vk_window_create(cols, INV_H);
+    style_frame(g_fr_inv);
+    vk_window_set_title(g_fr_inv, " Inverter ");
+    g_lb_nidc = mk_lab_txt_c(NAME_W, "DC");
+    g_mt_idc = mk_meter_c(28, 40.0, 64.0);
+    g_lb_vidc = mk_lab_c(VAL_W);
+    g_lb_icur = mk_lab_c(12);
+    g_lb_niw = mk_lab_txt_c(NAME_W, "Watts");
+    g_mt_iw = mk_meter_c(28, 0.0, 4000.0);
+    g_lb_viw = mk_lab_c(VAL_W);
+    g_lb_imode = mk_lab_c(iw);
+    g_lb_iac = mk_lab_c(iw);
+    g_lb_itemp = mk_lab_c(iw);
+    g_lb_imodel = mk_lab_c(iw);
+    g_lb_irem = mk_lab_c(iw);
+
+    g_iv_dc_row = vk_box_create(cols - 2, 1, VK_BOX_HORIZONTAL, 5);
+    vk_box_set_homogeneous(g_iv_dc_row, false);
+    g_iv_rfill0 = vk_filler_create();
+    vk_widget_set_expand(VK_WIDGET(g_iv_rfill0));
+    g_iv_w_row = vk_box_create(cols - 2, 1, VK_BOX_HORIZONTAL, 4);
+    vk_box_set_homogeneous(g_iv_w_row, false);
+    g_iv_rfill1 = vk_filler_create();
+    vk_widget_set_expand(VK_WIDGET(g_iv_rfill1));
+    g_iv_body = vk_box_create(cols - 2, INV_H - 2, VK_BOX_VERTICAL, 7);
+    vk_box_set_homogeneous(g_iv_body, false);
+    vk_widget_set_expand(VK_WIDGET(g_iv_body));
+
+    /* Top-down attach so the window's colours cascade. */
+    vk_window_set_child(g_fr_inv, VK_WIDGET(g_iv_body), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_iv_body, 0, VK_WIDGET(g_iv_dc_row), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_iv_body, 1, VK_WIDGET(g_iv_w_row), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_iv_body, 2, VK_WIDGET(g_lb_imode), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_iv_body, 3, VK_WIDGET(g_lb_iac), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_iv_body, 4, VK_WIDGET(g_lb_itemp), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_iv_body, 5, VK_WIDGET(g_lb_imodel), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_iv_body, 6, VK_WIDGET(g_lb_irem), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_iv_dc_row, 0, VK_WIDGET(g_lb_nidc), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_iv_dc_row, 1, VK_WIDGET(g_mt_idc), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_iv_dc_row, 2, VK_WIDGET(g_lb_vidc), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_iv_dc_row, 3, VK_WIDGET(g_iv_rfill0), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_iv_dc_row, 4, VK_WIDGET(g_lb_icur), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_iv_w_row, 0, VK_WIDGET(g_lb_niw), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_iv_w_row, 1, VK_WIDGET(g_mt_iw), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_iv_w_row, 2, VK_WIDGET(g_lb_viw), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_iv_w_row, 3, VK_WIDGET(g_iv_rfill1), VK_INHERIT_COLOR);
+    /* Static name labels were painted before inheriting; repaint. */
+    vk_label_update(g_lb_nidc);
+    vk_label_update(g_lb_niw);
+
+    /* Power History: the charger's Production History, for dc_power_w. */
+    g_iv_graph = vk_graph_create(cols - 4, 8);
+    vk_widget_set_colors(VK_WIDGET(g_iv_graph), COL_TEXT, COL_BG);
+    vk_widget_set_expand(VK_WIDGET(g_iv_graph));
+    vk_graph_set_bar_style(g_iv_graph, VK_GRAPH_BAR_BLOCK);
+    vk_graph_set_bar_width(g_iv_graph, graph_bar_cells(30));
+    vk_graph_set_y_range(g_iv_graph, 0.0, 100.0);
+    g_iv_pad_l = mk_pad();
+    g_iv_pad_r = mk_pad();
+    g_iv_pad_t = mk_pad();
+    g_iv_pad_b = mk_pad();
+    g_iv_graph_row = vk_box_create(cols - 2, 8, VK_BOX_HORIZONTAL, 3);
+    vk_box_set_homogeneous(g_iv_graph_row, false);
+    vk_widget_set_colors(VK_WIDGET(g_iv_graph_row), COL_TEXT, COL_BG);
+    vk_widget_set_expand(VK_WIDGET(g_iv_graph_row));
+    vk_box_set_widget(g_iv_graph_row, 0, VK_WIDGET(g_iv_pad_l), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_iv_graph_row, 1, VK_WIDGET(g_iv_graph), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_iv_graph_row, 2, VK_WIDGET(g_iv_pad_r), VK_INHERIT_COLOR);
+    g_fr_ipow = vk_window_create(cols, 8);
+    style_frame(g_fr_ipow);
+    vk_widget_set_expand(VK_WIDGET(g_fr_ipow));
+    vk_window_set_title(g_fr_ipow, " Power History ");
+    g_ipow_body = vk_box_create(cols - 2, 6, VK_BOX_VERTICAL, 3);
+    vk_box_set_homogeneous(g_ipow_body, false);
+    vk_widget_set_expand(VK_WIDGET(g_ipow_body));
+    vk_window_set_child(g_fr_ipow, VK_WIDGET(g_ipow_body), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_ipow_body, 0, VK_WIDGET(g_iv_pad_t), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_ipow_body, 1, VK_WIDGET(g_iv_graph_row), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_ipow_body, 2, VK_WIDGET(g_iv_pad_b), VK_INHERIT_COLOR);
+    /* INHERIT_COLOR can clobber graph colors; restore them after attach. */
+    vk_graph_set_colors(g_iv_graph, COLOR_MAGENTA, COL_BG);
+    vk_graph_set_attrs(g_iv_graph, A_BOLD);
+    vk_widget_set_colors(VK_WIDGET(g_iv_graph), COL_TEXT, COL_BG);
+    vk_graph_set_unit_label(g_iv_graph, "W");
+    vk_graph_set_unit_scale(g_iv_graph, 1.0);
 }
 
 void mf_pack_init(void)
@@ -470,6 +588,16 @@ void mf_pack_init(void)
         vk_frame_set_child(g_cf_chg, VK_WIDGET(g_chg_box), VK_INHERIT_COLOR);
         vk_box_set_widget(g_chg_box, 0, VK_WIDGET(g_fr_charger), VK_INHERIT_NONE);
         vk_box_set_widget(g_chg_box, 1, VK_WIDGET(g_fr_prod), VK_INHERIT_NONE);
+
+        inverter_init(cols, iw);
+        g_cf_inv = mf_ui_make_client_frame(cols, clientH);
+        g_inv_box = vk_box_create(cols - 2, clientH - 2, VK_BOX_VERTICAL, 2);
+        vk_box_set_homogeneous(g_inv_box, false);
+        vk_widget_set_expand(VK_WIDGET(g_inv_box));
+        mf_ui_attach(VK_WIDGET(g_cf_inv), 0, 3);
+        vk_frame_set_child(g_cf_inv, VK_WIDGET(g_inv_box), VK_INHERIT_COLOR);
+        vk_box_set_widget(g_inv_box, 0, VK_WIDGET(g_fr_inv), VK_INHERIT_NONE);
+        vk_box_set_widget(g_inv_box, 1, VK_WIDGET(g_fr_ipow), VK_INHERIT_NONE);
     }
 
     g_hints = mk_lab(0, 24, cols);
@@ -484,6 +612,8 @@ void mf_pack_hide(void)
         hide_w(VK_WIDGET(g_cf_batt));
     if (g_cf_chg)
         hide_w(VK_WIDGET(g_cf_chg));
+    if (g_cf_inv)
+        hide_w(VK_WIDGET(g_cf_inv));
     hide_w(VK_WIDGET(g_hints));
     g_visible = 0;
 }
@@ -506,11 +636,68 @@ static void show_charger_widgets(void)
     show_w(VK_WIDGET(g_hints));
 }
 
-void mf_pack_show(int charger)
+static void show_inverter_widgets(void)
+{
+    show_w(VK_WIDGET(g_chrome1));
+    show_w(VK_WIDGET(g_chrome2));
+    if (g_cf_inv)
+        show_w(VK_WIDGET(g_cf_inv));
+    show_w(VK_WIDGET(g_hints));
+}
+
+/* Size the Inverter view's windows to the terminal: the same fixed window
+   + EXPAND chart pattern (and the same pad gotchas) as the charger's. */
+static void size_inverter(int cols, int clientH, int bw)
+{
+    int pow_h = (clientH - 2) - INV_H, body_h, gh;
+
+    if (pow_h < 8)
+        pow_h = 8;
+    /* Fixed-height and non-EXPAND, so the box never sizes it: give it the
+       box interior (bw + 2 borders), as the Pack and Cells windows get. */
+    vk_widget_resize(VK_WIDGET(g_fr_inv), bw + 2, INV_H);
+    vk_widget_resize(VK_WIDGET(g_iv_dc_row), bw, 1);
+    vk_widget_resize(VK_WIDGET(g_iv_w_row), bw, 1);
+    vk_widget_resize(VK_WIDGET(g_fr_ipow), cols, (short)pow_h);
+    body_h = pow_h - 2;
+    if (body_h < 1)
+        body_h = 1;
+    vk_widget_resize(VK_WIDGET(g_ipow_body), bw, body_h);
+    gh = body_h - 2;
+    if (gh < 1)
+        gh = 1;
+    vk_widget_resize(VK_WIDGET(g_iv_graph_row), bw, gh);
+    vk_widget_resize(VK_WIDGET(g_iv_graph), bw - 2, gh);
+    vk_widget_resize(VK_WIDGET(g_iv_pad_l), 1, gh);
+    vk_widget_resize(VK_WIDGET(g_iv_pad_r), 1, gh);
+    vk_widget_resize(VK_WIDGET(g_iv_pad_t), bw, 1);
+    vk_widget_resize(VK_WIDGET(g_iv_pad_b), bw, 1);
+    vk_widget_recreate(VK_WIDGET(g_iv_pad_l));
+    vk_widget_recreate(VK_WIDGET(g_iv_pad_r));
+    vk_widget_recreate(VK_WIDGET(g_iv_pad_t));
+    vk_widget_recreate(VK_WIDGET(g_iv_pad_b));
+}
+
+/* Repaint the Inverter view and composite it up to the screen. */
+static void update_inverter(void)
+{
+    vk_box_update(g_iv_dc_row);
+    vk_box_update(g_iv_w_row);
+    vk_box_update(g_iv_body);
+    vk_window_update(g_fr_inv);
+    vk_box_update(g_iv_graph_row);
+    vk_box_update(g_ipow_body);
+    vk_window_update(g_fr_ipow);
+    vk_box_update(g_inv_box);
+    if (g_cf_inv)
+        vk_frame_update(g_cf_inv);
+}
+
+void mf_pack_show(int view)
 {
     int i;
     mf_pack_hide();
-    g_kind = charger ? 1 : 0;
+    g_kind = (view == MF_VIEW_CHARGER || view == MF_VIEW_INVERTER) ? view : MF_VIEW_PACK;
      /* Size the client frames to the current terminal BEFORE the window bodies
         are rendered below, so the resize cascade (on_resize) grows the Pack/
         Cells/Charger windows first and they render at full size.  The frame is
@@ -532,6 +719,11 @@ void mf_pack_show(int charger)
         {
             vk_widget_resize(VK_WIDGET(g_cf_chg), cols, clientH + 1);
             vk_widget_resize(VK_WIDGET(g_cf_chg), cols, clientH);
+        }
+        if (g_cf_inv)
+        {
+            vk_widget_resize(VK_WIDGET(g_cf_inv), cols, clientH + 1);
+            vk_widget_resize(VK_WIDGET(g_cf_inv), cols, clientH);
         }
         /* Keep the hint line full-width at the very bottom, below the frame.
            It is created at a fixed row and otherwise only repositioned on a
@@ -622,7 +814,7 @@ void mf_pack_show(int charger)
                  prod_h = (clientH - 2) - 7;   /* box interior minus charger frame */
                  if (prod_h < 8)
                      prod_h = 8;
-                 vk_widget_resize(VK_WIDGET(g_fr_charger), cols, 7);
+                 vk_widget_resize(VK_WIDGET(g_fr_charger), bw + 2, 7);
                  vk_widget_resize(VK_WIDGET(g_fr_prod), cols, (short)prod_h);
 
                  bodyH_prod = prod_h - 2;      /* production window interior */
@@ -684,9 +876,13 @@ void mf_pack_show(int charger)
                 vk_widget_recreate(VK_WIDGET(g_cl_pad_t));
                 vk_widget_recreate(VK_WIDGET(g_cl_pad_b));
             }
+            if (g_kind == MF_VIEW_INVERTER && g_fr_inv)
+                size_inverter(cols, clientH, bw);
         }
     }
-    if (g_kind)
+    if (g_kind == MF_VIEW_INVERTER)
+        show_inverter_widgets();
+    else if (g_kind == MF_VIEW_CHARGER)
         show_charger_widgets();
     else
         show_pack_widgets();
@@ -721,7 +917,9 @@ void mf_pack_show(int charger)
         vk_box_update(g_prod_body);
         vk_window_update(g_fr_prod);
     }
-    if (g_kind)
+    if (g_kind == MF_VIEW_INVERTER)
+        update_inverter();
+    else if (g_kind == MF_VIEW_CHARGER)
     {
         vk_box_update(g_chg_box);
         if (g_cf_chg)
@@ -760,6 +958,7 @@ void mf_pack_on_resize(void)
     vk_widget_move(VK_WIDGET(g_hints), 0, rows - 1);
     vk_widget_resize(VK_WIDGET(g_cf_batt), cols, clientH);
     vk_widget_resize(VK_WIDGET(g_cf_chg), cols, clientH);
+    vk_widget_resize(VK_WIDGET(g_cf_inv), cols, clientH);
     mf_pack_show(g_kind);
 }
 
@@ -767,7 +966,7 @@ int mf_pack_visible(void)
 {
     return g_visible;
 }
-int mf_pack_is_charger(void)
+int mf_pack_kind(void)
 {
     return g_kind;
 }
@@ -968,6 +1167,8 @@ void mf_pack_set_graph_interval(int minutes)
         vk_graph_set_bar_width(g_cl_graph, graph_bar_cells(minutes));
     if (g_pk_graph)
         vk_graph_set_bar_width(g_pk_graph, graph_bar_cells(minutes));
+    if (g_iv_graph)
+        vk_graph_set_bar_width(g_iv_graph, graph_bar_cells(minutes));
     pack_hints();
 }
 
@@ -1028,6 +1229,15 @@ void mf_pack_set_history(const double *values, int count, double y_max,
         vk_window_update(g_fr_soc);
         if (g_cf_batt)
             vk_frame_update(g_cf_batt);
+     } else if (g_kind == MF_VIEW_INVERTER && g_iv_graph)
+     {
+         /* Inverter view: DC power chart, data-driven y-range. */
+         vk_graph_set_data(g_iv_graph, values, count);
+         if (labels)
+             vk_graph_set_x_labels(g_iv_graph, labels, count);
+         vk_graph_set_y_range(g_iv_graph, 0.0, y_max);
+         vk_graph_update(g_iv_graph);
+         update_inverter();
      } else if (g_cl_graph)
      {
          /* Charger view: power chart, data-driven y-range. */
@@ -1052,6 +1262,83 @@ void mf_pack_set_history(const double *values, int count, double y_max,
 int mf_pack_get_graph_interval(void)
 {
     return g_graph_interval_min;
+}
+
+/* A number from o, printed with fmt, or "--" when it is missing. */
+static const char *numstr(char *out, size_t cap, cJSON *o, const char *k,
+                          const char *fmt)
+{
+    cJSON *it = o ? cJSON_GetObjectItemCaseSensitive(o, k) : NULL;
+
+    if (cJSON_IsNumber(it))
+        snprintf(out, cap, fmt, it->valuedouble);
+    else
+        snprintf(out, cap, "--");
+    return out;
+}
+
+static void set_lab(vk_label_t *l, const char *text)
+{
+    vk_label_set_text(l, text);
+    vk_label_update(l);
+}
+
+/* The Inverter view's readout: the DC and power meters, then mode and
+   fault, AC, temperatures, model, and the remote's charger settings. */
+static void inverter_fill(cJSON *data)
+{
+    char line[192], a[16], b[16], c[16], d[16], e[16];
+    double rated = jnum(data, "rated_w", 0);
+    cJSON *rem = cJSON_GetObjectItemCaseSensitive(data, "remote");
+    cJSON *inv = cJSON_GetObjectItemCaseSensitive(data, "invled");
+    cJSON *chg = cJSON_GetObjectItemCaseSensitive(data, "chgled");
+
+    vk_progress_set_value(VK_PROGRESS(g_mt_idc), jnum(data, "dc_voltage_v", 0));
+    vk_progress_set_range(VK_PROGRESS(g_mt_iw), 0.0, rated > 0 ? rated : 4000.0);
+    vk_progress_set_value(VK_PROGRESS(g_mt_iw), jnum(data, "dc_power_w", 0));
+    vk_progress_update(VK_PROGRESS(g_mt_idc));
+    vk_progress_update(VK_PROGRESS(g_mt_iw));
+    snprintf(line, sizeof(line), " %s V", numstr(a, sizeof(a), data, "dc_voltage_v", "%.1f"));
+    set_lab(g_lb_vidc, line);
+    snprintf(line, sizeof(line), "%s A", numstr(a, sizeof(a), data, "dc_current_a", "%+.1f"));
+    set_lab(g_lb_icur, line);
+    snprintf(line, sizeof(line), " %s W", numstr(a, sizeof(a), data, "dc_power_w", "%.0f"));
+    set_lab(g_lb_viw, line);
+
+    snprintf(line, sizeof(line), "mode %s   fault %s   LEDs: inverter %s, charger %s",
+             jstr(data, "mode_text", "--"), jstr(data, "fault_text", "--"),
+             cJSON_IsBool(inv) ? (cJSON_IsTrue(inv) ? "on" : "off") : "--",
+             cJSON_IsBool(chg) ? (cJSON_IsTrue(chg) ? "on" : "off") : "--");
+    set_lab(g_lb_imode, line);
+    snprintf(line, sizeof(line), "AC out %s V %s A   AC in %s V %s A   %s Hz",
+             numstr(a, sizeof(a), data, "ac_out_v", "%.0f"),
+             numstr(b, sizeof(b), data, "ac_out_a", "%.0f"),
+             numstr(c, sizeof(c), data, "ac_in_v", "%.0f"),
+             numstr(d, sizeof(d), data, "ac_in_a", "%.0f"),
+             numstr(e, sizeof(e), data, "freq_hz", "%.0f"));
+    set_lab(g_lb_iac, line);
+    snprintf(line, sizeof(line), "Batt %s  Tfmr %s  FET %s",
+             numstr(a, sizeof(a), data, "bat_temp_c", "%.0f"),
+             numstr(b, sizeof(b), data, "tfmr_temp_c", "%.0f"),
+             numstr(c, sizeof(c), data, "fet_temp_c", "%.0f"));
+    set_lab(g_lb_itemp, line);
+    snprintf(line, sizeof(line), "%s  %s W  %s  rev %s",
+             jstr(data, "model_text", "--"),
+             numstr(a, sizeof(a), data, "rated_w", "%.0f"),
+             jstr(data, "stackmode_text", "--"),
+             numstr(b, sizeof(b), data, "revision", "%.1f"));
+    set_lab(g_lb_imodel, line);
+    if (cJSON_IsObject(rem))
+        snprintf(line, sizeof(line),
+                 "remote: absorb %s V  float %s V  charge %s%%  AC in %s A  LBCO %s V",
+                 numstr(a, sizeof(a), rem, "absorb_v", "%.1f"),
+                 numstr(b, sizeof(b), rem, "float_v", "%.1f"),
+                 numstr(c, sizeof(c), rem, "charge_rate", "%.0f"),
+                 numstr(d, sizeof(d), rem, "ac_input_a", "%.0f"),
+                 numstr(e, sizeof(e), rem, "lbco_v", "%.1f"));
+    else
+        snprintf(line, sizeof(line), "remote: not heard");
+    set_lab(g_lb_irem, line);
 }
 
 void mf_pack_update(const char *json)
@@ -1263,6 +1550,8 @@ void mf_pack_update(const char *json)
         vk_box_update(g_cells_body);
         vk_window_update(g_fr_cells);
     }
+    else if (g_kind == MF_VIEW_INVERTER)
+        inverter_fill(data);
     else
     {
         double bv = jnum(data, "battery_voltage_v", 0);
@@ -1298,7 +1587,9 @@ void mf_pack_update(const char *json)
     /* Composite the freshly rendered windows up through the client frame to the
        screen.  The vk_window_update calls above only redraw onto the window
        canvases; without this the new content never reaches the frame. */
-    if (g_kind)
+    if (g_kind == MF_VIEW_INVERTER)
+        update_inverter();
+    else if (g_kind == MF_VIEW_CHARGER)
     {
         vk_box_update(g_chg_box);
         if (g_cf_chg)
@@ -1457,8 +1748,54 @@ void mf_pack_shutdown(void)
     vk_widget_destroy(VK_WIDGET(g_fr_prod));
     vk_box_destroy(g_chg_box);
     vk_box_destroy(g_batt_box);
+    /* Inverter teardown, in the charger's order: vacate every slot, then
+       leaves, boxes, windows, and the frame. */
+    vk_frame_set_child(g_cf_inv, NULL, VK_INHERIT_NONE);
+    vk_window_set_child(g_fr_inv, NULL, VK_INHERIT_NONE);
+    vk_window_set_child(g_fr_ipow, NULL, VK_INHERIT_NONE);
+    for (i = 0; i < 2; i++)
+        vk_box_set_widget(g_inv_box, i, NULL, VK_INHERIT_NONE);
+    for (i = 0; i < 3; i++)
+    {
+        vk_box_set_widget(g_ipow_body, i, NULL, VK_INHERIT_NONE);
+        vk_box_set_widget(g_iv_graph_row, i, NULL, VK_INHERIT_NONE);
+    }
+    for (i = 0; i < 7; i++)
+        vk_box_set_widget(g_iv_body, i, NULL, VK_INHERIT_NONE);
+    for (i = 0; i < 5; i++)
+        vk_box_set_widget(g_iv_dc_row, i, NULL, VK_INHERIT_NONE);
+    for (i = 0; i < 4; i++)
+        vk_box_set_widget(g_iv_w_row, i, NULL, VK_INHERIT_NONE);
+    vk_widget_destroy(VK_WIDGET(g_lb_nidc));
+    vk_widget_destroy(VK_WIDGET(g_mt_idc));
+    vk_widget_destroy(VK_WIDGET(g_lb_vidc));
+    vk_widget_destroy(VK_WIDGET(g_lb_icur));
+    vk_widget_destroy(VK_WIDGET(g_lb_niw));
+    vk_widget_destroy(VK_WIDGET(g_mt_iw));
+    vk_widget_destroy(VK_WIDGET(g_lb_viw));
+    vk_widget_destroy(VK_WIDGET(g_lb_imode));
+    vk_widget_destroy(VK_WIDGET(g_lb_iac));
+    vk_widget_destroy(VK_WIDGET(g_lb_itemp));
+    vk_widget_destroy(VK_WIDGET(g_lb_imodel));
+    vk_widget_destroy(VK_WIDGET(g_lb_irem));
+    vk_widget_destroy(VK_WIDGET(g_iv_rfill0));
+    vk_widget_destroy(VK_WIDGET(g_iv_rfill1));
+    vk_widget_destroy(VK_WIDGET(g_iv_graph));
+    vk_widget_destroy(VK_WIDGET(g_iv_pad_l));
+    vk_widget_destroy(VK_WIDGET(g_iv_pad_r));
+    vk_widget_destroy(VK_WIDGET(g_iv_pad_t));
+    vk_widget_destroy(VK_WIDGET(g_iv_pad_b));
+    vk_box_destroy(g_iv_dc_row);
+    vk_box_destroy(g_iv_w_row);
+    vk_box_destroy(g_iv_body);
+    vk_box_destroy(g_iv_graph_row);
+    vk_box_destroy(g_ipow_body);
+    vk_widget_destroy(VK_WIDGET(g_fr_inv));
+    vk_widget_destroy(VK_WIDGET(g_fr_ipow));
+    vk_box_destroy(g_inv_box);
     destroy_w(VK_WIDGET(g_cf_batt));
     destroy_w(VK_WIDGET(g_cf_chg));
+    destroy_w(VK_WIDGET(g_cf_inv));
     memset(&g_chrome1, 0, sizeof(g_chrome1));
     g_visible = 0;
 }

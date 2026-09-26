@@ -57,13 +57,16 @@ const char *mf_ui_phantom_marker(void);
 int  mf_dash_key(wint_t c, int *cat_idx);
 void mf_dash_select(int cat_idx);
 
+/* The module detail view's kinds (mf_pack_show, mf_pack_kind). */
+enum { MF_VIEW_PACK = 0, MF_VIEW_CHARGER, MF_VIEW_INVERTER };
+
 void mf_pack_init(void);
-void mf_pack_show(int charger);
+void mf_pack_show(int view);
 void mf_pack_hide(void);
 void mf_pack_update(const char *json);
 void mf_pack_shutdown(void);
 int  mf_pack_visible(void);
-int  mf_pack_is_charger(void);
+int  mf_pack_kind(void);
 int  mf_pack_has_switch(void);
 int  mf_pack_switch_on(const char *key);
 void mf_pack_on_resize(void);
