@@ -507,6 +507,15 @@ static void fill_lb(vk_listbox_t *lb, cJSON *arr, int card)
             if (!nm[0])
                 snprintf(nm, sizeof(nm), "svc");
         }
+        else if (strcmp(kind, "inverter") == 0)
+        {
+            cJSON *w = cJSON_GetObjectItemCaseSensitive(o, "dc_power_w");
+
+            if (cJSON_IsNumber(w))
+                snprintf(rd, sizeof(rd), "%.0fW", w->valuedouble);
+            if (!nm[0])
+                snprintf(nm, sizeof(nm), "inv");
+        }
         else if (!nm[0])
             snprintf(nm, sizeof(nm), "inv");
         /* Shorten the name, not the reading, when the row is too narrow. */
@@ -1167,8 +1176,8 @@ int mf_dash_key(wint_t c, int *cat_idx)
                 return MF_DASH_KEY_TOGGLE;
             if (c == 'e' || c == 'E')
                 return MF_DASH_KEY_EDIT;
-            /* Only batteries and chargers have a detail view so far. */
-            if (g_sel_card > 1)
+            /* Batteries, chargers and inverters have a detail view. */
+            if (g_sel_card > 2)
                 return MF_DASH_KEY_HANDLED;
             return MF_DASH_KEY_OPEN;
         }
@@ -1350,8 +1359,8 @@ int mf_dash_mouse(int x, int y, mmask_t bstate)
                 g_sel_row[i] = row;
                 apply_selection();
                 repaint_cards();
-                /* Only batteries and chargers have a detail view so far. */
-                if (i <= 1)
+                /* Batteries, chargers and inverters have a detail view. */
+                if (i <= 2)
                     mf_ui_open_device_view(k);
                 return 1;
             }

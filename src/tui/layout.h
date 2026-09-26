@@ -36,6 +36,7 @@ void mf_tui_confirm_geom(int cols, int rows, int *x, int *y, int *w, int *h);
 
 void mf_tui_paint_pack(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1], int has_switch);
 void mf_tui_paint_charger(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1]);
+void mf_tui_paint_inverter(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1]);
 void mf_tui_paint_devsettings(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
                               const char *name);
 void mf_tui_paint_confirm(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],

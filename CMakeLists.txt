@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 project(moon-flare
-    VERSION 0.11.2
+    VERSION 0.12.0
     DESCRIPTION "Moon Flare: multi-kind energy dashboard (daemon, REST, plugins, TUI)"
     LANGUAGES C)
 
@@ -583,6 +583,9 @@ add_test(NAME tui_http COMMAND test_tui_http)
 add_test(NAME moonflare_dump COMMAND moonflare --dump-layout)
 add_test(NAME moonflare_dump_pack COMMAND moonflare --dump-layout pack)
 add_test(NAME moonflare_dump_charger COMMAND moonflare --dump-layout charger)
+add_test(NAME moonflare_dump_inverter COMMAND moonflare --dump-layout inverter)
+set_tests_properties(moonflare_dump_inverter PROPERTIES
+    PASS_REGULAR_EXPRESSION "Inverter.*Power History")
 
 install(TARGETS moonflared moonflare moonflare-cli
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

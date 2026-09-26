@@ -1998,9 +1998,10 @@ void mf_ui_open_device_view(int idx)
     const char *name = mf_dash_catalog_name(idx);
     if (!id || !id[0])
         return;
-    /* Only batteries and chargers have a detail view: for anything else
-       (a weather service, say) show the Dashboard with it selected. */
-    if (!kind || (strcmp(kind, "battery") != 0 && strcmp(kind, "charger") != 0))
+    /* Batteries, chargers and inverters have a detail view: for anything
+       else (a weather service, say) show the Dashboard with it selected. */
+    if (!kind || (strcmp(kind, "battery") != 0 && strcmp(kind, "charger") != 0 &&
+                  strcmp(kind, "inverter") != 0))
     {
         mf_ui_show_dashboard();
         mf_dash_select(idx);
@@ -2011,7 +2012,8 @@ void mf_ui_open_device_view(int idx)
     snprintf(g_view_name, sizeof(g_view_name), "%s", name ? name : id);
     snprintf(g_view_path, sizeof(g_view_path), "/api/v1/devices/%s", id);
     mf_dash_set_visible(0);
-    mf_pack_show(kind && strcmp(kind, "charger") == 0);
+    mf_pack_show(strcmp(kind, "charger") == 0 ? MF_VIEW_CHARGER :
+                 strcmp(kind, "inverter") == 0 ? MF_VIEW_INVERTER : MF_VIEW_PACK);
     (void)mf_http_cli_get(&g_cli, g_view_path);
     mf_ui_refresh();
 }
@@ -2246,6 +2248,8 @@ static int dump_layout(const char *which)
         mf_tui_paint_pack(grid, 1);
     else if (which && strcmp(which, "charger") == 0)
         mf_tui_paint_charger(grid);
+    else if (which && strcmp(which, "inverter") == 0)
+        mf_tui_paint_inverter(grid);
     else if (which && (strcmp(which, "settings") == 0 ||
                        strcmp(which, "devsettings") == 0))
         mf_tui_paint_devsettings(grid, "pack-demo");
@@ -2655,35 +2659,20 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
                     mf_ui_open_device_settings(g_view_idx);
                 continue;
             }
-            if (mf_pack_visible() && mf_pack_is_charger() &&
-                (key == '+' || key == '='))
+            /* Every detail view has a history chart to zoom. */
+            if (mf_pack_visible() && (key == '+' || key == '='))
             {
                 if (mf_pack_graph_zoom(1))
                     mf_ui_handle_history();
                 continue;
             }
-            if (mf_pack_visible() && mf_pack_is_charger() &&
-                (key == '-' || key == '_'))
+            if (mf_pack_visible() && (key == '-' || key == '_'))
             {
                 if (mf_pack_graph_zoom(0))
                     mf_ui_handle_history();
                 continue;
             }
-            if (mf_pack_visible() && !mf_pack_is_charger() &&
-                (key == '+' || key == '='))
-            {
-                if (mf_pack_graph_zoom(1))
-                    mf_ui_handle_history();
-                continue;
-            }
-            if (mf_pack_visible() && !mf_pack_is_charger() &&
-                (key == '-' || key == '_'))
-            {
-                if (mf_pack_graph_zoom(0))
-                    mf_ui_handle_history();
-                continue;
-            }
-            if (mf_pack_visible() && !mf_pack_is_charger() && mf_pack_has_switch())
+            if (mf_pack_visible() && mf_pack_kind() == MF_VIEW_PACK && mf_pack_has_switch())
             {
                 if (key == 'c' || key == 'C')
                 {

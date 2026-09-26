@@ -5,6 +5,34 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-09-26
+
+### Added
+
+- An inverter view in the TUI: Enter on an inverter (or a click) opens it,
+  like the pack and charger views. The Inverter window has a DC meter with
+  volts and amps and a power meter scaled to the inverter's rating, then
+  mode and fault, AC out and in, temperatures, model and stack role, and
+  the remote's charger settings. Below it, Power History charts
+  `dc_power_w`, with the charger's +/- zoom. A phantom inverter opens the
+  same view, with no history.
+- `/api/v1/status` inverter rows carry `dc_voltage_v`, `dc_current_a`,
+  `dc_power_w`, `ac_out_v`, `ac_out_a` and `mode_text`. The dashboard's
+  inverter rows show DC watts, and `moonflare-cli --status` shows volts,
+  amps, watts and mode.
+- `moonflare-tui --dump-layout inverter`.
+
+### Fixed
+
+- Magnum: an inverter that sends a `0xFF` after its packet (an MS4448PAE
+  parallel-stack master does) no longer garbles the remote. The byte was
+  read as the start of the remote packet, shifting every remote field by
+  one and leaving the remote's type byte as an unknown packet. The framer
+  now drops it, as pymagnum's 22 → 21 trim did. Found on batteryman's tap;
+  its bytes are now a test.
+- The charger view's Charger window ran one column past the frame's right
+  edge, hiding its right border.
+
 ## [0.11.2] - 2026-09-25
 
 ### Fixed

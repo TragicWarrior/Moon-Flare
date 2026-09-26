@@ -367,9 +367,24 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
         /* Its continuous rating, when it reports one (Magnum: from the
            model), feeds the system's inverter capacity. */
         cJSON *rw = num_or_null(data, "rated_w");
+        static const char *const nums[] = {
+            "dc_voltage_v", "dc_current_a", "dc_power_w", "ac_out_v", "ac_out_a"
+        };
+        cJSON *mt = str_or_null(data, "mode_text");
+        size_t i;
 
         if (rw)
             cJSON_AddNumberToObject(row, "rated_w", rw->valuedouble);
+        /* What the dashboard and the CLI show for it. */
+        for (i = 0; i < sizeof(nums) / sizeof(nums[0]); i++)
+        {
+            cJSON *v = num_or_null(data, nums[i]);
+
+            if (v)
+                cJSON_AddNumberToObject(row, nums[i], v->valuedouble);
+        }
+        if (mt)
+            cJSON_AddStringToObject(row, "mode_text", mt->valuestring);
         mf_system_add_inverter(&ctx->sys, d->active, d->online, num_or(rw, 0.0));
         cJSON_AddItemToArray(inverters, row);
     }
