@@ -46,6 +46,9 @@ static void add_inverter(cJSON *o, const mag_inverter_t *v)
     num(o, "dc_current_a", v->dc_current_a);
     /* Derived: DC volts x amps (the inverter's DC volts are coarse). */
     num(o, "dc_power_w", round(v->dc_voltage_v * v->dc_current_a * 10.0) / 10.0);
+    /* Drawing from the bank (INVERT, or SEARCH for loads); the daemon's
+       Discharge counts its DC power only then. */
+    cJSON_AddBoolToObject(o, "inverting", v->mode == 0x40 || v->mode == 0x80);
     num(o, "ac_out_v", v->ac_out_v);
     num(o, "ac_out_a", v->ac_out_a);
     num(o, "ac_in_v", v->ac_in_v);

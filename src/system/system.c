@@ -105,7 +105,7 @@ void mf_system_add_battery(mf_system_totals_t *t, bool active, bool online,
     if (power_w > 0.0)
         t->charge_w += power_w;
     else
-        t->discharge_w -= power_w;
+        t->battery_discharge_w -= power_w;
 }
 
 void mf_system_add_battery_limit(mf_system_totals_t *t, bool active,
@@ -118,7 +118,7 @@ void mf_system_add_battery_limit(mf_system_totals_t *t, bool active,
 }
 
 void mf_system_add_inverter(mf_system_totals_t *t, bool active, bool online,
-                            double rated_w)
+                            double rated_w, double output_w)
 {
     t->inverters_total++;
     if (!active || !online)
@@ -128,6 +128,11 @@ void mf_system_add_inverter(mf_system_totals_t *t, bool active, bool online,
     {
         t->inverter_rated_w += rated_w;
         t->inverter_rated_n++;
+    }
+    if (output_w >= 0.0)
+    {
+        t->inverter_output_w += output_w;
+        t->inverter_output_n++;
     }
 }
 
@@ -143,8 +148,18 @@ int mf_system_inverter_rated_known(const mf_system_totals_t *t)
     return t->inverters_counted > 0 && t->inverter_rated_n == t->inverters_counted;
 }
 
+int mf_system_inverter_output_known(const mf_system_totals_t *t)
+{
+    return t->inverters_counted > 0 && t->inverter_output_n == t->inverters_counted;
+}
+
 void mf_system_finish(mf_system_totals_t *t)
 {
+    /* Inverters replace the packs, never add to them: the packs' current
+       already carries what the inverters draw. */
+    t->discharge_from_inverters = mf_system_inverter_output_known(t);
+    t->discharge_w = t->discharge_from_inverters ? t->inverter_output_w
+                                                 : t->battery_discharge_w;
     if (t->capacity_wh > 0.0)
         t->soc_pct = t->stored_wh / t->capacity_wh * 100.0;
     else if (t->soc_n > 0)

@@ -472,6 +472,33 @@ static void test_reading_json(void)
     CHECK(rem && cJSON_IsNull(cJSON_GetObjectItem(rem, "battery_size")), "battery_size null");
     cJSON_Delete(o);
     free(j);
+
+    /* "inverting" (drawing from the bank) is INVERT or SEARCH only: the
+     * daemon's Discharge counts an inverter's DC power only then. */
+    {
+        static const struct { const char *mode; int inverting; } k[] = {
+            { "40", 1 }, { "80", 1 }, { "00", 0 }, { "08", 0 }, { "02", 0 }, { "20", 0 },
+        };
+        size_t i;
+
+        for (i = 0; i < sizeof(k) / sizeof(k[0]); i++)
+        {
+            char pkt[64];
+
+            snprintf(pkt, sizeof(pkt), "%s%s", k[i].mode, INV48 + 2);
+            rig_init(&r);
+            s.n = 0;
+            put(&s, pkt); put(&s, REM_A0);
+            feed(&r, &s, 0);
+            j = mag_reading_json(&r.s, &r.f.st, NULL, NULL, 2.0);
+            o = j ? cJSON_Parse(j) : NULL;
+            CHECK(o && cJSON_IsBool(cJSON_GetObjectItem(o, "inverting")) &&
+                  cJSON_IsTrue(cJSON_GetObjectItem(o, "inverting")) == k[i].inverting,
+                  "inverting follows the mode");
+            cJSON_Delete(o);
+            free(j);
+        }
+    }
 }
 
 static void test_names(void)

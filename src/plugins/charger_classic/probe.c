@@ -319,7 +319,7 @@ static int default_src_ipv4(char *out, size_t outsz)
     struct sockaddr_in a, l;
     socklen_t ln = (socklen_t)sizeof(l);
 
-    fd = socket(AF_INET, SOCK_DGRAM, 0);
+    fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
     if (fd < 0)
         return -1;
     memset(&a, 0, sizeof(a));

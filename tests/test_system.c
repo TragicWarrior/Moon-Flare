@@ -65,9 +65,9 @@ int main(void)
     mf_system_add_battery_limit(&t, true, true, 200.0 * 53.0);
     mf_system_add_battery(&t, false, true, 53.0, -5.0, 50.0, -1.0, 0.0, 0, 0);
     mf_system_add_battery_limit(&t, false, true, 100.0 * 53.0);
-    mf_system_add_inverter(&t, true, true, 4400.0);
-    mf_system_add_inverter(&t, true, true, 4400.0);
-    mf_system_add_inverter(&t, false, true, 4000.0);
+    mf_system_add_inverter(&t, true, true, 4400.0, -1.0);
+    mf_system_add_inverter(&t, true, true, 4400.0, -1.0);
+    mf_system_add_inverter(&t, false, true, 4000.0, -1.0);
     mf_system_finish(&t);
     CHECK(mf_system_battery_limit_known(&t) && near(t.battery_limit_w, 10600.0),
           "battery limit from the counted pack");
@@ -79,7 +79,7 @@ int main(void)
     mf_system_add_battery_limit(&t, true, true, 200.0 * 53.0);
     mf_system_add_battery(&t, true, true, 53.0, -5.0, 50.0, -1.0, 0.0, 0, 0);
     mf_system_add_battery_limit(&t, true, true, 0.0);   /* doesn't say */
-    mf_system_add_inverter(&t, true, true, 0.0);
+    mf_system_add_inverter(&t, true, true, 0.0, -1.0);
     mf_system_finish(&t);
     CHECK(!mf_system_battery_limit_known(&t), "one pack without a limit: unknown");
     CHECK(!mf_system_inverter_rated_known(&t), "an unrated inverter: unknown");
@@ -87,6 +87,38 @@ int main(void)
     mf_system_finish(&t);
     CHECK(!mf_system_battery_limit_known(&t) && !mf_system_inverter_rated_known(&t),
           "nothing counted: unknown");
+
+    /* Discharge: the counted inverters' output when every one reports it
+     * (a phantom counts like any inverter), replacing the packs' figure;
+     * otherwise the packs. */
+    mf_system_init(&t, 3500.0, 3000.0);
+    mf_system_add_battery(&t, true, true, 52.0, -10.0, 80.0, -1.0, 0.0, 0, 0);
+    mf_system_add_inverter(&t, true, true, 4400.0, 1205.2);   /* the master */
+    mf_system_add_inverter(&t, true, true, 4400.0, 1205.2);   /* its phantom */
+    mf_system_add_inverter(&t, false, true, 4400.0, 900.0);   /* inactive */
+    mf_system_finish(&t);
+    CHECK(t.discharge_from_inverters && near(t.discharge_w, 2410.4),
+          "discharge: the counted inverters' output, phantom included");
+    CHECK(near(t.battery_discharge_w, 520.0), "discharge: the packs' figure kept");
+    mf_system_init(&t, 3500.0, 3000.0);
+    mf_system_add_battery(&t, true, true, 52.0, -10.0, 80.0, -1.0, 0.0, 0, 0);
+    mf_system_add_inverter(&t, true, true, 4400.0, 0.0);      /* charging */
+    mf_system_finish(&t);
+    CHECK(t.discharge_from_inverters && near(t.discharge_w, 0.0),
+          "discharge: an inverter that isn't inverting draws nothing");
+    mf_system_init(&t, 3500.0, 3000.0);
+    mf_system_add_battery(&t, true, true, 52.0, -10.0, 80.0, -1.0, 0.0, 0, 0);
+    mf_system_add_inverter(&t, true, true, 4400.0, 1205.2);
+    mf_system_add_inverter(&t, true, true, 4400.0, -1.0);     /* doesn't say */
+    mf_system_finish(&t);
+    CHECK(!t.discharge_from_inverters && near(t.discharge_w, 520.0),
+          "discharge: an inverter without an output figure: the packs");
+    mf_system_init(&t, 3500.0, 3000.0);
+    mf_system_add_battery(&t, true, true, 52.0, -10.0, 80.0, -1.0, 0.0, 0, 0);
+    mf_system_add_inverter(&t, true, false, 4400.0, 1205.2);  /* offline */
+    mf_system_finish(&t);
+    CHECK(!t.discharge_from_inverters && near(t.discharge_w, 520.0),
+          "discharge: no counted inverter: the packs");
 
     /* The voltage check (JK only, for now): at rest, a counter >20 points
      * off the LFP curve loses; under load the BMS stands. */

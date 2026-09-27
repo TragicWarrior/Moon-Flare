@@ -371,6 +371,9 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
             "dc_voltage_v", "dc_current_a", "dc_power_w", "ac_out_v", "ac_out_a"
         };
         cJSON *mt = str_or_null(data, "mode_text");
+        cJSON *pw = num_or_null(data, "dc_power_w");
+        cJSON *inv = cJSON_GetObjectItemCaseSensitive(data, "inverting");
+        double out = -1.0;              /* unknown: Discharge uses the packs */
         size_t i;
 
         if (rw)
@@ -385,7 +388,16 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
         }
         if (mt)
             cJSON_AddStringToObject(row, "mode_text", mt->valuestring);
-        mf_system_add_inverter(&ctx->sys, d->active, d->online, num_or(rw, 0.0));
+        /* Its output for Discharge: what it draws from the bank while it
+           inverts.  Charging, or idle, it draws nothing.  Only the mode
+           tells them apart: a charging Magnum's DC current reads positive
+           too (38 A in BULK at batteryman). */
+        if (pw && cJSON_IsBool(inv))
+        {
+            out = cJSON_IsTrue(inv) && pw->valuedouble > 0.0 ? pw->valuedouble : 0.0;
+            cJSON_AddBoolToObject(row, "inverting", cJSON_IsTrue(inv));
+        }
+        mf_system_add_inverter(&ctx->sys, d->active, d->online, num_or(rw, 0.0), out);
         cJSON_AddItemToArray(inverters, row);
     }
     else if (strcmp(d->kind, "service") == 0 ||
@@ -483,6 +495,14 @@ static cJSON *system_json(const mf_system_totals_t *t)
     cJSON_AddNumberToObject(o, "charge_w", t->charge_w);
     cJSON_AddNumberToObject(o, "discharge_w", t->discharge_w);
     cJSON_AddNumberToObject(o, "discharge_max_w", t->discharge_max_w);
+    /* Where Discharge came from, and both figures it could be. */
+    cJSON_AddStringToObject(o, "discharge_source",
+                            t->discharge_from_inverters ? "inverters" : "batteries");
+    cJSON_AddNumberToObject(o, "battery_discharge_w", t->battery_discharge_w);
+    if (mf_system_inverter_output_known(t))
+        cJSON_AddNumberToObject(o, "inverter_output_w", t->inverter_output_w);
+    else
+        cJSON_AddNullToObject(o, "inverter_output_w");
     cJSON_AddNumberToObject(o, "chargers_counted", t->chargers_counted);
     cJSON_AddNumberToObject(o, "chargers_total", t->chargers_total);
     cJSON_AddNumberToObject(o, "batteries_counted", t->batteries_counted);

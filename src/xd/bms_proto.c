@@ -78,7 +78,8 @@ static int serial_open_internal(const char *path, int baud, bool nonblock)
         fprintf(stderr, "unsupported baud rate: %d\n", baud);
         return -1;
     }
-    int flags = O_RDWR | O_NOCTTY;
+    /* Close-on-exec: a helper the daemon starts must not inherit the port. */
+    int flags = O_RDWR | O_NOCTTY | O_CLOEXEC;
     if (nonblock) flags |= O_NONBLOCK;
     int fd = open(path, flags);
     if (fd < 0)

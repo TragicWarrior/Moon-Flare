@@ -5,6 +5,39 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-09-26
+
+### Changed
+
+- The system's Discharge is what the counted inverters draw from the bank:
+  each one's DC watts while it inverts, and 0 while it charges or idles.
+  Phantom inverters count like any other. A Magnum's DC current reads
+  positive while it charges too (38 A in BULK at batteryman), so the mode
+  decides. This measures the load better than the packs' currents
+  (batteryman's second XD pack is a phantom). It
+  replaces the packs' figure, never adds to it. When no inverter is
+  counted, or one doesn't report its output, Discharge is the packs'
+  discharge as before. A setting to choose is planned.
+
+### Added
+
+- `/api/v1/status` `system.discharge_source` (`"inverters"` or
+  `"batteries"`), `system.inverter_output_w` (null unless every counted
+  inverter reports it) and `system.battery_discharge_w`. Inverter rows
+  carry `inverting`. `moonflare-cli --status` marks inverter-based
+  Discharge, and the MCP `status` tool describes the fields.
+- The Magnum reading has `inverting`: true in INVERT or SEARCH mode.
+
+### Fixed
+
+- `mf_gatt`, the JK plugin's BLE helper, held the XD's `/dev/ttyUSB0`: the
+  XD opened its port without close-on-exec, so the helper inherited it,
+  and a helper outliving a daemon restart would keep the port busy. The
+  XD now opens its port close-on-exec, and the helper is started with
+  every descriptor above stderr closed, so none of the daemon's (sockets,
+  libcurl's pipes) goes with it either. The Classic's discovery socket is
+  close-on-exec too.
+
 ## [0.12.0] - 2026-09-26
 
 ### Added
