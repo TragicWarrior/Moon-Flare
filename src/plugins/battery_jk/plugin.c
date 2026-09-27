@@ -4,6 +4,7 @@
  */
 
 #include "jk_proto.h"
+#include "mf_fd.h"
 #include "mf_plugin.h"
 
 #include <errno.h>
@@ -133,6 +134,7 @@ static int helper_spawn(jk_ctx_t *c)
     helper_row_t *h = helper_row(c->adapter);
     const char *bin = c->gatt_bin[0] ? c->gatt_bin : getenv("MF_GATT_BIN");
     pid_t pid;
+    int fd_limit;
     if (!h)
         return -1;
     if (h->st == H_STARTING)
@@ -146,11 +148,15 @@ static int helper_spawn(jk_ctx_t *c)
         return 0;
     if (!bin || !bin[0])
         bin = MF_GATT_BIN;
+    fd_limit = mf_fd_limit();
     pid = fork();
     if (pid < 0)
         return -1;
     if (pid == 0)
     {
+        /* Nothing of the daemon's (a serial port, a socket) goes with it:
+           a helper outliving a restart would keep the port busy. */
+        mf_close_from(3, fd_limit);
         execl(bin, bin, "--adapter", h->adapter, (char *)NULL);
         _exit(127);
     }

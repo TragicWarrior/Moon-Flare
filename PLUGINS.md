@@ -88,7 +88,7 @@ The kind decides where a module appears on the dashboard, and which reading keys
 | --- | --- | --- |
 | `battery` | Batteries frame, pack view, system totals | `pack_voltage_v`, `current_a` (negative while discharging), `soc_pct`, `full_capacity_ah`, `remaining_capacity_ah`, `cell_count`; optionally `max_discharge_a` (or `max_discharge_w`), what the pack can deliver, for `system.battery_limit_w` |
 | `charger` | Chargers frame, charger view, the Input meter | `battery_voltage_v`, `charging_watts`, `kwh_today`, `charge_stage` |
-| `inverter` | Inverters frame (a list for now) | optionally `rated_w`, the continuous rating, for `system.inverter_rated_w` |
+| `inverter` | Inverters frame, inverter view | `dc_voltage_v`, `dc_current_a`, `dc_power_w`, `ac_out_v`, `ac_out_a`, `mode_text` for its row; `dc_power_w` and `inverting` (true while it draws from the bank) for the system's Discharge; optionally `rated_w`, the continuous rating, for `system.inverter_rated_w` |
 | `service` | Services frame; the whole reading is passed through as `data` | the Info panel shows a `weather` object (see [Readings](#readings)) |
 | `actuator` | Actuators frame; the whole reading is passed through as `data` | nothing yet |
 

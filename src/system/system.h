@@ -20,7 +20,12 @@ int mf_soc_voltage_check(const char *driver);
 /* System-wide totals over the devices marked active. A device counts only
  * when it is both active and online. Battery power is signed per pack
  * (current_a < 0 = discharging); charge and discharge are summed apart so
- * one pack charging another does not cancel out. */
+ * one pack charging another does not cancel out.
+ *
+ * Discharge is the counted inverters' output when every one of them
+ * reports it (phantoms included): what the inverters draw from the bank
+ * measures the load better than the packs' currents.  Otherwise it is the
+ * packs' discharge. */
 typedef struct {
     int    chargers_total;
     int    chargers_counted;
@@ -32,8 +37,12 @@ typedef struct {
     double stored_wh;
     double soc_pct;           /* -1 when no counted pack reports SOC */
     double charge_w;
-    double discharge_w;
+    double discharge_w;              /* set by mf_system_finish() */
     double discharge_max_w;
+    double battery_discharge_w;      /* the counted packs' discharge */
+    double inverter_output_w;        /* the counted inverters' output */
+    int    inverter_output_n;
+    int    discharge_from_inverters; /* discharge_w is inverter_output_w */
     /* What the counted packs can deliver (their maximum discharge current
      * times voltage) and what the counted inverters are rated for, summed:
      * known only when every one of them reports it (see *_known()). */
@@ -64,11 +73,13 @@ void mf_system_add_battery(mf_system_totals_t *t, bool active, bool online,
  * after mf_system_add_battery() with the same active/online. */
 void mf_system_add_battery_limit(mf_system_totals_t *t, bool active,
                                  bool online, double max_discharge_w);
-/* rated_w <= 0 means unknown. */
+/* rated_w <= 0 means unknown.  output_w is the power it draws from the
+ * bank while inverting (0 when it isn't); < 0 means unknown. */
 void mf_system_add_inverter(mf_system_totals_t *t, bool active, bool online,
-                            double rated_w);
+                            double rated_w, double output_w);
 int  mf_system_battery_limit_known(const mf_system_totals_t *t);
 int  mf_system_inverter_rated_known(const mf_system_totals_t *t);
+int  mf_system_inverter_output_known(const mf_system_totals_t *t);
 void mf_system_finish(mf_system_totals_t *t);
 
 #endif

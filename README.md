@@ -76,7 +76,9 @@ The daemon owns its working config at `/var/lib/moonflare/moonflared.json` (`$ST
 
 ## System totals
 
-The dashboard's System panel (and `moonflare-cli --status`, and the MCP `status` tool) shows site-wide Input, Capacity and Discharge. Only modules marked **active** count. A module that reports readings but isn't wired into the system (a pack on the bench, say) can stay enabled but inactive: select it on the dashboard and press **Space**, or `PUT /api/v1/devices/{id}/settings` with `{"active": false}`. The flag persists across restarts. The full scale of the Input meter (and of Discharge for the CLI and MCP) comes from `moonflared.json`:
+The dashboard's System panel (and `moonflare-cli --status`, and the MCP `status` tool) shows site-wide Input, Capacity and Discharge. Only modules marked **active** count. A module that reports readings but isn't wired into the system (a pack on the bench, say) can stay enabled but inactive: select it on the dashboard and press **Space**, or `PUT /api/v1/devices/{id}/settings` with `{"active": false}`. The flag persists across restarts. **Discharge** is what the counted inverters draw from the bank: each one's DC watts while it inverts, and 0 while it charges or idles. Phantom inverters count like any other. This measures the load better than the packs' currents, especially with phantom packs. When no inverter is counted, or one of them doesn't report its output, Discharge falls back to the packs' discharge. `/api/v1/status` says which in `system.discharge_source` (`"inverters"` or `"batteries"`) and gives both figures, `system.inverter_output_w` and `system.battery_discharge_w`; `moonflare-cli --status` marks the inverter case. A setting to choose between them is planned.
+
+The full scale of the Input meter (and of Discharge for the CLI and MCP) comes from `moonflared.json`:
 
 ```json
 "system": { "input_max_w": 3500, "discharge_max_w": 3000 }
