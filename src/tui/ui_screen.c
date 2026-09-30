@@ -216,6 +216,10 @@ void mf_ui_resize(void)
     mf_dash_on_resize();
     mf_pack_on_resize();
     mf_menubar_on_resize();
+    /* The axis width follows the terminal. Ask again so the new bars
+     * are filled from history instead of padded empty. */
+    if (mf_pack_visible())
+        mf_ui_request_history(mf_pack_get_device_id());
     mf_ui_refresh();
 }
 
@@ -2018,10 +2022,37 @@ void mf_ui_open_device_view(int idx)
     mf_ui_refresh();
 }
 
+/* Bars the chart draws at the current zoom. Same count the request asks
+ * the daemon for, so each returned average is one bar. */
+static int history_bars(void)
+{
+    int cells = mf_pack_graph_bar_width();
+    int n_bars;
+
+    if (cells < 1)
+        cells = 1;
+    n_bars = (mf_ui_cols() - 12) / cells;
+    if (n_bars < 8)
+        n_bars = 8;
+    if (n_bars > 512)
+        n_bars = 512;
+    return n_bars;
+}
+
 void mf_ui_request_history(const char *id)
 {
     char path[192];
-    snprintf(path, sizeof(path), "/api/v1/devices/%s/history", id);
+    int step;
+    int n;
+
+    if (!id || !id[0])
+        return;
+    step = mf_pack_get_graph_interval() * 60;
+    if (step < 1)
+        step = 60;
+    n = history_bars();
+    snprintf(path, sizeof(path),
+             "/api/v1/devices/%s/history?step=%d&n=%d", id, step, n);
     (void)mf_http_cli_get(&g_cli, path);
 }
 
@@ -2093,16 +2124,9 @@ void mf_ui_handle_history(void)
     interval_s = (double)mf_pack_get_graph_interval() * 60.0;
     t_end = ts[n - 1];
     {
-        int cells = mf_pack_graph_bar_width();
         double last_start;
 
-        if (cells < 1)
-            cells = 1;
-        n_bars = (mf_ui_cols() - 12) / cells;
-        if (n_bars < 8)
-            n_bars = 8;
-        if (n_bars > 512)
-            n_bars = 512;
+        n_bars = history_bars();
         last_start = (double)((long)(t_end / interval_s)) * interval_s;
         t_start = last_start - (double)(n_bars - 1) * interval_s;
         t_end = last_start + interval_s;
@@ -2663,13 +2687,13 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
             if (mf_pack_visible() && (key == '+' || key == '='))
             {
                 if (mf_pack_graph_zoom(1))
-                    mf_ui_handle_history();
+                    mf_ui_request_history(mf_pack_get_device_id());
                 continue;
             }
             if (mf_pack_visible() && (key == '-' || key == '_'))
             {
                 if (mf_pack_graph_zoom(0))
-                    mf_ui_handle_history();
+                    mf_ui_request_history(mf_pack_get_device_id());
                 continue;
             }
             if (mf_pack_visible() && mf_pack_kind() == MF_VIEW_PACK && mf_pack_has_switch())

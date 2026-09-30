@@ -856,11 +856,59 @@ static int handle_device_delete(const char *id, mf_rest_response_t *resp)
     return 0;
 }
 
-static int handle_device_history(const char *id, mf_rest_response_t *resp)
+/* One history reply stays inside the 64 KB HTTP body. 800 one-minute
+ * rows are about 13 h; a graph asks for one row per bar instead. */
+#define MF_HISTORY_HTTP_MAX 800
+
+/* Positive integer for key in "step=1800&n=35". 0 absent, 1 stored, -1 bad. */
+static int query_pos_int(const char *q, const char *key, int *out)
 {
-    double values[800], ts[800];
+    size_t klen;
+    const char *p;
+
+    if (!q || !q[0] || !key)
+        return 0;
+    klen = strlen(key);
+    for (p = q; *p; )
+    {
+        if (strncmp(p, key, klen) == 0 && p[klen] == '=')
+        {
+            const char *s = p + klen + 1;
+            long v = 0;
+
+            if (*s < '0' || *s > '9')
+                return -1;
+            while (*s >= '0' && *s <= '9')
+            {
+                v = v * 10 + (*s - '0');
+                if (v > 2000000000L)
+                    return -1;
+                s++;
+            }
+            if (*s != '\0' && *s != '&')
+                return -1;
+            if (v < 1)
+                return -1;
+            *out = (int)v;
+            return 1;
+        }
+        p = strchr(p, '&');
+        if (!p)
+            break;
+        p++;
+    }
+    return 0;
+}
+
+static int handle_device_history(const char *id, const mf_rest_request_t *req,
+                                 mf_rest_response_t *resp)
+{
+    double values[MF_HISTORY_HTTP_MAX], ts[MF_HISTORY_HTTP_MAX];
     cJSON *root, *arr;
     int n, i;
+    int step_s = 60;
+    int max = MF_HISTORY_HTTP_MAX;
+    const char *q = req ? req->query : NULL;
     /* The column the module's capture spec names for its graph. */
     const char *column = mf_history_graph_column(id);
 
@@ -869,10 +917,20 @@ static int handle_device_history(const char *id, mf_rest_response_t *resp)
         set_error(resp, 404, "no history");
         return 0;
     }
+    if (query_pos_int(q, "step", &step_s) < 0 ||
+        query_pos_int(q, "n", &max) < 0 ||
+        step_s > 7 * 86400)
+    {
+        set_error(resp, 400, "bad history query");
+        return 0;
+    }
+    if (max > MF_HISTORY_HTTP_MAX)
+        max = MF_HISTORY_HTTP_MAX;
 
-    /* 60 s bins × 800 rows ≈ 13 h, still fits HTTP 64k. */
-    n = mf_history_query_ts_step(id, column, 60, ts, values,
-                                  (int)(sizeof(values) / sizeof(values[0])));
+    /* Default (no query) is 60 s × 800 rows. A graph passes its bar
+     * width as step and its bar count as n, so the axis is filled from
+     * the file instead of the newest 13 hours of minute bins. */
+    n = mf_history_query_ts_step(id, column, step_s, ts, values, max);
     if (n < 0)
     {
         set_error(resp, 404, "no history");
@@ -1383,7 +1441,7 @@ int mf_rest_dispatch(const mf_rest_request_t *req, mf_rest_response_t *resp)
             if (strcmp(rest, "history") == 0)
             {
                 if (method_is(req, "GET"))
-                    return handle_device_history(idbuf, resp);
+                    return handle_device_history(idbuf, req, resp);
                 set_error(resp, 405, "method not allowed");
                 return 0;
             }

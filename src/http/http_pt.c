@@ -54,6 +54,7 @@ static void conn_reset_req(mf_http_conn_t *c)
     c->req_close = false;
     c->method[0] = '\0';
     c->path[0] = '\0';
+    c->query[0] = '\0';
     c->if_match[0] = '\0';
     c->state = HTTP_RECV_HEADERS;
     c->select_mask = MF_IO_WANT_READ;
@@ -199,11 +200,18 @@ static void copy_token(char *dst, size_t dstsz, const char *src, size_t len)
     dst[n] = '\0';
 }
 
-static void strip_query(char *path)
+/* Cut "?..." off path into query. query is empty when there is none. */
+static void split_query(char *path, char *query, size_t qcap)
 {
     char *q = strchr(path, '?');
-    if (q)
-        *q = '\0';
+
+    if (qcap > 0)
+        query[0] = '\0';
+    if (!q)
+        return;
+    *q = '\0';
+    if (qcap > 1)
+        snprintf(query, qcap, "%s", q + 1);
 }
 
 static void handle_request(mf_http_t *h, mf_http_conn_t *c)
@@ -239,6 +247,7 @@ static void handle_request(mf_http_t *h, mf_http_conn_t *c)
         memset(&resp, 0, sizeof(resp));
         req.method = c->method;
         req.path = c->path;
+        req.query = c->query[0] ? c->query : NULL;
         req.if_match = c->if_match[0] ? c->if_match : NULL;
         req.peer = c->peer[0] ? c->peer : NULL;
         if (c->content_length > 0 &&
@@ -299,7 +308,7 @@ static int parse_headers(mf_http_t *h, mf_http_conn_t *c)
     c->minor = minor;
     copy_token(c->method, sizeof(c->method), method, method_len);
     copy_token(c->path, sizeof(c->path), path, path_len);
-    strip_query(c->path);
+    split_query(c->path, c->query, sizeof(c->query));
 
     c->content_length = 0;
     c->req_close = (c->minor < 1);
