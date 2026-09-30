@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "device.h"
+#include "history.h"
 #include "rest.h"
 #include <cJSON.h>
 #include <stdarg.h>
@@ -826,6 +827,122 @@ static void test_add_remove_persist(void)
     check(st && !strstr(st, "added-xd"), "remove saved to state config");
 }
 
+static int hist_ends(const char *body, int *count, double *first, double *last)
+{
+    cJSON *root = cJSON_Parse(body);
+    cJSON *ts;
+    cJSON *a;
+    cJSON *b;
+    int n;
+
+    if (!root)
+        return -1;
+    ts = cJSON_GetObjectItemCaseSensitive(root, "ts");
+    if (!cJSON_IsArray(ts))
+    {
+        cJSON_Delete(root);
+        return -1;
+    }
+    n = cJSON_GetArraySize(ts);
+    *count = n;
+    if (n > 0)
+    {
+        a = cJSON_GetArrayItem(ts, 0);
+        b = cJSON_GetArrayItem(ts, n - 1);
+        *first = a && cJSON_IsNumber(a) ? a->valuedouble : -1.0;
+        *last = b && cJSON_IsNumber(b) ? b->valuedouble : -1.0;
+    }
+    cJSON_Delete(root);
+    return 0;
+}
+
+/* 1000 one-minute samples span longer than the default 800-row reply.
+ * step=1800 asks for the half-hour buckets the graph actually draws. */
+static void test_history_span(void)
+{
+    const char *spec =
+        "{\"interval_s\":10,\"min_s\":1,\"retention_days\":365,\"graph\":\"soc\","
+        "\"columns\":{\"soc\":\"soc_pct\"}}";
+    const char *uuid = "11111111-0000-4000-8000-000000000099";
+    const double base = 1700002800.0;   /* aligned to a 30-minute boundary */
+    char dir[] = "/tmp/mf-routes-hist-XXXXXX";
+    char path[160];
+    mf_rest_request_t req;
+    mf_rest_response_t resp;
+    int i, n = 0;
+    double first = 0, last = 0;
+
+    printf("13. history query covers the graph window\n");
+
+    if (!mkdtemp(dir))
+    {
+        check(0, "history temp dir");
+        return;
+    }
+    check(mf_history_open(dir) == 0, "history open");
+    check(mf_history_register(uuid, "XD", "battery", "xd", spec) == 0,
+          "history register");
+    for (i = 0; i < 1000; i++)
+    {
+        mf_sample_t s;
+
+        memset(&s, 0, sizeof(s));
+        snprintf(s.uuid, sizeof(s.uuid), "%s", uuid);
+        s.ts = base + (double)i * 60.0;
+        s.online = 1;
+        s.capture_interval_s = 1.0;
+        snprintf(s.reading, sizeof(s.reading), "{\"soc_pct\":90}");
+        mf_history_enqueue(&s);
+    }
+    check(mf_history_flush_slice(1000) == 1000, "flush 1000 minutes");
+
+    snprintf(path, sizeof(path), "/api/v1/devices/%s/history", uuid);
+    memset(&req, 0, sizeof(req));
+    req.method = "GET";
+    req.path = path;
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 200,
+          "default history 200");
+    check(hist_ends(resp.body, &n, &first, &last) == 0, "default parses");
+    check(n == 800, "default is the newest 800 minutes");
+    check(first == base + 200.0 * 60.0, "default drops the oldest 200 minutes");
+    check(last == base + 999.0 * 60.0, "default ends at the newest minute");
+
+    req.query = "step=1800&n=40";
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 200,
+          "step history 200");
+    check(hist_ends(resp.body, &n, &first, &last) == 0, "step parses");
+    check(n == 34, "30-minute bins cover all 1000 minutes");
+    check(first == base, "oldest half-hour is the first sample");
+    check(last == base + 33.0 * 1800.0, "newest half-hour holds the last sample");
+
+    req.query = "step=1800&n=2";
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 200, "n=2 200");
+    check(hist_ends(resp.body, &n, &first, &last) == 0 && n == 2 &&
+          first == base + 32.0 * 1800.0 && last == base + 33.0 * 1800.0,
+          "n caps the rows and keeps the newest");
+
+    req.query = "n=5000";
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 200, "n clamp 200");
+    check(hist_ends(resp.body, &n, &first, &last) == 0 && n == 800,
+          "n above 800 is clamped, not a bigger body");
+
+    req.query = "step=0";
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 400, "step=0 is 400");
+    req.query = "step=abc";
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 400, "step=abc is 400");
+    req.query = "n=0";
+    memset(&resp, 0, sizeof(resp));
+    check(mf_rest_dispatch(&req, &resp) == 0 && resp.status == 400, "n=0 is 400");
+
+    mf_history_close();
+}
+
 int main(void)
 {
     srand((unsigned)time(NULL));
@@ -856,6 +973,7 @@ int main(void)
     test_active();
     test_add_remove_persist();
     test_config_apply();
+    test_history_span();
 
     printf("\n");
     if (g_fail > 0)

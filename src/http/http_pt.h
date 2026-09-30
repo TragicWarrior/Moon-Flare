@@ -61,6 +61,7 @@ typedef struct mf_http_conn {
 
     char     method[16];
     char     path[128];
+    char     query[96];     /* after '?'; empty when the request has none */
     char     peer[64];
     char     if_match[64];
 

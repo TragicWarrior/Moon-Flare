@@ -10,6 +10,7 @@
 typedef struct mf_rest_request {
     const char *method;     /* "GET", "POST", "PUT", "DELETE" */
     const char *path;       /* "/api/v1/..." ; query stripped */
+    const char *query;      /* "step=1800&n=35", or NULL; no leading '?' */
     const char *body;       /* may be NULL */
     size_t      body_len;
     const char *if_match;   /* If-Match header, nullable */
