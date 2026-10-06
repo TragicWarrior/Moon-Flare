@@ -138,6 +138,11 @@ int mag_model_known(int model)
     return LOOKUP(k_models, model, NULL) != NULL;
 }
 
+int mag_stackmode_known(int stackmode)
+{
+    return LOOKUP(k_stack_modes, stackmode, NULL) != NULL;
+}
+
 int mag_multiplier(int model)
 {
     if (model <= 50)

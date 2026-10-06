@@ -17,9 +17,16 @@
  * answers with 21 bytes whose last byte names the peripheral it polls, and
  * at most one peripheral replies (fixed length by its first byte).
  *
- *   - Inverter packets are the anchor: 21 bytes ending 0x00, a known model,
- *     plausible frequency, temperatures and DC volts; once one is seen, the
- *     model and revision must match exactly (as in pymagnum).
+ *   - Inverter packets are the anchor: 21 bytes ending 0x00, a known model
+ *     and stack mode, plausible frequency, temperatures and DC volts; once
+ *     the inverter is known, the model and revision must match exactly (as
+ *     in pymagnum).
+ *   - Those checks alone can pass on a window that is not a packet: read at
+ *     batteryman, three bytes early on a stack slave after a REMOTE_00 (its
+ *     0 A AC out for the terminator, the battery's 25 C for the model).  So
+ *     the inverter is only known once a second packet with the same model
+ *     and revision arrives exactly in step, one cycle later; until then its
+ *     packets are held, then passed on in order (or counted as unknown).
  *   - The 21 bytes after an inverter packet are the remote packet (its type
  *     byte validated); then an optional reply; then the next inverter.
  *   - Anything that does not fit is skipped and counted, and the framer
@@ -38,6 +45,8 @@
 #define MAG_INV_LEN      21
 #define MAG_REMOTE_LEN   21
 #define MAG_IDLE_S       0.060
+/* Give up on an unconfirmed inverter packet after this long without a byte. */
+#define MAG_PROBE_S      1.0
 /* Relearn the inverter's model/revision after this many bytes without one
  * (a firmware update, or the tap moved to another inverter). */
 #define MAG_RELEARN_BYTES 4096
@@ -70,6 +79,16 @@ typedef struct {
     uint64_t ff_bytes;                  /* 0xFF bytes: crossed A/B shows many */
 } mag_frame_stats_t;
 
+/* Packets held while the inverter is not yet known: its packet, the
+ * remote's and one reply. */
+#define MAG_HELD_MAX     4
+
+typedef struct {
+    uint8_t  type;                      /* mag_pkt_t */
+    uint8_t  len;
+    uint8_t  b[MAG_INV_LEN];
+} mag_held_t;
+
 typedef struct {
     uint8_t  buf[MAG_BUF_SIZE];
     size_t   len;
@@ -78,6 +97,11 @@ typedef struct {
     int      have_id;                   /* learned model/revision */
     uint8_t  inv_model;
     uint8_t  inv_revision;
+    int      probing;                   /* one candidate seen, not confirmed */
+    uint8_t  probe_model;
+    uint8_t  probe_revision;
+    mag_held_t held[MAG_HELD_MAX];
+    int      nheld;
     uint64_t since_inv;                 /* bytes since the last inverter */
     double   last_rx;
     mag_frame_stats_t st;

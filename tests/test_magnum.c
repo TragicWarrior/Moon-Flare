@@ -277,6 +277,7 @@ static void test_garbage_and_resync(void)
     put_bytes(&s, junk, sizeof(junk));          /* start mid-stream */
     put(&s, REM_A0);                            /* a remote with no inverter */
     put(&s, INV48); put(&s, REM_A0); put(&s, AGS_A1);
+    put(&s, INV48); put(&s, REM_00);            /* in step: the inverter is known */
     put_bytes(&s, junk, sizeof(junk));          /* noise between cycles */
     put(&s, INV48); put(&s, REM_80); put(&s, BMK_81);
     /* a damaged inverter packet: byte 20 not 0x00 */
@@ -289,7 +290,7 @@ static void test_garbage_and_resync(void)
 
     rig_init(&r);
     feed(&r, &s, 5);
-    CHECK(r.f.st.packets[MAG_PKT_INVERTER] == 3, "three good inverter packets");
+    CHECK(r.f.st.packets[MAG_PKT_INVERTER] == 4, "four good inverter packets");
     CHECK(r.f.st.packets[MAG_PKT_AGS_A1] == 1 && r.f.st.packets[MAG_PKT_BMK_81] == 1 &&
           r.f.st.packets[MAG_PKT_RTR_91] == 1, "replies after resync");
     CHECK(r.f.st.unknown_bytes > 0 && r.f.st.resyncs >= 2, "garbage counted, resynced");
@@ -412,6 +413,167 @@ static void test_polarity_noise(void)
     CHECK(r.f.st.ff_bytes > 400 && r.f.st.unknown_bytes == 500, "all unknown, mostly 0xFF");
 }
 
+/* ---- read at batteryman, 2026-10-05: the stack slave's bus ------------ */
+
+static const char *SL_INV = "08000214000076B701013D19302573021200025800";
+static const char *SL_REM_00 = "00002889000F2A100079BE89001C13220000000000";
+static const char *SL_REM_80 = "00002889000F2A100079BE89001C13220000280080";
+static const char *SL_REM_A0 = "00002889000F2A100079BE89001C132214007300A0";
+static const char *SL_REM_11 = "00002889000F2A100079BE89001C14000000000011";
+static const char *SL_REM_A1 = "00002889000F2A100079BE89001C600090787878A1";
+static const char *SL_REM_D0 = "00002889000F2A100079BE89001C000000000000D0";
+static const char *SL_REM_C0 = "00002889000F2A100079BE89001C000000080000C0";
+
+/* The remote's seven polls, in the order it sends them. */
+static void slave_rotation(stream_t *s, const char *inv)
+{
+    static const char *const rem[7] = {
+        "00002889000F2A100079BE89001C13220000280080",
+        "00002889000F2A100079BE89001C132214007300A0",
+        "00002889000F2A100079BE89001C14000000000011",
+        "00002889000F2A100079BE89001C600090787878A1",
+        "00002889000F2A100079BE89001C000000000000D0",
+        "00002889000F2A100079BE89001C000000080000C0",
+        "00002889000F2A100079BE89001C13220000000000",
+    };
+    int i;
+
+    for (i = 0; i < 7; i++)
+    {
+        put(s, inv); put(s, "FF"); put(s, rem[i]);
+    }
+}
+
+/* A port opened just before a REMOTE_00 ends.  The 21 bytes starting three
+ * before the inverter's packet pass as one too: the REMOTE_00's zeros for
+ * mode, fault and DC volts, the slave's 0 A AC out for the terminator, the
+ * battery's 25 C for the model (an ME2512) and the stack mode for 53 Hz.
+ * Taken first, it became the inverter: every real packet was then refused
+ * and the reading was nonsense (0.8 V, 115 A AC out). */
+static void test_false_lock(void)
+{
+    static const size_t chunks[] = { 0, 1, 7, 22 };
+    stream_t s = { .n = 0 };
+    size_t i;
+
+    put(&s, SL_REM_00);                         /* start mid-stream */
+    slave_rotation(&s, SL_INV);
+    slave_rotation(&s, SL_INV);
+    for (i = 0; i < sizeof(chunks) / sizeof(chunks[0]); i++)
+    {
+        rig_t r;
+
+        rig_init(&r);
+        feed(&r, &s, chunks[i]);
+        CHECK(r.f.have_id && r.f.inv_model == 0x73 && r.f.inv_revision == 0x3D,
+              "false lock: the MS4448PAE is the inverter, not the window before it");
+        CHECK(r.f.st.packets[MAG_PKT_INVERTER] == 14 && r.f.st.packets[MAG_PKT_REMOTE] == 14,
+              "false lock: every cycle's packets");
+        CHECK(r.f.st.bad_packets == 0 && r.f.st.resyncs == 0 && r.f.st.unknown_bytes == 21,
+              "false lock: only the orphaned remote is unknown");
+        CHECK(r.s.inv.model == 0x73 && r.s.inv.stackmode == 2 &&
+              NEAR(r.s.inv.dc_voltage_v, 53.2) && NEAR(r.s.inv.ac_out_a, 0) &&
+              NEAR(r.s.inv.tfmr_temp_c, 48), "false lock: the slave's own reading");
+    }
+}
+
+/* The same with the transformer at 2 C, which is also a stack mode, so the
+ * window passes every check a single packet can be put to.  It is still not
+ * the inverter: the packet after it does not arrive in step. */
+static void test_false_lock_in_step(void)
+{
+    static const char *COLD = "08000214000076B701013D19022573021200025800";
+    stream_t s = { .n = 0 };
+    rig_t r;
+    uint8_t w[21];
+    mag_frame_t probe;
+    size_t i;
+
+    put(&s, SL_REM_00);
+    slave_rotation(&s, COLD);
+    slave_rotation(&s, COLD);
+    /* The premise: that window does pass as an inverter packet by itself. */
+    for (i = 0; i < 21; i++)
+        w[i] = s.b[18 + i];
+    mag_frame_init(&probe, NULL, NULL);
+    CHECK(mag_frame_is_inverter(&probe, w), "in step: the early window passes alone");
+
+    rig_init(&r);
+    feed(&r, &s, 0);
+    CHECK(r.f.have_id && r.f.inv_model == 0x73 && r.f.inv_revision == 0x3D,
+          "in step: the MS4448PAE is the inverter");
+    CHECK(r.s.inv.model == 0x73 && r.s.inv.stackmode == 2 && NEAR(r.s.inv.tfmr_temp_c, 2),
+          "in step: the slave's own reading");
+    /* The cycle the window was cut from is lost; the other 13 are not. */
+    CHECK(r.f.st.packets[MAG_PKT_INVERTER] == 13 && r.f.st.packets[MAG_PKT_REMOTE] == 13,
+          "in step: thirteen of fourteen cycles");
+    rig_init(&r);
+    feed(&r, &s, 1);
+    CHECK(r.f.inv_model == 0x73 && r.f.st.packets[MAG_PKT_INVERTER] == 13,
+          "in step: same fed a byte at a time");
+}
+
+/* Nothing is passed on until the inverter is known, then all of it is. */
+static void test_held_until_known(void)
+{
+    stream_t s = { .n = 0 };
+    rig_t r;
+
+    put(&s, INV48); put(&s, REM_A0); put(&s, AGS_A1);
+    rig_init(&r);
+    mag_frame_feed(&r.f, s.b, s.n, 1.0);
+    CHECK(r.ntypes == 0 && !r.s.inv.seen && r.f.st.packets[MAG_PKT_INVERTER] == 0,
+          "held: one cycle is not passed on");
+    mag_frame_feed(&r.f, s.b, MAG_INV_LEN, 1.1);    /* the next inverter packet */
+    CHECK(r.f.st.packets[MAG_PKT_INVERTER] == 2 && r.f.st.packets[MAG_PKT_REMOTE] == 1 &&
+          r.f.st.packets[MAG_PKT_AGS_A1] == 1 && r.f.st.unknown_bytes == 0,
+          "held: the second cycle releases the first");
+    CHECK(r.ntypes == 4 && r.types[0] == MAG_PKT_INVERTER && r.types[1] == MAG_PKT_REMOTE &&
+          r.types[2] == MAG_PKT_AGS_A1 && r.types[3] == MAG_PKT_INVERTER,
+          "held: in stream order");
+
+    /* A lone cycle on a bus that then goes quiet is given up on. */
+    rig_init(&r);
+    mag_frame_feed(&r.f, s.b, s.n, 1.0);
+    mag_frame_idle(&r.f, 1.5);
+    CHECK(r.f.st.unknown_bytes == 0, "held: still waiting after half a second");
+    mag_frame_idle(&r.f, 2.5);
+    CHECK(r.f.st.packets[MAG_PKT_INVERTER] == 0 && r.f.st.unknown_bytes == 21 + 21 + 6,
+          "held: counted as unknown once the bus is quiet");
+}
+
+/* The byte after the inverter's packet is 0xFF six times in seven and 0xFE
+ * the seventh (25 of 172 at batteryman).  Only 0xFF was dropped: an 0xFE
+ * went onto the front of the remote packet, whose own last byte was then
+ * left over (and an A1 there read as the start of an AGS reply). */
+static void test_trailing_fe(void)
+{
+    stream_t s = { .n = 0 };
+    rig_t r;
+
+    put(&s, SL_INV); put(&s, "FF"); put(&s, SL_REM_80);
+    put(&s, SL_INV); put(&s, "FE"); put(&s, SL_REM_A0);
+    put(&s, SL_INV); put(&s, "FE"); put(&s, SL_REM_A1);
+    put(&s, SL_INV); put(&s, "FE"); put(&s, SL_REM_11);
+    put(&s, SL_INV); put(&s, "FE");                 /* the remote is silent */
+    put(&s, SL_INV); put(&s, "FE"); put(&s, SL_REM_D0);
+    put(&s, SL_INV); put(&s, "FE"); put(&s, SL_REM_C0);
+    put(&s, SL_INV); put(&s, "FE"); put(&s, SL_REM_00);
+    rig_init(&r);
+    feed(&r, &s, 0);
+    CHECK(r.f.st.packets[MAG_PKT_INVERTER] == 8 && r.f.st.packets[MAG_PKT_REMOTE] == 7,
+          "trailing 0xFE: eight inverter and seven remote packets");
+    CHECK(r.f.st.packets[MAG_PKT_AGS_A1] == 0, "trailing 0xFE: no AGS reply made of an A1 poll");
+    CHECK(r.f.st.bad_packets == 0 && r.f.st.unknown_bytes == 0 && r.f.st.resyncs == 0,
+          "trailing 0xFE: nothing bad, skipped or resynced");
+    CHECK(r.s.rem.battery_size == 400 && NEAR(r.s.rem.absorb_v, 54.8) &&
+          NEAR(r.s.rem.revision, 4.2), "trailing 0xFE: the remote's fields line up");
+    rig_init(&r);
+    feed(&r, &s, 1);
+    CHECK(r.f.st.packets[MAG_PKT_REMOTE] == 7 && r.f.st.unknown_bytes == 0,
+          "trailing 0xFE: same fed a byte at a time");
+}
+
 /* ---- the reading ---------------------------------------------------- */
 
 static void test_reading_json(void)
@@ -460,6 +622,7 @@ static void test_reading_json(void)
     rig_init(&r);
     s.n = 0;
     put(&s, INV48); put(&s, REM_A0);
+    put(&s, INV48); put(&s, REM_A0);            /* a second cycle confirms it */
     feed(&r, &s, 0);
     j = mag_reading_json(&r.s, &r.f.st, NULL, NULL, 2.0);
     o = j ? cJSON_Parse(j) : NULL;
@@ -488,6 +651,7 @@ static void test_reading_json(void)
             snprintf(pkt, sizeof(pkt), "%s%s", k[i].mode, INV48 + 2);
             rig_init(&r);
             s.n = 0;
+            put(&s, pkt); put(&s, REM_A0);
             put(&s, pkt); put(&s, REM_A0);
             feed(&r, &s, 0);
             j = mag_reading_json(&r.s, &r.f.st, NULL, NULL, 2.0);
@@ -561,6 +725,10 @@ int main(void)
     test_standby_inverter();
     test_silent_remote();
     test_trailing_ff();
+    test_trailing_fe();
+    test_false_lock();
+    test_false_lock_in_step();
+    test_held_until_known();
     test_two_inverters();
     test_polarity_noise();
     test_reading_json();

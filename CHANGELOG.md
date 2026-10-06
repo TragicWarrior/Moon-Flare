@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.1] - 2026-10-05
+
+### Fixed
+
+- A Magnum tap no longer mistakes other bytes for the inverter. On a
+  parallel-stack slave, the 21 bytes starting three before its packet
+  could pass every check: the reading became an "ME2512" at 0.8 V and
+  never recovered. The inverter is now known only once a second packet
+  with the same model and revision arrives exactly one cycle later, so a
+  tap reports nothing for its first cycle (about 0.1 s).
+- The stray byte after an inverter's packet is dropped when it is 0xFE
+  as well as 0xFF. One cycle in seven it is 0xFE, which used to shift the
+  remote's packet by a byte and lose that cycle.
+
 ## [0.14.0] - 2026-09-29
 
 ### Fixed

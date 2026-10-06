@@ -213,6 +213,7 @@ const char *mag_model_text(int model);
  * not in pymagnum. */
 int  mag_model_rated_w(int model);
 const char *mag_stackmode_text(int stackmode);
+int mag_stackmode_known(int stackmode);
 const char *mag_ags_status_text(int status);
 const char *mag_bmk_fault_text(int fault);
 const char *mag_pt_mode_text(int mode);
