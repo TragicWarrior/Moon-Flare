@@ -105,17 +105,18 @@ static void fill_card(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
 
 static void fill_system(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1])
 {
-    static const char *const names[3] = { "Input", "Capacity", "Discharge" };
-    static const char *const bars[3] = {
+    static const char *const names[4] = { "Input", "Capacity", "Discharge", "Load" };
+    static const char *const bars[4] = {
         "########################       840 W / 3500 W       ................",
         "#########################################  77%  8.2 / 10.7 kWh  ....",
-        "#######.....................  120 W / 3000 W  ....................."
+        "#######.....................  120 W / 3000 W  .....................",
+        "##############..............  960 W / 8800 W  ....................."
     };
     int i;
 
-    /* No frame: three solid 1-row bars (fill '#', empty '.'), reading
+    /* No frame: four solid 1-row bars (fill '#', empty '.'), reading
      * inside, a blank row under each. */
-    for (i = 0; i < 3; i++)
+    for (i = 0; i < 4; i++)
     {
         put_str(grid, MF_CARD_Y + 1 + i * 2, 1, names[i]);
         put_str(grid, MF_CARD_Y + 1 + i * 2, 12, bars[i]);

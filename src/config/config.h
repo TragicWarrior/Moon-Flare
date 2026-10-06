@@ -131,6 +131,10 @@ typedef struct {
      * inverters are rated for) or "fixed" (discharge_scale_w). */
     char   discharge_scale[12];
     double discharge_scale_w;
+    /* What the Load meter shows: "inverters" (the inverters' AC output,
+     * falling back to "net" while one of them doesn't report it) or "net"
+     * (charger input plus the packs' discharge less their charge). */
+    char   load_source[12];
 } mf_tui_config_t;
 
 /* ---------- Combined config ---------- */

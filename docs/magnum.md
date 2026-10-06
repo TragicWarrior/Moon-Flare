@@ -106,7 +106,7 @@ Numbers are numbers, and units are key suffixes (`_v`, `_a`, `_w`, `_c`, `_h`, `
 | `ac_in_v`, `ac_in_a` | `VACin`, `AACin` | `ac_in_v` is peak-to-peak, not RMS (per pymagnum). |
 | `freq_hz` | `Hz` | |
 | `invled`, `chgled` | `invled`, `invled_text`, `chgled`, `chgled_text` | true/false. |
-| `inverting` | | Derived: true in INVERT or SEARCH mode, when the inverter draws from the bank. The daemon's Discharge counts `dc_power_w` only then. |
+| `inverting` | | Derived: true in INVERT or SEARCH mode, when the inverter draws from the bank. The daemon's `system.inverter_output_w` counts `dc_power_w` only then. |
 | `bat_temp_c`, `tfmr_temp_c`, `fet_temp_c` | `bat`, `tfmr`, `fet` | |
 | `model`, `model_text` | `model`, `model_text` | `115`, `"MS4448PAE"`. |
 | `stackmode`, `stackmode_text` | `stackmode`, `stackmode_text` | Byte 15: which inverter this tap hears. |
@@ -332,10 +332,9 @@ Done since the module was added:
 
 Still to do:
 
-- **Dashboard AC power.** AC output power on the row needs an `ac_out_w` key (`ac_out_v × ac_out_a`, apparent power).
+- **Dashboard AC power.** The status row now carries `ac_out_w` (`ac_out_v × ac_out_a`, apparent power) for the Load total; the dashboard's Inverters row doesn't show it yet.
 - **More in the view.** AGS settings, and the `diag` counters with a Refresh action.
 - **System totals.**
   - AC charging through the inverter, as a second input source next to the chargers: its DC power in a charge mode (BULK, ABSORB, FLOAT and so on).
-  - A setting to choose Discharge's source. Discharge is now the counted inverters' DC power while they invert (0 while charging), replacing the packs' figure rather than adding to it.
 - **MCP.** The `status` tool's description should name the inverter fields.
 - **Settings over REST.** `usb.*` changes in a settings PUT aren't saved to the config; this affects the XD module too.

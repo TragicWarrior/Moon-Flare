@@ -419,14 +419,20 @@ static void print_system(const cJSON *sys)
             sys_num(sys, "capacity_wh") / 1000.0);
     else
         printf("  Capacity   no data\n");
+    printf("  Discharge  %5.0f W of %.0f W   (charging %.0f W)\n",
+        sys_num(sys, "discharge_w"), sys_num(sys, "discharge_max_w"),
+        sys_num(sys, "charge_w"));
     {
-        /* Discharge is the inverters' output when they all report it. */
-        const cJSON *src = cJSON_GetObjectItemCaseSensitive(sys, "discharge_source");
+        /* What the site uses: the inverters' AC output when they all
+         * report it, else input + discharge - charge.  Absent from older
+         * daemons. */
+        const cJSON *load = cJSON_GetObjectItemCaseSensitive(sys, "load_w");
+        const cJSON *src = cJSON_GetObjectItemCaseSensitive(sys, "load_source");
         int inv = cJSON_IsString(src) && strcmp(src->valuestring, "inverters") == 0;
 
-        printf("  Discharge  %5.0f W of %.0f W   (%scharging %.0f W)\n",
-            sys_num(sys, "discharge_w"), sys_num(sys, "discharge_max_w"),
-            inv ? "inverters; " : "", sys_num(sys, "charge_w"));
+        if (cJSON_IsNumber(load))
+            printf("  Load       %5.0f W   (%s)\n", load->valuedouble,
+                inv ? "inverter output" : "input + discharge - charge");
     }
 }
 

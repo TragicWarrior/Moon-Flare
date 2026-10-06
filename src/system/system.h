@@ -22,10 +22,13 @@ int mf_soc_voltage_check(const char *driver);
  * (current_a < 0 = discharging); charge and discharge are summed apart so
  * one pack charging another does not cancel out.
  *
- * Discharge is the counted inverters' output when every one of them
- * reports it (phantoms included): what the inverters draw from the bank
- * measures the load better than the packs' currents.  Otherwise it is the
- * packs' discharge. */
+ * Discharge is what leaves the bank: the counted packs' discharge.
+ *
+ * Load is what the site draws, which the bank, the chargers or the grid
+ * may be feeding.  It is the counted inverters' AC output (volts times
+ * amps, so grid power passed through counts) when every one of them
+ * reports it, phantoms included.  Otherwise it is what must be leaving the
+ * DC side: charger input plus the packs' discharge less their charge. */
 typedef struct {
     int    chargers_total;
     int    chargers_counted;
@@ -40,9 +43,13 @@ typedef struct {
     double discharge_w;              /* set by mf_system_finish() */
     double discharge_max_w;
     double battery_discharge_w;      /* the counted packs' discharge */
-    double inverter_output_w;        /* the counted inverters' output */
+    double inverter_output_w;        /* DC the counted inverters draw, inverting */
     int    inverter_output_n;
-    int    discharge_from_inverters; /* discharge_w is inverter_output_w */
+    double inverter_ac_w;            /* the counted inverters' AC output */
+    int    inverter_ac_n;
+    double load_w;                   /* set by mf_system_finish() */
+    double load_net_w;               /* input + discharge - charge, >= 0 */
+    int    load_from_inverters;      /* load_w is inverter_ac_w */
     /* What the counted packs can deliver (their maximum discharge current
      * times voltage) and what the counted inverters are rated for, summed:
      * known only when every one of them reports it (see *_known()). */
@@ -74,12 +81,14 @@ void mf_system_add_battery(mf_system_totals_t *t, bool active, bool online,
 void mf_system_add_battery_limit(mf_system_totals_t *t, bool active,
                                  bool online, double max_discharge_w);
 /* rated_w <= 0 means unknown.  output_w is the power it draws from the
- * bank while inverting (0 when it isn't); < 0 means unknown. */
+ * bank while inverting (0 when it isn't); ac_out_w is its AC output,
+ * inverting or passing the grid through.  Either < 0 means unknown. */
 void mf_system_add_inverter(mf_system_totals_t *t, bool active, bool online,
-                            double rated_w, double output_w);
+                            double rated_w, double output_w, double ac_out_w);
 int  mf_system_battery_limit_known(const mf_system_totals_t *t);
 int  mf_system_inverter_rated_known(const mf_system_totals_t *t);
 int  mf_system_inverter_output_known(const mf_system_totals_t *t);
+int  mf_system_inverter_ac_known(const mf_system_totals_t *t);
 void mf_system_finish(mf_system_totals_t *t);
 
 #endif

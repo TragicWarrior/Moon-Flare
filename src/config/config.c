@@ -75,6 +75,7 @@ void mf_tui_config_defaults(mf_tui_config_t *cfg)
     strncpy(cfg->default_profile, "local", sizeof(cfg->default_profile) - 1);
     cfg->refresh_interval_s = 1.0;
     strncpy(cfg->discharge_scale, "auto", sizeof(cfg->discharge_scale) - 1);
+    strncpy(cfg->load_source, "inverters", sizeof(cfg->load_source) - 1);
 }
 
 /* ─── search-path resolution ────────────────────────────────── */
@@ -515,6 +516,12 @@ void mf_tui_config_apply_json(mf_tui_config_t *cfg, const cJSON *root)
     if ((v = cJSON_GetObjectItem(root, "discharge_scale_w")) &&
         v->type == cJSON_Number && v->valuedouble >= 0)
         cfg->discharge_scale_w = v->valuedouble;
+    if ((v = cJSON_GetObjectItem(root, "load_source")) &&
+        v->type == cJSON_String &&
+        (strcmp(v->valuestring, "inverters") == 0 ||
+         strcmp(v->valuestring, "net") == 0))
+        snprintf(cfg->load_source, sizeof(cfg->load_source), "%s",
+                 v->valuestring);
 }
 
 /* ─── serialize ─────────────────────────────────────────────── */
@@ -702,6 +709,7 @@ char *mf_tui_config_serialize(const mf_tui_config_t *cfg)
     cJSON_AddNumber(root, "refresh_interval_s", cfg->refresh_interval_s);
     cJSON_AddStringOrNull(root, "discharge_scale", cfg->discharge_scale);
     cJSON_AddNumber(root, "discharge_scale_w", cfg->discharge_scale_w);
+    cJSON_AddStringOrNull(root, "load_source", cfg->load_source);
     char *s = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
     return s;

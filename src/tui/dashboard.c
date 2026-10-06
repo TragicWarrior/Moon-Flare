@@ -17,11 +17,12 @@
 #define MAX_LINE 32
 #define MAX_CAT  32
 
-/* System panel columns: names | bars.  Three solid 1-row bars, each followed
+/* System panel columns: names | bars.  Four solid 1-row bars, each followed
  * by a blank row (the last one keeps the cards off the bottom bar); each
  * reading is centred inside its bar.  The bars take what the names leave. */
-#define SYS_ROWS       3
-#define SYS_LINES      (SYS_ROWS * 2)
+#define SYS_ROWS       4
+#define SYS_LINES      (SYS_ROWS * 2)       /* a blank row under each bar */
+enum { SYS_INPUT = 0, SYS_CAPACITY, SYS_BATTERY, SYS_LOAD };
 #define SYS_NAME_W     11
 #define SYS_PAD_W      1              /* blank column right of the bars */
 #define SYS_METER_MIN  10
@@ -73,7 +74,7 @@ static vk_label_t   *g_sys_pad;
 static vk_box_t     *g_sys_col[2];
 static vk_label_t   *g_sys_name[SYS_LINES];
 static vk_progress_t *g_sys_mt[SYS_ROWS];
-static vk_label_t   *g_sys_gap[SYS_ROWS];       /* blank row under each bar */
+static vk_label_t   *g_sys_gap[SYS_ROWS];   /* blank row under each bar */
 static char          g_caps[NCARD][32];
 static char          g_last_hp[128];
 static char          g_last_tag[24];
@@ -212,9 +213,23 @@ static vk_box_t *mk_sys_name_col(const char *const *text)
     return col;
 }
 
+/* The top card row's share of a grid `ch` rows tall: half, with the odd
+ * row, and at least the seven rows Info needs for its five lines while
+ * that leaves the bottom cards three lines of their own. */
+static int top_row_h(int ch)
+{
+    int rh = ch - ch / 2;
+
+    if (rh < 7 && ch - 7 >= 5)
+        rh = 7;
+    return rh;
+}
+
 static void mk_system(int w)
 {
-    static const char *const names[SYS_ROWS] = { " Input", " Capacity", " Discharge" };
+    static const char *const names[SYS_ROWS] = {
+        " Input", " Capacity", " Discharge", " Load"
+    };
     int iw = w;
     int i;
 
@@ -237,7 +252,7 @@ static void mk_system(int w)
     {
         g_sys_mt[i] = mk_sys_bar(sys_meter_w(iw));
         vk_box_set_widget(g_sys_col[1], i * 2, VK_WIDGET(g_sys_mt[i]),
-                          VK_INHERIT_NONE);
+                          VK_INHERIT_NONE);                      /* the cards come right under the last */
         g_sys_gap[i] = mk_sys_label(sys_meter_w(iw), NULL);
         vk_box_set_widget(g_sys_col[1], i * 2 + 1, VK_WIDGET(g_sys_gap[i]),
                           VK_INHERIT_NONE);
@@ -286,7 +301,9 @@ static void ensure_cards(void)
                                       (MF_CARD_H - 2 - MF_SYS_H) / 2,
                                       VK_BOX_HORIZONTAL, 3);
         vk_box_set_homogeneous(g_grid_row[i], false);
-        vk_widget_set_expand(VK_WIDGET(g_grid_row[i]));
+        /* Only the top row stretches, so an odd spare row is its own. */
+        if (i == 0)
+            vk_widget_set_expand(VK_WIDGET(g_grid_row[i]));
     }
     for (i = 0; i < NCARD; i++)
         g_fr[i] = mk_card(i, g_caps[i]);
@@ -403,8 +420,8 @@ void mf_dash_on_resize(void)
             if (ch < 6)
                 ch = 6;
             vk_widget_resize(VK_WIDGET(g_cards_box), bw, ch);
-            vk_widget_resize(VK_WIDGET(g_grid_row[0]), bw, ch / 2);
-            vk_widget_resize(VK_WIDGET(g_grid_row[1]), bw, ch - ch / 2);
+            vk_widget_resize(VK_WIDGET(g_grid_row[0]), bw, top_row_h(ch));
+            vk_widget_resize(VK_WIDGET(g_grid_row[1]), bw, ch - top_row_h(ch));
         }
         vk_widget_show(VK_WIDGET(g_client));
     }
@@ -689,7 +706,7 @@ void mf_dash_discharge_info(int mode, double fixed_w, char *out, size_t cap)
             snprintf(out, cap, "High mark %.0f W: full scale %.0f W.", peak,
                      scale_step(peak));
         else
-            snprintf(out, cap, "No discharge seen yet.");
+            snprintf(out, cap, "Nothing in or out seen yet.");
         break;
     }
     cJSON_Delete(root);
@@ -703,33 +720,110 @@ void mf_dash_discharge_reset(void)
     mf_state_set_peak(g_peak_hp, 0.0);
 }
 
-/* Totals come from the daemon so the TUI, CLI and MCP agree; the
- * Discharge meter's scale is the TUI's own choice (File > General). */
+/* The battery bar fills bright yellow while the bank gives power up and
+ * green while it takes power in.  Colour 11 is bright yellow where the
+ * terminal has the bright colours; bold yellow is the nearest elsewhere. */
+static void set_flow_look(int charging)
+{
+    short fg = SYS_FILL;
+    attr_t at = A_NORMAL;
+    vk_label_t *name = g_sys_name[SYS_BATTERY * 2];
+
+    if (!charging)
+    {
+        if (COLORS >= 256)
+            fg = 11;
+        else
+        {
+            fg = COLOR_YELLOW;
+            at = A_BOLD;
+        }
+    }
+    vk_progress_set_colors(g_sys_mt[SYS_BATTERY], fg, COLOR_BLACK);
+    vk_progress_set_attrs(g_sys_mt[SYS_BATTERY], at);
+    if (name)
+    {
+        vk_label_set_text(name, charging ? " Charge" : " Discharge");
+        vk_label_update(name);
+    }
+}
+
+/* The Load meter's figure by File > General's choice: the inverters' AC
+ * output, or what the DC side hands over (charger input plus the packs'
+ * discharge less their charge).  The inverters' is only there when every
+ * counted one reports it; until then the other stands in.  *net_used says
+ * which was taken.  Returns 0 when the daemon sends neither (before 0.15). */
+static int load_figure(const cJSON *sys, int mode, double *w, int *net_used)
+{
+    const cJSON *inv = cJSON_GetObjectItemCaseSensitive(sys, "load_inverter_w");
+    const cJSON *net = cJSON_GetObjectItemCaseSensitive(sys, "load_net_w");
+
+    if (mode == MF_LOAD_INVERTERS && cJSON_IsNumber(inv))
+    {
+        *w = inv->valuedouble;
+        *net_used = 0;
+        return 1;
+    }
+    if (cJSON_IsNumber(net))
+    {
+        *w = net->valuedouble;
+        *net_used = 1;
+        return 1;
+    }
+    return 0;
+}
+
+/* What a Load choice gives right now, for File > General. */
+void mf_dash_load_info(int mode, char *out, size_t cap)
+{
+    cJSON *root = g_last_json[0] ? cJSON_Parse(g_last_json) : NULL;
+    const cJSON *sys = cJSON_GetObjectItemCaseSensitive(root, "system");
+    double w = 0.0;
+    int net = 0;
+
+    if (!load_figure(sys, mode, &w, &net))
+        snprintf(out, cap, "This daemon doesn't report a load.");
+    else if (mode == MF_LOAD_INVERTERS && net)
+        snprintf(out, cap, "An inverter doesn't say; DC side: %.0f W.", w);
+    else if (net)
+        snprintf(out, cap, "Input + discharge - charge: %.0f W.", w);
+    else
+        snprintf(out, cap, "The inverters put out %.0f W.", w);
+    cJSON_Delete(root);
+}
+
+/* Totals come from the daemon so the TUI, CLI and MCP agree; the battery
+ * meter's scale and the Load meter's source are the TUI's own choices
+ * (File > General). */
 static void fill_system(const cJSON *sys)
 {
+    static double load_peak;            /* this run's, when no inverter is rated */
     char val[48];
-    double in_w, in_max, dis_w, dis_max, chg_w, stored, cap;
-    const cJSON *soc;
+    double in_w, in_max, dis_w, chg_w, flow, flow_max, stored, cap;
+    double load_w = 0.0, load_max;
+    const cJSON *soc, *bat;
+    int net = 0;
 
     if (!g_sys_body)
         return;
     if (!cJSON_IsObject(sys))
     {
-        set_sys_row(0, 0, "--");
-        set_sys_row(1, 0, "--");
-        set_sys_row(2, 0, "--");
+        set_sys_row(SYS_INPUT, 0, "--");
+        set_sys_row(SYS_CAPACITY, 0, "--");
+        set_sys_row(SYS_BATTERY, 0, "--");
+        set_sys_row(SYS_LOAD, 0, "--");
         return;
     }
     in_w = jnum_or(sys, "input_w", 0);
     in_max = jnum_or(sys, "input_max_w", 0);
     snprintf(val, sizeof(val), "%.0f W / %.0f W", in_w, in_max);
-    set_sys_row(0, in_max > 0 ? in_w / in_max * 100.0 : 0, val);
+    set_sys_row(SYS_INPUT, in_max > 0 ? in_w / in_max * 100.0 : 0, val);
 
     soc = cJSON_GetObjectItemCaseSensitive(sys, "soc_pct");
     stored = jnum_or(sys, "stored_wh", 0) / 1000.0;
     cap = jnum_or(sys, "capacity_wh", 0) / 1000.0;
     if (!cJSON_IsNumber(soc))
-        set_sys_row(1, 0, "no data");
+        set_sys_row(SYS_CAPACITY, 0, "no data");
     else
     {
         if (cap > 0)
@@ -737,19 +831,42 @@ static void fill_system(const cJSON *sys)
                      soc->valuedouble, stored, cap);
         else
             snprintf(val, sizeof(val), "%.0f%%", soc->valuedouble);
-        set_sys_row(1, soc->valuedouble, val);
+        set_sys_row(SYS_CAPACITY, soc->valuedouble, val);
     }
 
-    dis_w = jnum_or(sys, "discharge_w", 0);
+    /* The bank, as its packs report it: what they give up less what they
+     * take in.  One bar, either way: its colour and name say which.  A
+     * daemon before 0.15 sends the inverters' draw as discharge_w; the
+     * packs' own figure is beside it. */
+    bat = cJSON_GetObjectItemCaseSensitive(sys, "battery_discharge_w");
+    dis_w = cJSON_IsNumber(bat) ? bat->valuedouble : jnum_or(sys, "discharge_w", 0);
     chg_w = jnum_or(sys, "charge_w", 0);
-    dis_max = discharge_scale(sys, dis_w);
-    if (dis_w <= 0 && chg_w > 0)
-        snprintf(val, sizeof(val), "0 W  (charging %.0f W)", chg_w);
-    else if (dis_w > dis_max)          /* a fixed or known scale, exceeded */
-        snprintf(val, sizeof(val), "%.0f W (above %.0f W)", dis_w, dis_max);
+    flow = chg_w - dis_w;               /* > 0: into the bank */
+    flow_max = discharge_scale(sys, fabs(flow));
+    set_flow_look(flow > 0.0);
+    if (fabs(flow) > flow_max)          /* a fixed or known scale, exceeded */
+        snprintf(val, sizeof(val), "%.0f W (above %.0f W)", fabs(flow), flow_max);
     else
-        snprintf(val, sizeof(val), "%.0f W / %.0f W", dis_w, dis_max);
-    set_sys_row(2, dis_w / dis_max * 100.0, val);
+        snprintf(val, sizeof(val), "%.0f W / %.0f W", fabs(flow), flow_max);
+    set_sys_row(SYS_BATTERY, fabs(flow) / flow_max * 100.0, val);
+
+    /* Load: full scale is what the inverters are rated for, or this run's
+     * high mark in 500 W steps while that isn't known. */
+    if (!load_figure(sys, mf_ui_load_source(), &load_w, &net))
+    {
+        set_sys_row(SYS_LOAD, 0, "no data");
+        return;
+    }
+    if (load_w > load_peak)
+        load_peak = load_w;
+    load_max = jnum_or(sys, "inverter_rated_w", 0.0);
+    if (load_max <= 0.0)
+        load_max = scale_step(load_peak);
+    if (load_w > load_max)
+        snprintf(val, sizeof(val), "%.0f W (above %.0f W)", load_w, load_max);
+    else
+        snprintf(val, sizeof(val), "%.0f W / %.0f W", load_w, load_max);
+    set_sys_row(SYS_LOAD, load_w / load_max * 100.0, val);
 }
 
 static void cat_add(cJSON *arr, const char *kind)
@@ -1329,7 +1446,7 @@ int mf_dash_mouse(int x, int y, mmask_t bstate)
     ch = rows - MF_CARD_Y - 1 - 2 - MF_SYS_H; /* grid height */
     if (ch < 6)
         ch = 6;
-    rh = ch / 2;
+    rh = top_row_h(ch);
 
     for (i = 0; i < NCARD; i++)
     {

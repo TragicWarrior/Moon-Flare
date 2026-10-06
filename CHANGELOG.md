@@ -5,6 +5,39 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] - 2026-10-06
+
+### Added
+
+- A **Load** meter on the dashboard, under Discharge: what the site is
+  using, whichever source feeds it. **File → General → Load** chooses
+  how it is worked out, and Save config keeps the choice (`load_source`
+  in `moonflare.json`):
+  - **Inverter output** (default): the counted inverters' AC output,
+    volts × amps out, summed. It includes grid power an inverter passes
+    through. When a counted inverter doesn't report its output, the
+    meter uses the other figure.
+  - **Net of batteries**: input + discharge − charge, never below 0.
+- `/api/v1/status` reports `system.load_w`, `system.load_source`
+  (`"inverters"` or `"net"`), `system.load_inverter_w` and
+  `system.load_net_w`, and each inverter row carries `ac_out_w`.
+  `moonflare-cli --status` prints a Load line.
+
+### Changed
+
+- Discharge is what the counted packs report, no longer the inverters'
+  DC draw. On the dashboard the bar shows the packs' net flow either
+  way: bright yellow and named Discharge while the bank gives, green
+  and named Charge while it takes. Its Auto scale follows the highest
+  flow in either direction.
+- `system.discharge_w` is the packs' discharge and
+  `system.discharge_source` is always `"batteries"`.
+  `system.inverter_output_w` is still reported.
+- The System panel is two rows taller. On a short screen the top row
+  of cards keeps seven rows, so the Info panel still has its five lines
+  at 80×25 and the bottom cards have three. The General dialog is three
+  rows taller.
+
 ## [0.14.1] - 2026-10-05
 
 ### Fixed
