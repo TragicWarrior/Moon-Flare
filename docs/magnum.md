@@ -268,7 +268,9 @@ Not ported:
 - the experimental `--flip` option;
 - the timing repairs that content framing doesn't need: 17 → 16 trimming, and merging split packets.
 
-The 22 → 21 trim is kept in effect. Some inverters send a `0xFF` right after their packet; an MS4448PAE parallel-stack master does. The framer drops that byte when the remote packet, or the next inverter packet, lines up behind it. Read as the remote packet's first byte, it would shift every remote field by one.
+The 22 → 21 trim is kept in effect. Some inverters' packets are followed by a stray byte; an MS4448PAE parallel stack's are. It is `0xFF` six times in seven and `0xFE` the seventh. The framer drops that byte when the remote packet, or the next inverter packet, lines up behind it. Read as the remote packet's first byte, it would shift every remote field by one.
+
+pymagnum is handed whole packets by the gaps between them. This framer has to find where a packet starts, and 21 bytes that are not a packet can pass every inverter check. On a parallel-stack slave, the bytes starting three before its packet did, after a REMOTE_00: the reading was an "ME2512" at 0.8 V. So the first packet that looks like an inverter's is held. The inverter is known only when a second one with the same model and revision arrives exactly one cycle later; the held packets are then passed on in order. A tap therefore reports nothing for its first cycle, about 0.1 s.
 
 **To check against real captures:**
 

@@ -14,8 +14,14 @@
  * bug in that test (Standby inverter packets become REMOTE_00) is not
  * reproduced.  cleanup()'s merging of split packets repairs timing-based
  * framing and is not needed here.  Of the 22->21 / 17->16 trimming, one
- * case is still needed: an inverter that sends a 0xFF after its packet
+ * case is still needed: the stray byte that follows some inverters' packets
  * (after_inv()).
+ *
+ * Unlike pymagnum, which is handed whole packets by the 5 ms gaps, this
+ * framer has to find where a packet starts, and a single 21-byte window
+ * can pass every inverter check without being one.  hunt() therefore takes
+ * the first candidate on probation and only learns the inverter from a
+ * second one that follows exactly in step (see mag_frame.h).
  */
 
 #include "mag_frame.h"
@@ -92,7 +98,7 @@ int mag_frame_is_inverter(const mag_frame_t *f, const uint8_t *p)
         if (p[14] != f->inv_model || p[10] != f->inv_revision)
             return 0;
     }
-    else if (!mag_model_known(p[14]))
+    else if (!mag_model_known(p[14]) || !mag_stackmode_known(p[15]))
         return 0;
     /* A remote packet whose last 7 bytes are zero is never an inverter's
      * (_parsePacket's "sevenzeros"): byte 14, the model, is among them. */
@@ -120,7 +126,7 @@ static int reply_ok(const uint8_t *p)
     return 1;
 }
 
-static void emit(mag_frame_t *f, mag_pkt_t t, const uint8_t *p, size_t len)
+static void deliver(mag_frame_t *f, mag_pkt_t t, const uint8_t *p, size_t len)
 {
     if (t != MAG_PKT_UNKNOWN)
         f->st.packets[t]++;
@@ -128,10 +134,57 @@ static void emit(mag_frame_t *f, mag_pkt_t t, const uint8_t *p, size_t len)
         f->fn(f->arg, t, p, len, f->last_rx);
 }
 
+/* The candidate was confirmed: pass on what was held, in order. */
+static void held_flush(mag_frame_t *f)
+{
+    int i;
+
+    for (i = 0; i < f->nheld; i++)
+        deliver(f, (mag_pkt_t)f->held[i].type, f->held[i].b, f->held[i].len);
+    f->nheld = 0;
+}
+
+/* The candidate was not an inverter packet: what was held is unknown. */
+static void held_drop(mag_frame_t *f)
+{
+    int i;
+
+    for (i = 0; i < f->nheld; i++)
+    {
+        f->st.unknown_bytes += f->held[i].len;
+        deliver(f, MAG_PKT_UNKNOWN, f->held[i].b, f->held[i].len);
+    }
+    f->nheld = 0;
+    f->probing = 0;
+}
+
+static void emit(mag_frame_t *f, mag_pkt_t t, const uint8_t *p, size_t len)
+{
+    if (f->probing && t != MAG_PKT_UNKNOWN)
+    {
+        if (f->nheld < MAG_HELD_MAX && len <= sizeof(f->held[0].b))
+        {
+            mag_held_t *h = &f->held[f->nheld++];
+
+            h->type = (uint8_t)t;
+            h->len = (uint8_t)len;
+            memcpy(h->b, p, len);
+            return;
+        }
+        /* More packets than a cycle holds: not one. */
+        held_drop(f);
+        f->st.unknown_bytes += len;
+        t = MAG_PKT_UNKNOWN;
+    }
+    deliver(f, t, p, len);
+}
+
 static void skip(mag_frame_t *f, size_t n)
 {
     if (!n)
         return;
+    if (f->probing)
+        held_drop(f);                   /* the next packet was not in step */
     f->st.unknown_bytes += n;
     emit(f, MAG_PKT_UNKNOWN, f->buf, n);
     if (f->synced)
@@ -165,9 +218,24 @@ static size_t hunt(mag_frame_t *f)
     }
     if (!f->have_id)
     {
-        f->have_id = 1;
-        f->inv_model = f->buf[14];
-        f->inv_revision = f->buf[10];
+        if (f->probing && f->synced && f->buf[14] == f->probe_model &&
+            f->buf[10] == f->probe_revision)
+        {
+            /* The same inverter again, exactly one cycle on. */
+            f->probing = 0;
+            f->have_id = 1;
+            f->inv_model = f->buf[14];
+            f->inv_revision = f->buf[10];
+            held_flush(f);
+        }
+        else
+        {
+            if (f->probing)
+                held_drop(f);
+            f->probing = 1;
+            f->probe_model = f->buf[14];
+            f->probe_revision = f->buf[10];
+        }
     }
     f->since_inv = 0;
     f->synced = 1;
@@ -176,17 +244,25 @@ static size_t hunt(mag_frame_t *f)
     return MAG_INV_LEN;
 }
 
+/* What a receiver makes of the inverter letting go of the line: a start
+ * bit, then ones.  0xFF mostly, 0xFE one time in seven at batteryman;
+ * a longer start bit clears more low bits. */
+static int turnaround_byte(uint8_t b)
+{
+    return b == 0xFF || b == 0xFE || b == 0xFC || b == 0xF8 || b == 0xF0;
+}
+
 static size_t after_inv(mag_frame_t *f)
 {
     const uint8_t *p = f->buf;
 
     if (f->len < MAG_REMOTE_LEN)
         return 0;
-    /* Some inverters send a 0xFF after their packet (an MS4448PAE stack
-     * master does; pymagnum trims those 22-byte bursts to 21).  Drop it
+    /* Some inverters' packets are followed by a stray byte (an MS4448PAE
+     * stack's are; pymagnum trims those 22-byte bursts to 21).  Drop it
      * when the remote packet, or the next inverter packet, lines up
      * behind it; taken as the remote's first byte it shifts every field. */
-    if (p[0] == 0xFF)
+    if (turnaround_byte(p[0]))
     {
         if (f->len < MAG_REMOTE_LEN + 1)
             return 0;
@@ -280,6 +356,8 @@ void mag_frame_reset_stream(mag_frame_t *f)
     f->state = ST_HUNT;
     f->synced = 0;
     f->since_inv = 0;
+    f->probing = 0;
+    f->nheld = 0;
 }
 
 void mag_frame_reset_stats(mag_frame_t *f)
@@ -316,6 +394,9 @@ void mag_frame_feed(mag_frame_t *f, const uint8_t *data, size_t n, double now)
 
 void mag_frame_idle(mag_frame_t *f, double now)
 {
+    /* A candidate with nothing after it for this long is not on a live bus. */
+    if (f->probing && now - f->last_rx >= MAG_PROBE_S)
+        held_drop(f);
     if (!f->len || now - f->last_rx < MAG_IDLE_S)
         return;
     /* The bus went quiet with bytes still waiting. */
