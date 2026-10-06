@@ -186,12 +186,44 @@ static void test_tui_defaults(void)
                   "tui: default_profile name");
     assert_int_eq(1, cfg.refresh_interval_s == 1.0 ? 1 : 0,
                   "tui: default refresh_interval_s 1.0");
+    assert_str_eq("inverters", cfg.load_source, "tui: default load_source");
 
     setenv("HOME", "/root", 1);
     rmdir(config_dir);
     rmdir(dir);
 
     printf("PASS: tui missing-file defaults\n");
+}
+
+/* The Load meter's source: kept through a save, and anything unknown
+ * leaves the default. */
+static void test_tui_load_source(void)
+{
+    mf_tui_config_t cfg, back;
+    cJSON *root;
+    char *s;
+
+    mf_tui_config_defaults(&cfg);
+    root = cJSON_Parse("{\"load_source\":\"net\"}");
+    mf_tui_config_apply_json(&cfg, root);
+    cJSON_Delete(root);
+    assert_str_eq("net", cfg.load_source, "tui: load_source net");
+
+    s = mf_tui_config_serialize(&cfg);
+    assert_true(s != NULL, "tui: serialize with load_source");
+    mf_tui_config_defaults(&back);
+    root = cJSON_Parse(s);
+    mf_tui_config_apply_json(&back, root);
+    cJSON_Delete(root);
+    free(s);
+    assert_str_eq("net", back.load_source, "tui: load_source survives a save");
+
+    root = cJSON_Parse("{\"load_source\":\"batteries\"}");
+    mf_tui_config_apply_json(&back, root);
+    cJSON_Delete(root);
+    assert_str_eq("net", back.load_source, "tui: an unknown load_source is ignored");
+
+    printf("PASS: tui load_source\n");
 }
 
 /* ------------------------------------------------------------------ */
@@ -765,6 +797,7 @@ int main(void)
 {
     test_search_order();
     test_tui_defaults();
+    test_tui_load_source();
     test_roundtrip_example();
     test_unknown_keys();
     test_atomic_save();

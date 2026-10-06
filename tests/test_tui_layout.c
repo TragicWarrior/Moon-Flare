@@ -17,7 +17,7 @@ int main(void)
     CHECK(mf_tui_dropdown_max_h(25) == 21, "dropdown max_h LINES-4");
     CHECK(mf_tui_dropdown_max_w(80) == 78, "dropdown max_w COLS-2");
     mf_tui_settings_geom(80, 25, &x, &y, &w, &h);
-    CHECK(w == 60 && h == 18, "settings 18x60");
+    CHECK(w == 60 && h == 21, "settings 21x60");
     CHECK(y >= 3 && y + h <= 25, "settings fits 80x25");
     CHECK(x >= 0 && x + w <= 80, "settings x in 80");
 
@@ -52,7 +52,8 @@ int main(void)
     CHECK(strstr(grid[24], "Space active"), "hints name the Space toggle");
     CHECK(strstr(grid[MF_CARD_Y + 1], "Input") &&
           strstr(grid[MF_CARD_Y + 3], "Capacity") &&
-          strstr(grid[MF_CARD_Y + 5], "Discharge"), "three System bars, gap rows");
+          strstr(grid[MF_CARD_Y + 5], "Discharge") &&
+          strstr(grid[MF_CARD_Y + 7], "Load"), "four System bars, gap rows");
     CHECK(strstr(grid[MF_CARD_Y + MF_SYS_H], "Batteries"),
           "cards start below the System panel");
     CHECK(grid[MF_CARD_Y + MF_CARD_H - 1][0] == '+',

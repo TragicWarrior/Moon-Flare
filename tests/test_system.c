@@ -65,9 +65,9 @@ int main(void)
     mf_system_add_battery_limit(&t, true, true, 200.0 * 53.0);
     mf_system_add_battery(&t, false, true, 53.0, -5.0, 50.0, -1.0, 0.0, 0, 0);
     mf_system_add_battery_limit(&t, false, true, 100.0 * 53.0);
-    mf_system_add_inverter(&t, true, true, 4400.0, -1.0);
-    mf_system_add_inverter(&t, true, true, 4400.0, -1.0);
-    mf_system_add_inverter(&t, false, true, 4000.0, -1.0);
+    mf_system_add_inverter(&t, true, true, 4400.0, -1.0, -1.0);
+    mf_system_add_inverter(&t, true, true, 4400.0, -1.0, -1.0);
+    mf_system_add_inverter(&t, false, true, 4000.0, -1.0, -1.0);
     mf_system_finish(&t);
     CHECK(mf_system_battery_limit_known(&t) && near(t.battery_limit_w, 10600.0),
           "battery limit from the counted pack");
@@ -79,7 +79,7 @@ int main(void)
     mf_system_add_battery_limit(&t, true, true, 200.0 * 53.0);
     mf_system_add_battery(&t, true, true, 53.0, -5.0, 50.0, -1.0, 0.0, 0, 0);
     mf_system_add_battery_limit(&t, true, true, 0.0);   /* doesn't say */
-    mf_system_add_inverter(&t, true, true, 0.0, -1.0);
+    mf_system_add_inverter(&t, true, true, 0.0, -1.0, -1.0);
     mf_system_finish(&t);
     CHECK(!mf_system_battery_limit_known(&t), "one pack without a limit: unknown");
     CHECK(!mf_system_inverter_rated_known(&t), "an unrated inverter: unknown");
@@ -88,37 +88,71 @@ int main(void)
     CHECK(!mf_system_battery_limit_known(&t) && !mf_system_inverter_rated_known(&t),
           "nothing counted: unknown");
 
-    /* Discharge: the counted inverters' output when every one reports it
-     * (a phantom counts like any inverter), replacing the packs' figure;
-     * otherwise the packs. */
+    /* Discharge: what leaves the bank, the counted packs' discharge,
+     * whatever the inverters say they draw. */
     mf_system_init(&t, 3500.0, 3000.0);
     mf_system_add_battery(&t, true, true, 52.0, -10.0, 80.0, -1.0, 0.0, 0, 0);
-    mf_system_add_inverter(&t, true, true, 4400.0, 1205.2);   /* the master */
-    mf_system_add_inverter(&t, true, true, 4400.0, 1205.2);   /* its phantom */
-    mf_system_add_inverter(&t, false, true, 4400.0, 900.0);   /* inactive */
+    mf_system_add_battery(&t, false, true, 52.0, -8.0, 80.0, -1.0, 0.0, 0, 0);  /* inactive */
+    mf_system_add_inverter(&t, true, true, 4400.0, 1205.2, 1080.0);
     mf_system_finish(&t);
-    CHECK(t.discharge_from_inverters && near(t.discharge_w, 2410.4),
-          "discharge: the counted inverters' output, phantom included");
-    CHECK(near(t.battery_discharge_w, 520.0), "discharge: the packs' figure kept");
+    CHECK(near(t.discharge_w, 520.0) && near(t.battery_discharge_w, 520.0),
+          "discharge: the counted packs', with an inverter reporting");
+    CHECK(mf_system_inverter_output_known(&t) && near(t.inverter_output_w, 1205.2),
+          "discharge: the inverters' DC draw is still summed, not used");
+
+    /* Load: the counted inverters' AC output when every one reports it (a
+     * phantom counts like any inverter).  Read at batteryman, inverting:
+     * 120 V x 9 A and 121 V x 9 A, with 1593 W of solar and the packs
+     * giving 1082 W. */
     mf_system_init(&t, 3500.0, 3000.0);
-    mf_system_add_battery(&t, true, true, 52.0, -10.0, 80.0, -1.0, 0.0, 0, 0);
-    mf_system_add_inverter(&t, true, true, 4400.0, 0.0);      /* charging */
+    mf_system_add_charger(&t, true, true, 1593.0);
+    mf_system_add_battery(&t, true, true, 53.04, -10.2, 80.0, -1.0, 0.0, 0, 0);
+    mf_system_add_battery(&t, true, true, 53.04, -10.2, 80.0, -1.0, 0.0, 0, 0);
+    mf_system_add_inverter(&t, true, true, 4400.0, 1214.4, 1080.0);  /* the master */
+    mf_system_add_inverter(&t, true, true, 4400.0, 1264.8, 1089.0);  /* the slave */
+    mf_system_add_inverter(&t, false, true, 4400.0, 900.0, 800.0);   /* inactive */
     mf_system_finish(&t);
-    CHECK(t.discharge_from_inverters && near(t.discharge_w, 0.0),
-          "discharge: an inverter that isn't inverting draws nothing");
+    CHECK(t.load_from_inverters && near(t.load_w, 2169.0),
+          "load: the counted inverters' AC output");
+    CHECK(near(t.load_net_w, 1593.0 + 2.0 * 53.04 * 10.2),
+          "load: input plus the packs' discharge, kept beside it");
+    CHECK(near(t.discharge_w, 2.0 * 53.04 * 10.2), "load: discharge is still the packs'");
+
+    /* On the grid at night: the inverters pass 18 A through and charge the
+     * bank.  The load is what they hand the site; nothing leaves the DC
+     * side. */
     mf_system_init(&t, 3500.0, 3000.0);
-    mf_system_add_battery(&t, true, true, 52.0, -10.0, 80.0, -1.0, 0.0, 0, 0);
-    mf_system_add_inverter(&t, true, true, 4400.0, 1205.2);
-    mf_system_add_inverter(&t, true, true, 4400.0, -1.0);     /* doesn't say */
+    mf_system_add_battery(&t, true, true, 53.5, 38.0, 80.0, -1.0, 0.0, 0, 0);
+    mf_system_add_inverter(&t, true, true, 4400.0, 0.0, 121.0 * 18.0);
+    mf_system_add_inverter(&t, true, true, 4400.0, 0.0, 0.0);
     mf_system_finish(&t);
-    CHECK(!t.discharge_from_inverters && near(t.discharge_w, 520.0),
-          "discharge: an inverter without an output figure: the packs");
+    CHECK(t.load_from_inverters && near(t.load_w, 2178.0),
+          "load: grid power passed through counts");
+    CHECK(near(t.load_net_w, 0.0) && near(t.discharge_w, 0.0),
+          "load: charging from the grid, the DC side hands over nothing");
+
+    /* Without every inverter's AC output: the DC side.  Solar covering the
+     * load and charging the bank is input less charge. */
     mf_system_init(&t, 3500.0, 3000.0);
-    mf_system_add_battery(&t, true, true, 52.0, -10.0, 80.0, -1.0, 0.0, 0, 0);
-    mf_system_add_inverter(&t, true, false, 4400.0, 1205.2);  /* offline */
+    mf_system_add_charger(&t, true, true, 3000.0);
+    mf_system_add_battery(&t, true, true, 50.0, 20.0, 80.0, -1.0, 0.0, 0, 0);
+    mf_system_add_inverter(&t, true, true, 4400.0, 1205.2, 1080.0);
+    mf_system_add_inverter(&t, true, true, 4400.0, -1.0, -1.0);      /* doesn't say */
     mf_system_finish(&t);
-    CHECK(!t.discharge_from_inverters && near(t.discharge_w, 520.0),
-          "discharge: no counted inverter: the packs");
+    CHECK(!t.load_from_inverters && near(t.load_w, 2000.0) && near(t.load_net_w, 2000.0),
+          "load: an inverter without AC output: input less charge");
+    mf_system_init(&t, 3500.0, 3000.0);
+    mf_system_add_charger(&t, true, true, 500.0);
+    mf_system_add_battery(&t, true, true, 52.0, -10.0, 80.0, -1.0, 0.0, 0, 0);
+    mf_system_add_inverter(&t, true, false, 4400.0, 1205.2, 1080.0); /* offline */
+    mf_system_finish(&t);
+    CHECK(!t.load_from_inverters && near(t.load_w, 1020.0),
+          "load: no counted inverter: input plus discharge");
+    mf_system_init(&t, 3500.0, 3000.0);
+    mf_system_add_charger(&t, true, true, 100.0);
+    mf_system_add_battery(&t, true, true, 50.0, 10.0, 80.0, -1.0, 0.0, 0, 0);
+    mf_system_finish(&t);
+    CHECK(near(t.load_net_w, 0.0) && near(t.load_w, 0.0), "load: never below nothing");
 
     /* The voltage check (JK only, for now): at rest, a counter >20 points
      * off the LFP curve loses; under load the BMS stands. */

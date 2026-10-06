@@ -7,9 +7,9 @@
 #define MF_CARD_W        26
 #define MF_CARD_H        22
 #define MF_CARD_Y        2
-#define MF_SYS_H         6   /* System panel: three 1-row bars, blank row under each */
+#define MF_SYS_H         8   /* System panel: four 1-row bars, blank row under each */
 #define MF_SETTINGS_W    60
-#define MF_SETTINGS_H    18
+#define MF_SETTINGS_H    21
 
 int mf_tui_dropdown_max_h(int lines);
 int mf_tui_dropdown_max_w(int cols);

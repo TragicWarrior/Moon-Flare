@@ -373,7 +373,10 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
         cJSON *mt = str_or_null(data, "mode_text");
         cJSON *pw = num_or_null(data, "dc_power_w");
         cJSON *inv = cJSON_GetObjectItemCaseSensitive(data, "inverting");
-        double out = -1.0;              /* unknown: Discharge uses the packs */
+        cJSON *av = num_or_null(data, "ac_out_v");
+        cJSON *aa = num_or_null(data, "ac_out_a");
+        double out = -1.0;              /* unknown */
+        double ac = -1.0;               /* unknown: Load uses the DC side */
         size_t i;
 
         if (rw)
@@ -388,16 +391,25 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
         }
         if (mt)
             cJSON_AddStringToObject(row, "mode_text", mt->valuestring);
-        /* Its output for Discharge: what it draws from the bank while it
-           inverts.  Charging, or idle, it draws nothing.  Only the mode
-           tells them apart: a charging Magnum's DC current reads positive
-           too (38 A in BULK at batteryman). */
+        /* What it draws from the bank while it inverts.  Charging, or
+           idle, it draws nothing.  Only the mode tells them apart: a
+           charging Magnum's DC current reads positive too (38 A in BULK at
+           batteryman). */
         if (pw && cJSON_IsBool(inv))
         {
             out = cJSON_IsTrue(inv) && pw->valuedouble > 0.0 ? pw->valuedouble : 0.0;
             cJSON_AddBoolToObject(row, "inverting", cJSON_IsTrue(inv));
         }
-        mf_system_add_inverter(&ctx->sys, d->active, d->online, num_or(rw, 0.0), out);
+        /* Its AC output for Load: volts times amps, whichever of the bank
+           or the grid is behind it.  At batteryman two inverting Magnums
+           read 87% of their DC draw this way. */
+        if (av && aa && av->valuedouble >= 0.0 && aa->valuedouble >= 0.0)
+        {
+            ac = av->valuedouble * aa->valuedouble;
+            cJSON_AddNumberToObject(row, "ac_out_w", ac);
+        }
+        mf_system_add_inverter(&ctx->sys, d->active, d->online, num_or(rw, 0.0),
+                               out, ac);
         cJSON_AddItemToArray(inverters, row);
     }
     else if (strcmp(d->kind, "service") == 0 ||
@@ -495,14 +507,22 @@ static cJSON *system_json(const mf_system_totals_t *t)
     cJSON_AddNumberToObject(o, "charge_w", t->charge_w);
     cJSON_AddNumberToObject(o, "discharge_w", t->discharge_w);
     cJSON_AddNumberToObject(o, "discharge_max_w", t->discharge_max_w);
-    /* Where Discharge came from, and both figures it could be. */
-    cJSON_AddStringToObject(o, "discharge_source",
-                            t->discharge_from_inverters ? "inverters" : "batteries");
+    /* Discharge is always the packs' now; these stay for older clients. */
+    cJSON_AddStringToObject(o, "discharge_source", "batteries");
     cJSON_AddNumberToObject(o, "battery_discharge_w", t->battery_discharge_w);
     if (mf_system_inverter_output_known(t))
         cJSON_AddNumberToObject(o, "inverter_output_w", t->inverter_output_w);
     else
         cJSON_AddNullToObject(o, "inverter_output_w");
+    /* Load, where it came from, and both figures it could be. */
+    cJSON_AddNumberToObject(o, "load_w", t->load_w);
+    cJSON_AddStringToObject(o, "load_source",
+                            t->load_from_inverters ? "inverters" : "net");
+    if (mf_system_inverter_ac_known(t))
+        cJSON_AddNumberToObject(o, "load_inverter_w", t->inverter_ac_w);
+    else
+        cJSON_AddNullToObject(o, "load_inverter_w");
+    cJSON_AddNumberToObject(o, "load_net_w", t->load_net_w);
     cJSON_AddNumberToObject(o, "chargers_counted", t->chargers_counted);
     cJSON_AddNumberToObject(o, "chargers_total", t->chargers_total);
     cJSON_AddNumberToObject(o, "batteries_counted", t->batteries_counted);

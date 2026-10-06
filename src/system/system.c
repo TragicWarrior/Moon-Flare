@@ -118,7 +118,7 @@ void mf_system_add_battery_limit(mf_system_totals_t *t, bool active,
 }
 
 void mf_system_add_inverter(mf_system_totals_t *t, bool active, bool online,
-                            double rated_w, double output_w)
+                            double rated_w, double output_w, double ac_out_w)
 {
     t->inverters_total++;
     if (!active || !online)
@@ -133,6 +133,11 @@ void mf_system_add_inverter(mf_system_totals_t *t, bool active, bool online,
     {
         t->inverter_output_w += output_w;
         t->inverter_output_n++;
+    }
+    if (ac_out_w >= 0.0)
+    {
+        t->inverter_ac_w += ac_out_w;
+        t->inverter_ac_n++;
     }
 }
 
@@ -153,13 +158,22 @@ int mf_system_inverter_output_known(const mf_system_totals_t *t)
     return t->inverters_counted > 0 && t->inverter_output_n == t->inverters_counted;
 }
 
+int mf_system_inverter_ac_known(const mf_system_totals_t *t)
+{
+    return t->inverters_counted > 0 && t->inverter_ac_n == t->inverters_counted;
+}
+
 void mf_system_finish(mf_system_totals_t *t)
 {
-    /* Inverters replace the packs, never add to them: the packs' current
-       already carries what the inverters draw. */
-    t->discharge_from_inverters = mf_system_inverter_output_known(t);
-    t->discharge_w = t->discharge_from_inverters ? t->inverter_output_w
-                                                 : t->battery_discharge_w;
+    t->discharge_w = t->battery_discharge_w;
+    /* What the DC side must be handing the inverters: the chargers' input
+       and the packs' discharge, less what the packs take in.  The figures
+       are read moments apart, so it can dip below nothing. */
+    t->load_net_w = t->input_w + t->battery_discharge_w - t->charge_w;
+    if (t->load_net_w < 0.0)
+        t->load_net_w = 0.0;
+    t->load_from_inverters = mf_system_inverter_ac_known(t);
+    t->load_w = t->load_from_inverters ? t->inverter_ac_w : t->load_net_w;
     if (t->capacity_wh > 0.0)
         t->soc_pct = t->stored_wh / t->capacity_wh * 100.0;
     else if (t->soc_n > 0)

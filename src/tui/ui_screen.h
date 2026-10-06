@@ -113,6 +113,11 @@ double mf_ui_discharge_fixed_w(void);
  * high mark of the daemon now shown. */
 void   mf_dash_discharge_info(int mode, double fixed_w, char *out, size_t cap);
 void   mf_dash_discharge_reset(void);
+/* What the Load meter shows, chosen in File > General (saved in
+ * moonflare.json as load_source), and what a choice gives right now. */
+enum { MF_LOAD_INVERTERS = 0, MF_LOAD_NET };
+int    mf_ui_load_source(void);
+void   mf_dash_load_info(int mode, char *out, size_t cap);
 /* An action row that was run (mf_devset_key/mouse returned 3): POST
  * mf_devset_action_body() to mf_devset_action_path(), hand the reply to
  * mf_devset_action_reply(), then, while mf_devset_action_waiting(), fetch

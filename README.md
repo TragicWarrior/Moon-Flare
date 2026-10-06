@@ -76,7 +76,18 @@ The daemon owns its working config at `/var/lib/moonflare/moonflared.json` (`$ST
 
 ## System totals
 
-The dashboard's System panel (and `moonflare-cli --status`, and the MCP `status` tool) shows site-wide Input, Capacity and Discharge. Only modules marked **active** count. A module that reports readings but isn't wired into the system (a pack on the bench, say) can stay enabled but inactive: select it on the dashboard and press **Space**, or `PUT /api/v1/devices/{id}/settings` with `{"active": false}`. The flag persists across restarts. **Discharge** is what the counted inverters draw from the bank: each one's DC watts while it inverts, and 0 while it charges or idles. Phantom inverters count like any other. This measures the load better than the packs' currents, especially with phantom packs. When no inverter is counted, or one of them doesn't report its output, Discharge falls back to the packs' discharge. `/api/v1/status` says which in `system.discharge_source` (`"inverters"` or `"batteries"`) and gives both figures, `system.inverter_output_w` and `system.battery_discharge_w`; `moonflare-cli --status` marks the inverter case. A setting to choose between them is planned.
+The dashboard's System panel (and `moonflare-cli --status`, and the MCP `status` tool) shows site-wide Input, Capacity, Discharge and Load. Only modules marked **active** count. A module that reports readings but isn't wired into the system (a pack on the bench, say) can stay enabled but inactive: select it on the dashboard and press **Space**, or `PUT /api/v1/devices/{id}/settings` with `{"active": false}`. The flag persists across restarts.
+
+**Discharge** is what the counted packs themselves report: `system.discharge_w` coming out and `system.charge_w` going in. On the dashboard the two share one bar, since a bank does one or the other. It shows the net of the two: bright yellow and named Discharge while the bank gives, green and named Charge while it takes.
+
+**Load** is what the site is using, whichever source feeds it. There are two ways to work it out, and **File → General → Load** picks one for the TUI (`load_source` in `moonflare.json`):
+
+| Choice | Load |
+| --- | --- |
+| **Inverter output** (default) | The counted inverters' AC output, volts × amps out, summed. Phantom inverters count like any other. This includes grid power an inverter passes through. It needs every counted inverter to report its output; until then the meter uses the other figure and says so. |
+| **Net of batteries** | Input + discharge − charge, never below 0: what the chargers bring in and the packs give, less what the packs take. It misses grid power passed through. |
+
+`/api/v1/status` gives both as `system.load_inverter_w` (`null` unless every counted inverter reports) and `system.load_net_w`, and the preferred one as `system.load_w` with `system.load_source` (`"inverters"` or `"net"`); `moonflare-cli --status` and the MCP `status` tool show that one. `system.discharge_source` is always `"batteries"` now, and `system.inverter_output_w` (the inverters' DC draw while inverting) is still reported.
 
 The full scale of the Input meter (and of Discharge for the CLI and MCP) comes from `moonflared.json`:
 
@@ -88,12 +99,12 @@ In the TUI, the Discharge meter's full scale is a display preference, chosen in 
 
 | Choice | Full scale |
 | --- | --- |
-| **Auto** (default) | The highest discharge seen from this daemon, rounded up to 500 W. The TUI remembers it between runs in `~/.local/state/moonflare/tui-state.json` (under `$XDG_STATE_HOME` when set). **Reset Peak** forgets it. |
+| **Auto** (default) | The highest flow seen from this daemon, in or out, rounded up to 500 W. The TUI remembers it between runs in `~/.local/state/moonflare/tui-state.json` (under `$XDG_STATE_HOME` when set). **Reset Peak** forgets it. |
 | **Battery limits** | What the counted packs can deliver: each BMS's maximum discharge current times pack voltage, summed, and rounded to 100 W. JK reports its limit; XD doesn't. |
 | **Inverter ratings** | The counted inverters' continuous ratings, summed. Magnum's comes from the model: an MS4448PAE is 4400 W. |
 | **Fixed watts** | The **Watts** you enter. |
 
-The line under the choice says what it gives right now. Battery limits and Inverter ratings count only when every counted pack or inverter reports one, and until then the scale uses Auto (so does Fixed without watts). A fixed or known scale that is exceeded reads `3508 W (above 3000 W)`. **File → Save config** keeps the choice in `moonflare.json` (`discharge_scale`, `discharge_scale_w`). `/api/v1/status` reports the two sums as `system.battery_limit_w` and `system.inverter_rated_w` (`null` while unknown).
+The scale applies to the bar in both directions. The line under the choice says what it gives right now. Battery limits and Inverter ratings count only when every counted pack or inverter reports one, and until then the scale uses Auto (so does Fixed without watts). A fixed or known scale that is exceeded reads `3508 W (above 3000 W)`. The Load meter's full scale is the inverter ratings when known, else the highest load seen this session. **File → Save config** keeps the choices in `moonflare.json` (`discharge_scale`, `discharge_scale_w`, `load_source`). `/api/v1/status` reports the two sums as `system.battery_limit_w` and `system.inverter_rated_w` (`null` while unknown).
 
 ## Phantom modules
 

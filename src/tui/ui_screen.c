@@ -40,11 +40,12 @@ static double g_refresh = 1.0;
 static double g_last_get;
 static int g_settings_open;
 /* File > General: Refresh, the Discharge meter's scale (a choice cycled
- * with Left/Right), and the watts of a fixed scale; a line under the
- * choice says what it gives right now. */
-#define SET_ROWS 3                      /* Refresh, Discharge, Watts */
-#define SET_FOCI 6                      /* the rows, OK, Reset Peak, Cancel */
-enum { SF_REFRESH = 0, SF_SCALE, SF_WATTS, SF_OK, SF_RESET, SF_CANCEL };
+ * with Left/Right), the watts of a fixed scale, and what the Load meter
+ * shows (another choice); a line under each choice says what it gives
+ * right now. */
+#define SET_ROWS 4                      /* Refresh, Discharge, Watts, Load */
+#define SET_FOCI 7                      /* the rows, OK, Reset Peak, Cancel */
+enum { SF_REFRESH = 0, SF_SCALE, SF_WATTS, SF_LOAD, SF_OK, SF_RESET, SF_CANCEL };
 static vk_window_t *g_set_win;
 static vk_box_t *g_set_vbox, *g_set_mid, *g_set_inner, *g_set_form, *g_set_bar;
 static vk_grid_t *g_set_row[SET_ROWS];
@@ -52,12 +53,13 @@ static vk_grid_t *g_set_fields[SET_ROWS];
 static vk_label_t *g_set_lab[SET_ROWS];
 static vk_label_t *g_set_hint[SET_ROWS];
 static vk_input_t *g_set_in[SET_ROWS];
-static vk_label_t *g_set_info;
+static vk_label_t *g_set_info, *g_set_load_info;
 static vk_button_t *g_set_ok, *g_set_reset, *g_set_cancel;
 static vk_filler_t *g_set_fill, *g_set_fill2, *g_set_form_fill;
 static vk_filler_t *g_set_pad_top, *g_set_pad_bot, *g_set_pad_left, *g_set_pad_right;
 static int g_set_focus;
 static int g_set_scale;                 /* the Discharge choice being edited */
+static int g_set_load;                  /* the Load choice being edited */
 static void close_settings(void);
 static void paint_settings(void);
 static void apply_settings(void);
@@ -294,6 +296,15 @@ double mf_ui_discharge_fixed_w(void)
     return g_tui_cfg.discharge_scale_w;
 }
 
+static const char *const k_load_key[] = { "inverters", "net" };
+static const char *const k_load_name[] = { "Inverter output", "Net of batteries" };
+
+int mf_ui_load_source(void)
+{
+    return strcmp(g_tui_cfg.load_source, k_load_key[MF_LOAD_NET]) == 0
+           ? MF_LOAD_NET : MF_LOAD_INVERTERS;
+}
+
 static void paint_settings(void)
 {
     int pass, i;
@@ -314,6 +325,8 @@ static void paint_settings(void)
         }
         if (g_set_info)
             vk_label_update(g_set_info);
+        if (g_set_load_info)
+            vk_label_update(g_set_load_info);
         if (g_set_form)
             vk_box_update(g_set_form);
         if (g_set_ok)
@@ -434,6 +447,11 @@ static void close_settings(void)
         vk_label_destroy(g_set_info);
         g_set_info = NULL;
     }
+    if (g_set_load_info)
+    {
+        vk_label_destroy(g_set_load_info);
+        g_set_load_info = NULL;
+    }
     destroy_button(&g_set_ok);
     destroy_button(&g_set_reset);
     destroy_button(&g_set_cancel);
@@ -524,6 +542,22 @@ static void show_scale(void)
         vk_label_set_text(g_set_info, line);
 }
 
+/* The same for the Load choice. */
+static void show_load(void)
+{
+    char buf[48], info[96], line[112];
+
+    if (g_set_in[SF_LOAD])
+    {
+        snprintf(buf, sizeof(buf), "< %s >", k_load_name[g_set_load]);
+        vk_input_set_text(g_set_in[SF_LOAD], buf);
+    }
+    mf_dash_load_info(g_set_load, info, sizeof(info));
+    snprintf(line, sizeof(line), "%13s%s", "", info);
+    if (g_set_load_info)
+        vk_label_set_text(g_set_load_info, line);
+}
+
 static int on_set_reset(vk_widget_t *w, void *a)
 {
     (void)w;
@@ -551,8 +585,9 @@ void mf_ui_open_settings(void)
     vk_window_set_border_attrs(g_set_win, A_BOLD);
     vk_widget_set_colors(VK_WIDGET(g_set_win), COL_TEXT, COL_MENU);
 
-    /* Refresh, Discharge, the line about it, Watts, then slack. */
-    g_set_form = vk_box_create(iw - 2, ih - 5, VK_BOX_VERTICAL, 5);
+    /* Refresh, Discharge, the line about it, Watts, Load, the line about
+     * it, then slack. */
+    g_set_form = vk_box_create(iw - 2, ih - 5, VK_BOX_VERTICAL, 7);
     vk_box_set_homogeneous(g_set_form, false);
     vk_widget_set_colors(VK_WIDGET(g_set_form), COL_TEXT, COL_MENU);
     vk_widget_set_expand(VK_WIDGET(g_set_form));
@@ -562,11 +597,15 @@ void mf_ui_open_settings(void)
     vk_widget_set_colors(VK_WIDGET(g_set_info), COL_TEXT, COL_MENU);
     vk_box_set_widget(g_set_form, 2, VK_WIDGET(g_set_info), VK_INHERIT_NONE);
     mk_set_row(SF_WATTS, 3, iw, "Watts", " (Fixed)");
-    slack = (ih - 5) - (3 * SET_ROWS + 1);
+    mk_set_row(SF_LOAD, 4, iw, "Load", " (Left/Right)");
+    g_set_load_info = vk_label_create(iw - 2);
+    vk_widget_set_colors(VK_WIDGET(g_set_load_info), COL_TEXT, COL_MENU);
+    vk_box_set_widget(g_set_form, 5, VK_WIDGET(g_set_load_info), VK_INHERIT_NONE);
+    slack = (ih - 5) - (3 * SET_ROWS + 2);
     if (slack > 0)
     {
         g_set_form_fill = mk_set_pad(iw - 2, slack);
-        vk_box_set_widget(g_set_form, 4, VK_WIDGET(g_set_form_fill), VK_INHERIT_NONE);
+        vk_box_set_widget(g_set_form, 6, VK_WIDGET(g_set_form_fill), VK_INHERIT_NONE);
     }
     snprintf(buf, sizeof(buf), "%.2f", g_refresh);
     vk_input_set_text(g_set_in[SF_REFRESH], buf);
@@ -577,6 +616,8 @@ void mf_ui_open_settings(void)
     }
     g_set_scale = scale_from_cfg();
     show_scale();
+    g_set_load = mf_ui_load_source();
+    show_load();
 
     g_set_bar = vk_box_create(iw - 2, 3, VK_BOX_HORIZONTAL, 5);
     vk_box_set_homogeneous(g_set_bar, false);
@@ -651,10 +692,12 @@ static void apply_settings(void)
     g_tui_cfg.discharge_scale_w = wv > 0.0 ? wv : 0.0;
     snprintf(g_tui_cfg.discharge_scale, sizeof(g_tui_cfg.discharge_scale), "%s",
              k_scale_key[g_set_scale]);
+    snprintf(g_tui_cfg.load_source, sizeof(g_tui_cfg.load_source), "%s",
+             k_load_key[g_set_load]);
     close_settings();
 }
 
-/* Focus ring: Refresh, Discharge, Watts, OK, Reset Peak, Cancel. */
+/* Focus ring: Refresh, Discharge, Watts, Load, OK, Reset Peak, Cancel. */
 static void set_settings_focus(int f)
 {
     int i;
@@ -663,7 +706,7 @@ static void set_settings_focus(int f)
         if (g_set_in[i])
             vk_input_show_cursor(g_set_in[i], false);
     g_set_focus = f;
-    /* The choice takes no typing, so it shows no cursor. */
+    /* The choices take no typing, so they show no cursor. */
     if (g_set_focus == SF_REFRESH || g_set_focus == SF_WATTS)
     {
         vk_input_show_cursor(g_set_in[g_set_focus], true);
@@ -688,6 +731,13 @@ static void cycle_scale(int dir)
     paint_settings();
 }
 
+static void cycle_load(void)
+{
+    g_set_load = g_set_load == MF_LOAD_NET ? MF_LOAD_INVERTERS : MF_LOAD_NET;
+    show_load();
+    paint_settings();
+}
+
 static int settings_key(wint_t c)
 {
     vk_input_t *in;
@@ -705,7 +755,7 @@ static int settings_key(wint_t c)
     }
     if (c == KEY_UP)
     {
-        set_settings_focus(g_set_focus >= SF_OK ? SF_WATTS
+        set_settings_focus(g_set_focus >= SF_OK ? SF_LOAD
                            : g_set_focus > 0 ? g_set_focus - 1 : 0);
         return 1;
     }
@@ -718,6 +768,11 @@ static int settings_key(wint_t c)
     if (g_set_focus == SF_SCALE && (c == KEY_LEFT || c == KEY_RIGHT || c == ' '))
     {
         cycle_scale(c == KEY_LEFT ? -1 : 1);
+        return 1;
+    }
+    if (g_set_focus == SF_LOAD && (c == KEY_LEFT || c == KEY_RIGHT || c == ' '))
+    {
+        cycle_load();
         return 1;
     }
     if ((c == KEY_LEFT || c == KEY_RIGHT) && g_set_focus >= SF_OK)
@@ -2829,7 +2884,8 @@ mf_settings_mouse(int x, int y, mmask_t bstate)
         return 1;
     {
         /* The rows, top down from under the border and top pad; the line
-         * about the Discharge choice sits between it and Watts. */
+         * about the Discharge choice sits between it and Watts, and the
+         * one about Load under the last row. */
         int i, lx = x - win_x, ly = y - win_y, cy = 2;
 
         for (i = 0; i < SET_ROWS; i++)
@@ -2845,6 +2901,8 @@ mf_settings_mouse(int x, int y, mmask_t bstate)
                 /* A click on the choice, once it has focus, moves it on. */
                 if (i == SF_SCALE && g_set_focus == SF_SCALE)
                     cycle_scale(1);
+                else if (i == SF_LOAD && g_set_focus == SF_LOAD)
+                    cycle_load();
                 else if (g_set_focus != i)
                     set_settings_focus(i);
                 return 1;
