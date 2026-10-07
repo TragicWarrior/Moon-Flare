@@ -480,7 +480,7 @@ static cJSON *build_tools_list(void)
         "deliver and the inverters are rated for (battery_limit_w, inverter_rated_w; null "
         "unless every counted one reports it). charge_w and discharge_w are what the "
         "counted packs report going in and coming out. load_w is what the site is "
-        "using: the counted inverters' AC output (load_inverter_w: volts x amps out, "
+        "using: the counted inverters' DC draw while inverting (load_inverter_w, "
         "phantoms included) when every counted inverter reports it, else input + "
         "discharge - charge, never below 0 (load_net_w); load_source says which "
         "(\"inverters\" or \"net\"). Modules marked "

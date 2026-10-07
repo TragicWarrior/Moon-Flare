@@ -80,14 +80,14 @@ The dashboard's System panel (and `moonflare-cli --status`, and the MCP `status`
 
 **Discharge** is what the counted packs themselves report: `system.discharge_w` coming out and `system.charge_w` going in. On the dashboard the two share one bar, since a bank does one or the other. It shows the net of the two: bright yellow and named Discharge while the bank gives, green and named Charge while it takes.
 
-**Load** is what the site is using, whichever source feeds it. There are two ways to work it out, and **File → General → Load** picks one for the TUI (`load_source` in `moonflare.json`):
+**Load** is what the site is using. There are two ways to work it out, and **File → General → Load** picks one for the TUI (`load_source` in `moonflare.json`):
 
 | Choice | Load |
 | --- | --- |
-| **Inverter output** (default) | The counted inverters' AC output, volts × amps out, summed. Phantom inverters count like any other. This includes grid power an inverter passes through. It needs every counted inverter to report its output; until then the meter uses the other figure and says so. |
+| **Inverter draw** (default) | What the counted inverters draw from the DC side while they invert, summed: the watts the dashboard shows beside each inverter, so the rows add up to the meter. Phantom inverters count like any other. It includes the inverters' own losses, and reads 0 while they pass grid power through. It needs every counted inverter to report its draw; until then the meter uses the other figure and says so. |
 | **Net of batteries** | Input + discharge − charge, never below 0: what the chargers bring in and the packs give, less what the packs take. It misses grid power passed through. |
 
-`/api/v1/status` gives both as `system.load_inverter_w` (`null` unless every counted inverter reports) and `system.load_net_w`, and the preferred one as `system.load_w` with `system.load_source` (`"inverters"` or `"net"`); `moonflare-cli --status` and the MCP `status` tool show that one. `system.discharge_source` is always `"batteries"` now, and `system.inverter_output_w` (the inverters' DC draw while inverting) is still reported.
+`/api/v1/status` gives both as `system.load_inverter_w` (`null` unless every counted inverter reports) and `system.load_net_w`, and the preferred one as `system.load_w` with `system.load_source` (`"inverters"` or `"net"`); `moonflare-cli --status` and the MCP `status` tool show that one. `system.discharge_source` is always `"batteries"` now. `system.inverter_output_w` is the same DC draw, and `system.inverter_ac_out_w` sums the inverters' AC output (volts × amps out, `null` unless every counted one reports it). A Magnum reports AC amps in whole numbers, so that sum is coarse, about 60 W either way per inverter.
 
 The full scale of the Input meter (and of Discharge for the CLI and MCP) comes from `moonflared.json`:
 
