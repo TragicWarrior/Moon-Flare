@@ -114,6 +114,44 @@ static int drive(const mf_plugin_ops_t *ops, void *ctx, int max_ms)
     return 0;
 }
 
+/* Step until the module has no reading (its link dropped).  drive() stops
+ * at the next update, which after a drop can be the first frame of the
+ * reconnect: the plugin reconnects at once, so the reading is only away
+ * for a few ticks. */
+static int drive_until_offline(const mf_plugin_ops_t *ops, void *ctx, int max_ms)
+{
+    static char json[8192];
+    int waited = 0;
+
+    while (waited <= max_ms)
+    {
+        int fd = ops->fd(ctx);
+        unsigned mask = ops->select_mask(ctx);
+        struct pollfd p;
+        int to = 20;
+
+        if (ops->get_reading(ctx, json, sizeof(json)) != 0)
+            return 1;
+        if (fd >= 0 && mask)
+        {
+            p.fd = fd;
+            p.events = 0;
+            if (mask & MF_IO_WANT_READ)
+                p.events = (short)(p.events | POLLIN);
+            if (mask & MF_IO_WANT_WRITE)
+                p.events = (short)(p.events | POLLOUT);
+            (void)poll(&p, 1, to);
+        }
+        else
+        {
+            usleep((useconds_t)to * 1000);
+        }
+        waited += to;
+        (void)ops->step(ctx);
+    }
+    return ops->get_reading(ctx, json, sizeof(json)) != 0;
+}
+
 static void drive_both(const mf_plugin_ops_t *ops, void *a, void *b, int ms)
 {
     int waited = 0;
@@ -321,8 +359,7 @@ int main(int argc, char **argv)
     CHECK(json_true(json, "charge_mosfet_on"), "B charge on");
 
     CHECK(send_drop(MAC_A), "inject BLE drop A");
-    drive(ops, a, 400);
-    CHECK(ops->get_reading(a, json, sizeof(json)) != 0, "A offline after drop");
+    CHECK(drive_until_offline(ops, a, 1000), "A offline after drop");
     CHECK(ops->get_reading(b, json, sizeof(json)) == 0, "B still live after A drop");
     CHECK(drive(ops, a, 3000), "A reconnects after drop");
     CHECK(ops->get_reading(a, json, sizeof(json)) == 0, "read A after reconnect");
