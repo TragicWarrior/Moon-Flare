@@ -154,7 +154,9 @@ static void check_sample_values(const rig_t *r)
           "searchwatts/battype/absorb");
     CHECK(s->rem.charge_rate == 100 && s->rem.ac_input_a == 10 && s->rem.parallel == 0,
           "chargeramps/ainput/parallel");
-    CHECK(NEAR(s->rem.lbco_v, 20.0) && s->rem.ac_cutout_v == 155, "lbco/vaccutout");
+    /* pymagnum reads 20.0 here: it leaves LBCO unscaled.  The sample's
+     * byte, 200, is no real 48 V setting either way. */
+    CHECK(NEAR(s->rem.lbco_v, 80.0) && s->rem.ac_cutout_v == 155, "lbco/vaccutout");
     CHECK(NEAR(s->rem.float_v, 52.8) && NEAR(s->rem.eq_v, 1.2) &&
           NEAR(s->rem.absorb_time_h, 2.0), "vsfloat/vEQ/absorbtime");
     CHECK(s->rem.have_80 && s->rem.battery_size == 400, "batterysize (REMOTE_80)");
@@ -390,6 +392,7 @@ static void test_trailing_ff(void)
           "trailing 0xFF: nothing bad, skipped or resynced");
     CHECK(r.s.rem.battery_size == 400 && NEAR(r.s.rem.absorb_v, 54.8),
           "trailing 0xFF: the remote's fields line up");
+    CHECK(NEAR(r.s.rem.lbco_v, 48.4), "LBCO takes the 48 V multiplier (48.6 V on the ARTR)");
     CHECK(r.s.rem.have_clock && r.s.rem.clock_min == 16 * 60 + 16,
           "trailing 0xFF: the remote's clock (16:16)");
     rig_init(&r);

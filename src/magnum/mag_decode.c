@@ -279,7 +279,10 @@ static void remote_base(mag_state_t *s, const uint8_t *p)
     v->ac_input_a = s8(p[5]);
     v->revision = r(p[6] / 10.0, 1);
     v->parallel = (p[7] & 0x0F) * 10;
-    v->lbco_v = r(p[9] / 10.0, 1);
+    /* Scaled like the charger voltages, which pymagnum doesn't do.  At
+       batteryman (48 V) the byte is 121 with the ARTR set to 48.6 V:
+       48.4 V, the nearest a 0.4 V step comes. */
+    v->lbco_v = r(p[9] * s->mult / 10.0, 1);
     v->ac_cutout_v = p[10];
     v->float_v = r(p[11] * s->mult / 10.0, 1);
     v->eq_v = r(v->absorb_v + p[12] / 10.0, 1);
