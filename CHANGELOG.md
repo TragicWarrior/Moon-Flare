@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.1] - 2026-10-07
+
+### Changed
+
+- Load's inverter figure is what the counted inverters draw from the DC
+  side, not their AC output, so the Load meter adds up to the watts the
+  dashboard shows beside each inverter. The AC figure was volts × whole
+  amps and read about 350 W under the two rows at batteryman. Load now
+  includes the inverters' losses and reads 0 while they pass grid power
+  through. The choice in File → General is named **Inverter draw**.
+- `system.load_inverter_w` is that DC draw. `system.inverter_ac_out_w`
+  is new and carries the AC sum.
+
 ## [0.15.0] - 2026-10-06
 
 ### Added
