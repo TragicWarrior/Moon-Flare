@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.2] - 2026-10-07
+
+### Fixed
+
+- A Magnum remote's low battery cut-out (`remote.lbco_v`, LBCO in the
+  inverter view) is scaled for 24 V and 48 V systems like the charger
+  voltages. A 48 V system set to 48.6 V read 12.1 V; it now reads
+  48.4 V, the nearest the wire's 0.4 V step comes.
+
 ## [0.15.1] - 2026-10-07
 
 ### Changed

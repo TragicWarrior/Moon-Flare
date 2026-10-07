@@ -126,7 +126,7 @@ Numbers are numbers, and units are key suffixes (`_v`, `_a`, `_w`, `_c`, `_h`, `
 | `charge_rate` | `chargeramps` | |
 | `ac_input_a` | `ainput` | |
 | `ac_cutout_v` | `vaccutout` | |
-| `lbco_v` | `lbco` | No 24/48 V multiplier (as in pymagnum). |
+| `lbco_v` | `lbco` | Scaled by the 24/48 V multiplier, which pymagnum doesn't do. The byte is tenths of a volt on a 12 V scale, so a 48 V system reads in 0.4 V steps. |
 | `parallel` | `parallel` | |
 | `clock_time` | `remotetimehours`, `remotetimemins` | Null until a REMOTE_80 or REMOTE_A0 packet arrives. |
 | `battery_size` | `batterysize` | Null until a REMOTE_80 packet arrives. |
@@ -275,7 +275,7 @@ pymagnum is handed whole packets by the gaps between them. This framer has to fi
 **To check against real captures:**
 
 - **The sign of `dc_current_a`.** It is positive both ways, read at batteryman: 23 A at 1205 W inverting, 38 A at 2037 W charging in BULK. It is a magnitude, so only the mode says which way power flows; `inverting` carries that.
-- **`lbco_v` on a 48 V system:** pymagnum applies no multiplier.
+- **`lbco_v` steps.** Checked at batteryman: the byte is 121 with the ARTR set to 48.6 V, so it takes the multiplier (48.4 V). The 0.2 V difference is put down to the byte's 0.4 V step; a setting that lands on a step hasn't been compared. pymagnum's sample packet has 200 there, which is no 48 V setting with or without the multiplier.
 - **`eq_v` with a preset battery type.**
 
 ## History
