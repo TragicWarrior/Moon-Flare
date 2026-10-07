@@ -423,7 +423,7 @@ static void print_system(const cJSON *sys)
         sys_num(sys, "discharge_w"), sys_num(sys, "discharge_max_w"),
         sys_num(sys, "charge_w"));
     {
-        /* What the site uses: the inverters' AC output when they all
+        /* What the site uses: the inverters' DC draw when they all
          * report it, else input + discharge - charge.  Absent from older
          * daemons. */
         const cJSON *load = cJSON_GetObjectItemCaseSensitive(sys, "load_w");
@@ -432,7 +432,7 @@ static void print_system(const cJSON *sys)
 
         if (cJSON_IsNumber(load))
             printf("  Load       %5.0f W   (%s)\n", load->valuedouble,
-                inv ? "inverter output" : "input + discharge - charge");
+                inv ? "inverter draw" : "input + discharge - charge");
     }
 }
 

@@ -748,8 +748,8 @@ static void set_flow_look(int charging)
     }
 }
 
-/* The Load meter's figure by File > General's choice: the inverters' AC
- * output, or what the DC side hands over (charger input plus the packs'
+/* The Load meter's figure by File > General's choice: the inverters' DC
+ * draw, or what the DC side hands over (charger input plus the packs'
  * discharge less their charge).  The inverters' is only there when every
  * counted one reports it; until then the other stands in.  *net_used says
  * which was taken.  Returns 0 when the daemon sends neither (before 0.15). */
@@ -784,11 +784,11 @@ void mf_dash_load_info(int mode, char *out, size_t cap)
     if (!load_figure(sys, mode, &w, &net))
         snprintf(out, cap, "This daemon doesn't report a load.");
     else if (mode == MF_LOAD_INVERTERS && net)
-        snprintf(out, cap, "An inverter doesn't say; DC side: %.0f W.", w);
+        snprintf(out, cap, "An inverter doesn't say; net: %.0f W.", w);
     else if (net)
         snprintf(out, cap, "Input + discharge - charge: %.0f W.", w);
     else
-        snprintf(out, cap, "The inverters put out %.0f W.", w);
+        snprintf(out, cap, "The inverters draw %.0f W.", w);
     cJSON_Delete(root);
 }
 

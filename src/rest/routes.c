@@ -376,7 +376,7 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
         cJSON *av = num_or_null(data, "ac_out_v");
         cJSON *aa = num_or_null(data, "ac_out_a");
         double out = -1.0;              /* unknown */
-        double ac = -1.0;               /* unknown: Load uses the DC side */
+        double ac = -1.0;               /* unknown */
         size_t i;
 
         if (rw)
@@ -400,9 +400,10 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
             out = cJSON_IsTrue(inv) && pw->valuedouble > 0.0 ? pw->valuedouble : 0.0;
             cJSON_AddBoolToObject(row, "inverting", cJSON_IsTrue(inv));
         }
-        /* Its AC output for Load: volts times amps, whichever of the bank
-           or the grid is behind it.  At batteryman two inverting Magnums
-           read 87% of their DC draw this way. */
+        /* Its AC output: volts times amps, whichever of the bank or the
+           grid is behind it.  A Magnum's amps are whole numbers, so this
+           is coarse; at batteryman two inverting ones read 87% of their DC
+           draw this way.  Load uses the DC draw. */
         if (av && aa && av->valuedouble >= 0.0 && aa->valuedouble >= 0.0)
         {
             ac = av->valuedouble * aa->valuedouble;
@@ -518,10 +519,15 @@ static cJSON *system_json(const mf_system_totals_t *t)
     cJSON_AddNumberToObject(o, "load_w", t->load_w);
     cJSON_AddStringToObject(o, "load_source",
                             t->load_from_inverters ? "inverters" : "net");
-    if (mf_system_inverter_ac_known(t))
-        cJSON_AddNumberToObject(o, "load_inverter_w", t->inverter_ac_w);
+    if (mf_system_inverter_output_known(t))
+        cJSON_AddNumberToObject(o, "load_inverter_w", t->inverter_output_w);
     else
         cJSON_AddNullToObject(o, "load_inverter_w");
+    /* The AC side, for reference: volts times whole amps. */
+    if (mf_system_inverter_ac_known(t))
+        cJSON_AddNumberToObject(o, "inverter_ac_out_w", t->inverter_ac_w);
+    else
+        cJSON_AddNullToObject(o, "inverter_ac_out_w");
     cJSON_AddNumberToObject(o, "load_net_w", t->load_net_w);
     cJSON_AddNumberToObject(o, "chargers_counted", t->chargers_counted);
     cJSON_AddNumberToObject(o, "chargers_total", t->chargers_total);

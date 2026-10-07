@@ -297,7 +297,7 @@ double mf_ui_discharge_fixed_w(void)
 }
 
 static const char *const k_load_key[] = { "inverters", "net" };
-static const char *const k_load_name[] = { "Inverter output", "Net of batteries" };
+static const char *const k_load_name[] = { "Inverter draw", "Net of batteries" };
 
 int mf_ui_load_source(void)
 {

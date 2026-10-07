@@ -172,8 +172,8 @@ void mf_system_finish(mf_system_totals_t *t)
     t->load_net_w = t->input_w + t->battery_discharge_w - t->charge_w;
     if (t->load_net_w < 0.0)
         t->load_net_w = 0.0;
-    t->load_from_inverters = mf_system_inverter_ac_known(t);
-    t->load_w = t->load_from_inverters ? t->inverter_ac_w : t->load_net_w;
+    t->load_from_inverters = mf_system_inverter_output_known(t);
+    t->load_w = t->load_from_inverters ? t->inverter_output_w : t->load_net_w;
     if (t->capacity_wh > 0.0)
         t->soc_pct = t->stored_wh / t->capacity_wh * 100.0;
     else if (t->soc_n > 0)

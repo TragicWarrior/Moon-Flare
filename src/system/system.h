@@ -25,10 +25,13 @@ int mf_soc_voltage_check(const char *driver);
  * Discharge is what leaves the bank: the counted packs' discharge.
  *
  * Load is what the site draws, which the bank, the chargers or the grid
- * may be feeding.  It is the counted inverters' AC output (volts times
- * amps, so grid power passed through counts) when every one of them
- * reports it, phantoms included.  Otherwise it is what must be leaving the
- * DC side: charger input plus the packs' discharge less their charge. */
+ * may be feeding.  It is what the counted inverters draw from the DC side
+ * while they invert, when every one of them reports it, phantoms included:
+ * the figure the dashboard shows beside each inverter, so the two add up.
+ * Grid power an inverter passes through is not in it.  Otherwise it is
+ * what must be leaving the DC side: charger input plus the packs'
+ * discharge less their charge.  The inverters' AC output (volts times
+ * whole amps, so coarse) is summed beside it. */
 typedef struct {
     int    chargers_total;
     int    chargers_counted;
@@ -49,7 +52,7 @@ typedef struct {
     int    inverter_ac_n;
     double load_w;                   /* set by mf_system_finish() */
     double load_net_w;               /* input + discharge - charge, >= 0 */
-    int    load_from_inverters;      /* load_w is inverter_ac_w */
+    int    load_from_inverters;      /* load_w is inverter_output_w */
     /* What the counted packs can deliver (their maximum discharge current
      * times voltage) and what the counted inverters are rated for, summed:
      * known only when every one of them reports it (see *_known()). */
