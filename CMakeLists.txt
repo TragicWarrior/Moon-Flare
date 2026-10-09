@@ -41,7 +41,7 @@ add_compile_definitions(MF_PLUGIN_DIR="${MF_PLUGIN_DIR}" MF_GATT_BIN="${MF_GATT_
 # The headers come from the checkout's top directory, laid out as an
 # installed libviper has them, so an older vdk.h in /usr/local/include
 # cannot stand in for them.
-set(MF_LIBVIPER_MIN 7.8.0)
+set(MF_LIBVIPER_MIN 9.0.0)
 set(LIBVIPER_SOURCE_DIR "${PROJECT_SOURCE_DIR}/../libviper"
     CACHE PATH "Path to a libviper checkout, built in place (holds vdk.h and libvdk.so)")
 get_filename_component(LIBVIPER_SOURCE_DIR "${LIBVIPER_SOURCE_DIR}" ABSOLUTE)

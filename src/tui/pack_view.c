@@ -1133,12 +1133,13 @@ static void pack_hints(void)
     }
     else
     {
+        /* Single spaces so this still ends before the version at 80 columns. */
         if (g_graph_interval_min >= 60)
             snprintf(buf, sizeof(buf),
-                      "+/- zoom (1h)  c charge  d discharge  b balancer  e settings  Esc dashboard");
+                      "+/- zoom (1h) c charge d discharge b balancer e settings Esc dashboard");
         else
             snprintf(buf, sizeof(buf),
-                      "+/- zoom (%dm)  c charge  d discharge  b balancer  e settings  Esc dashboard",
+                      "+/- zoom (%dm) c charge d discharge b balancer e settings Esc dashboard",
                       g_graph_interval_min);
         vk_label_set_text(g_hints, buf);
     }

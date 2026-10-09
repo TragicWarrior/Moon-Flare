@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- The TUI waits on the screen's input descriptor and, on a Linux console,
+  on the gpm socket, and it drains `vk_kmio_fetch` until the queue is
+  empty. `vk_kmio_fetch` no longer pauses when nothing is pending.
+  Closing the terminal exits the TUI instead of leaving it spinning.
+- Building the TUI requires libviper 9.0.0 or newer (`libvdk.so.9`).
+  Console mouse support does not use libgpm.
+- The TUI shows its version in the bottom-right corner, one column in
+  from the edge.
+
 ## [0.15.2] - 2026-10-07
 
 ### Fixed

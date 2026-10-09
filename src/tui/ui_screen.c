@@ -6,6 +6,7 @@
 
 #include <cJSON.h>
 #include <errno.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,6 +27,7 @@
 #define STALE_SECS 8.0
 
 static vk_screen_t *g_screen;
+static vk_label_t *g_version;
 static int g_kmio_fd = -1;
 static int g_quit;
 static vk_widget_t *g_front[FRONT_MAX];
@@ -212,12 +214,39 @@ void mf_ui_refresh(void)
         vk_widget_draw(g_front[i]);
 }
 
+/* Build version at the bottom-right. The last column stays empty. */
+static void place_version(void)
+{
+    int cols = mf_ui_cols();
+    int rows = mf_ui_rows();
+    int n = (int)strlen(MF_VERSION);
+    int x;
+
+    if (n < 1 || !g_screen)
+        return;
+    if (!g_version)
+    {
+        g_version = vk_label_create(n);
+        if (!g_version)
+            return;
+        vk_widget_set_colors(VK_WIDGET(g_version), COLOR_WHITE, COLOR_BLUE);
+        vk_label_set_text(g_version, MF_VERSION);
+        mf_ui_attach(VK_WIDGET(g_version), 0, 0);
+    }
+    x = cols - 1 - n;
+    if (x < 0)
+        x = 0;
+    vk_widget_move(VK_WIDGET(g_version), x, rows > 0 ? rows - 1 : 0);
+    vk_label_update(g_version);
+}
+
 void mf_ui_resize(void)
 {
     vk_screen_resize(g_screen);
     mf_dash_on_resize();
     mf_pack_on_resize();
     mf_menubar_on_resize();
+    place_version();
     /* The axis width follows the terminal. Ask again so the new bars
      * are filled from history instead of padded empty. */
     if (mf_pack_visible())
@@ -2294,6 +2323,27 @@ void mf_ui_load_config(void)
         g_refresh = g_tui_cfg.refresh_interval_s;
 }
 
+/* The other end of the terminal closed. poll reports that descriptor
+ * ready forever, and select would spin the loop at full speed. A Linux
+ * console and a pty that is only idle do not look like this. */
+static int
+tui_terminal_gone(void)
+{
+    struct pollfd pfd;
+    int fd;
+
+    fd = vk_screen_get_input_fd(g_screen);
+    if (fd < 0)
+        return 0;
+
+    pfd.fd = fd;
+    pfd.events = POLLIN;
+    pfd.revents = 0;
+    if (poll(&pfd, 1, 0) < 0)
+        return 0;
+    return (pfd.revents & (POLLHUP | POLLERR | POLLNVAL)) != 0;
+}
+
 static void parse_connect(const char *spec)
 {
     const char *colon;
@@ -2417,11 +2467,14 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
     g_kmio_fd = vk_screen_get_fd(g_screen);
     if (g_kmio_fd < 0)
         g_kmio_fd = STDOUT_FILENO;
-    vk_kmio_init(g_kmio_fd, VK_KMIO_MOUSE);
+    /* This loop sleeps in its own select. Without NOWAIT, fetch waits
+     * 1 ms on the gpm socket whenever nothing is pending. */
+    vk_kmio_init(g_kmio_fd, VK_KMIO_MOUSE | VK_KMIO_NOWAIT);
 
     mf_dash_init();
     mf_pack_init();
     mf_menubar_init();
+    place_version();
     mf_ui_front_clear();
     mf_ui_refresh();
 
@@ -2434,7 +2487,7 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
     while (!g_quit)
     {
         fd_set r, w;
-        int maxfd = STDIN_FILENO;
+        int key_fd, gpm_fd, maxfd;
         struct timeval tv = { 0, 100000 };
         double t;
         int n, key;
@@ -2443,7 +2496,24 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
 
         FD_ZERO(&r);
         FD_ZERO(&w);
-        FD_SET(STDIN_FILENO, &r);
+        maxfd = -1;
+        /* The descriptor the screen reads. It is not always stdin, and
+         * it is -1 while the screen has no terminal. */
+        key_fd = vk_screen_get_input_fd(g_screen);
+        if (key_fd >= 0)
+        {
+            FD_SET(key_fd, &r);
+            maxfd = key_fd;
+        }
+        /* gpm connects on the first fetch and can come and go. -1 when
+         * this is not a Linux console. Ask every pass; do not cache it. */
+        gpm_fd = vk_kmio_gpm_fd();
+        if (gpm_fd >= 0)
+        {
+            FD_SET(gpm_fd, &r);
+            if (gpm_fd > maxfd)
+                maxfd = gpm_fd;
+        }
         mf_http_cli_prepare_fds(&g_cli, &r, &w, &maxfd);
         n = select(maxfd + 1, &r, &w, NULL, &tv);
         (void)n;
@@ -2626,72 +2696,41 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
         if (t - g_cli.last_fresh > STALE_SECS && g_cli.state == MF_CONN_UP)
             g_cli.stale = 1;
 
-        key = vk_kmio_fetch(&mev);
-        if (key == KEY_MOUSE)
+        /* Empty kmio before waiting again. Bytes ncurses already took
+         * are invisible to select, so one fetch per pass would leave
+         * them until the next tick. -1 means the queue is empty. A
+         * hung-up terminal stays readable, and that has to exit. */
+        for (;;)
         {
-            int mr = mf_mouse_handle(&mev);
-            if (mr == 2 && mf_confirm_open() &&
-                strcmp(mf_confirm_action(), "remove") == 0)
+            if (g_quit)
+                break;
+            key = vk_kmio_fetch(&mev);
+            if (key < 0)
             {
-                mf_confirm_close();
-                remove_confirmed();
+                if (tui_terminal_gone())
+                    g_quit = 1;
+                break;
             }
-            else if (mr == 2 && mf_confirm_open() && g_view_idx >= 0)
+            /* fetch already called getch. 0 is a NUL it returned;
+             * anything still queued is read here, same as before. */
+            if (key == 0)
             {
-                char path[192], payload[80];
-                snprintf(path, sizeof(path),
-                         "/api/v1/devices/%s/actions/set_switch",
-                         mf_dash_catalog_id(g_view_idx));
-                snprintf(payload, sizeof(payload),
-                         "{\"key\":\"%s\",\"value\":false}",
-                         mf_confirm_action());
-                mf_confirm_close();
-                (void)mf_http_cli_post(&g_cli, path, payload);
-            }
-            else if (mr == 2 && mf_devset_is_add())
-            {
-                if (!g_add_wait)
-                    post_new_module();
-            }
-            else if (mr == 2 && mf_devset_open())
-                put_devset();
-            else if (mr == 3 && mf_devset_open())
-                post_devset_action();
-            continue;
-        }
-        if (key <= 0)
-        {
-            int ch = getch();
-            if (ch != ERR)
+                int ch = getch();
+
+                if (ch == ERR)
+                    break;
                 key = ch;
-        }
-        if (key > 0)
-        {
-            if (key == KEY_RESIZE)
-            {
-                mf_ui_resize();
-                continue;
             }
-            if (g_help_win && (key == 27 || key == 'q'))
+            if (key == KEY_MOUSE)
             {
-                close_help();
-                continue;
-            }
-            if (mf_picker_open())
-            {
-                if (mf_picker_key((wint_t)key) == MF_PICK_CHOSEN)
-                    on_pick();
-                continue;
-            }
-            if (mf_confirm_open())
-            {
-                int cr = mf_confirm_handle((wint_t)key);
-                if (cr == 2 && strcmp(mf_confirm_action(), "remove") == 0)
+                int mr = mf_mouse_handle(&mev);
+                if (mr == 2 && mf_confirm_open() &&
+                    strcmp(mf_confirm_action(), "remove") == 0)
                 {
                     mf_confirm_close();
                     remove_confirmed();
                 }
-                else if (cr == 2 && g_view_idx >= 0)
+                else if (mr == 2 && mf_confirm_open() && g_view_idx >= 0)
                 {
                     char path[192], payload[80];
                     snprintf(path, sizeof(path),
@@ -2703,106 +2742,156 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
                     mf_confirm_close();
                     (void)mf_http_cli_post(&g_cli, path, payload);
                 }
-                continue;
-            }
-            if (mf_devset_open())
-            {
-                int sr = mf_devset_key((wint_t)key);
-                if (sr == 2 && mf_devset_is_add())
+                else if (mr == 2 && mf_devset_is_add())
                 {
                     if (!g_add_wait)
                         post_new_module();
                 }
-                else if (sr == 2)
+                else if (mr == 2 && mf_devset_open())
                     put_devset();
-                else if (sr == 3)
+                else if (mr == 3 && mf_devset_open())
                     post_devset_action();
                 continue;
             }
-            if (g_settings_open && settings_key((wint_t)key))
-                continue;
-            if (g_editor_open && editor_key((wint_t)key))
-                continue;
-            if (g_connections_open && connections_key((wint_t)key))
-                continue;
-            if (mf_menubar_key((wint_t)key))
-                continue;
-            if (mf_pack_visible() && (key == 27 || key == KEY_EXIT))
+            if (key > 0)
             {
-                mf_ui_show_dashboard();
-                continue;
-            }
-            if (mf_pack_visible() && (key == 'e' || key == 'E'))
-            {
-                if (g_view_idx >= 0)
-                    mf_ui_open_device_settings(g_view_idx);
-                continue;
-            }
-            /* Every detail view has a history chart to zoom. */
-            if (mf_pack_visible() && (key == '+' || key == '='))
-            {
-                if (mf_pack_graph_zoom(1))
-                    mf_ui_request_history(mf_pack_get_device_id());
-                continue;
-            }
-            if (mf_pack_visible() && (key == '-' || key == '_'))
-            {
-                if (mf_pack_graph_zoom(0))
-                    mf_ui_request_history(mf_pack_get_device_id());
-                continue;
-            }
-            if (mf_pack_visible() && mf_pack_kind() == MF_VIEW_PACK && mf_pack_has_switch())
-            {
-                if (key == 'c' || key == 'C')
+                if (key == KEY_RESIZE)
                 {
-                    if (mf_pack_switch_on("charge"))
-                        mf_confirm_show(g_view_name, "charge");
-                    else
-                        post_switch("charge", 1);
+                    mf_ui_resize();
                     continue;
                 }
-                if (key == 'd' || key == 'D')
+                if (g_help_win && (key == 27 || key == 'q'))
                 {
-                    if (mf_pack_switch_on("discharge"))
-                        mf_confirm_show(g_view_name, "discharge");
-                    else
-                        post_switch("discharge", 1);
+                    close_help();
                     continue;
                 }
-                if (key == 'b' || key == 'B')
+                if (mf_picker_open())
                 {
-                    post_switch("balance", !mf_pack_switch_on("balance"));
+                    if (mf_picker_key((wint_t)key) == MF_PICK_CHOSEN)
+                        on_pick();
                     continue;
                 }
-            }
-            if (!mf_pack_visible())
-            {
-                int k = -1;
-                int dr = mf_dash_key((wint_t)key, &k);
+                if (mf_confirm_open())
+                {
+                    int cr = mf_confirm_handle((wint_t)key);
+                    if (cr == 2 && strcmp(mf_confirm_action(), "remove") == 0)
+                    {
+                        mf_confirm_close();
+                        remove_confirmed();
+                    }
+                    else if (cr == 2 && g_view_idx >= 0)
+                    {
+                        char path[192], payload[80];
+                        snprintf(path, sizeof(path),
+                                 "/api/v1/devices/%s/actions/set_switch",
+                                 mf_dash_catalog_id(g_view_idx));
+                        snprintf(payload, sizeof(payload),
+                                 "{\"key\":\"%s\",\"value\":false}",
+                                 mf_confirm_action());
+                        mf_confirm_close();
+                        (void)mf_http_cli_post(&g_cli, path, payload);
+                    }
+                    continue;
+                }
+                if (mf_devset_open())
+                {
+                    int sr = mf_devset_key((wint_t)key);
+                    if (sr == 2 && mf_devset_is_add())
+                    {
+                        if (!g_add_wait)
+                            post_new_module();
+                    }
+                    else if (sr == 2)
+                        put_devset();
+                    else if (sr == 3)
+                        post_devset_action();
+                    continue;
+                }
+                if (g_settings_open && settings_key((wint_t)key))
+                    continue;
+                if (g_editor_open && editor_key((wint_t)key))
+                    continue;
+                if (g_connections_open && connections_key((wint_t)key))
+                    continue;
+                if (mf_menubar_key((wint_t)key))
+                    continue;
+                if (mf_pack_visible() && (key == 27 || key == KEY_EXIT))
+                {
+                    mf_ui_show_dashboard();
+                    continue;
+                }
+                if (mf_pack_visible() && (key == 'e' || key == 'E'))
+                {
+                    if (g_view_idx >= 0)
+                        mf_ui_open_device_settings(g_view_idx);
+                    continue;
+                }
+                /* Every detail view has a history chart to zoom. */
+                if (mf_pack_visible() && (key == '+' || key == '='))
+                {
+                    if (mf_pack_graph_zoom(1))
+                        mf_ui_request_history(mf_pack_get_device_id());
+                    continue;
+                }
+                if (mf_pack_visible() && (key == '-' || key == '_'))
+                {
+                    if (mf_pack_graph_zoom(0))
+                        mf_ui_request_history(mf_pack_get_device_id());
+                    continue;
+                }
+                if (mf_pack_visible() && mf_pack_kind() == MF_VIEW_PACK && mf_pack_has_switch())
+                {
+                    if (key == 'c' || key == 'C')
+                    {
+                        if (mf_pack_switch_on("charge"))
+                            mf_confirm_show(g_view_name, "charge");
+                        else
+                            post_switch("charge", 1);
+                        continue;
+                    }
+                    if (key == 'd' || key == 'D')
+                    {
+                        if (mf_pack_switch_on("discharge"))
+                            mf_confirm_show(g_view_name, "discharge");
+                        else
+                            post_switch("discharge", 1);
+                        continue;
+                    }
+                    if (key == 'b' || key == 'B')
+                    {
+                        post_switch("balance", !mf_pack_switch_on("balance"));
+                        continue;
+                    }
+                }
+                if (!mf_pack_visible())
+                {
+                    int k = -1;
+                    int dr = mf_dash_key((wint_t)key, &k);
 
-                if (dr == MF_DASH_KEY_OPEN)
-                    mf_ui_open_device_view(k);
-                else if (dr == MF_DASH_KEY_EDIT)
-                    mf_ui_open_device_settings(k);
-                else if (dr == MF_DASH_KEY_TOGGLE)
-                {
-                    char path[192], payload[32];
+                    if (dr == MF_DASH_KEY_OPEN)
+                        mf_ui_open_device_view(k);
+                    else if (dr == MF_DASH_KEY_EDIT)
+                        mf_ui_open_device_settings(k);
+                    else if (dr == MF_DASH_KEY_TOGGLE)
+                    {
+                        char path[192], payload[32];
 
-                    snprintf(path, sizeof(path), "/api/v1/devices/%s/settings",
-                             mf_dash_catalog_id(k));
-                    snprintf(payload, sizeof(payload), "{\"active\":%s}",
-                             mf_dash_catalog_active(k) ? "false" : "true");
-                    (void)mf_http_cli_put(&g_cli, path, payload);
-                    g_last_get = 0;   /* show the new totals right away */
+                        snprintf(path, sizeof(path), "/api/v1/devices/%s/settings",
+                                 mf_dash_catalog_id(k));
+                        snprintf(payload, sizeof(payload), "{\"active\":%s}",
+                                 mf_dash_catalog_active(k) ? "false" : "true");
+                        (void)mf_http_cli_put(&g_cli, path, payload);
+                        g_last_get = 0;   /* show the new totals right away */
+                    }
+                    if (dr != MF_DASH_KEY_NONE)
+                    {
+                        mf_ui_refresh();
+                        continue;
+                    }
                 }
-                if (dr != MF_DASH_KEY_NONE)
-                {
-                    mf_ui_refresh();
-                    continue;
-                }
+                if (key == 'q' || key == 'Q')
+                    g_quit = 1;
             }
-            if (key == 'q' || key == 'Q')
-                g_quit = 1;
         }
     }
 
@@ -2815,6 +2904,12 @@ int mf_tui_run(const char *connect, const char *profile, const char *config_path
     mf_menubar_shutdown();
     mf_pack_shutdown();
     mf_dash_shutdown();
+    if (g_version)
+    {
+        vk_screen_detach_widget(g_screen, 0, VK_WIDGET(g_version));
+        vk_label_destroy(g_version);
+        g_version = NULL;
+    }
     mf_http_cli_close(&g_cli);
     if (g_kmio_fd >= 0)
         vk_kmio_shutdown(g_kmio_fd);
