@@ -49,6 +49,10 @@ int main(void)
         CHECK(!found_small, "no 72x22 too-small path");
     }
     CHECK(strstr(grid[24], "F10"), "hints on row 24");
+    CHECK(grid[24][MF_TUI_COLS - 1] == ' ', "version pad column");
+    CHECK(memcmp(grid[24] + (MF_TUI_COLS - 1 - (int)strlen(MF_VERSION)),
+                 MF_VERSION, strlen(MF_VERSION)) == 0,
+          "version bottom right");
     CHECK(strstr(grid[24], "Space active"), "hints name the Space toggle");
     CHECK(strstr(grid[MF_CARD_Y + 1], "Input") &&
           strstr(grid[MF_CARD_Y + 3], "Capacity") &&

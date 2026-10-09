@@ -20,9 +20,9 @@ sudo apt install build-essential cmake pkg-config git \
     libncurses-dev libsystemd-dev libsqlite3-dev libcurl4-openssl-dev zlib1g-dev
 ```
 
-libcurl and zlib are for the weather.gov and Textbelt plugins, which are skipped without them. Without `libsqlite3-dev` the daemon links the system's `libsqlite3.so.0` with a bundled header. `libgpm-dev` is optional: libviper uses it for mouse support on the Linux console.
+libcurl and zlib are for the weather.gov and Textbelt plugins, which are skipped without them. Without `libsqlite3-dev` the daemon links the system's `libsqlite3.so.0` with a bundled header. Console mouse support talks to the gpm daemon directly; `libgpm-dev` is not used.
 
-The TUI is built on [libviper](https://github.com/TragicWarrior/libviper) 7.8.0 or newer. Clone it beside Moon Flare and build it in place; Moon Flare builds against that checkout and does not need libviper installed:
+The TUI is built on [libviper](https://github.com/TragicWarrior/libviper) 9.0.0 or newer. Clone it beside Moon Flare and build it in place; Moon Flare builds against that checkout and does not need libviper installed:
 
 ```
 git clone https://github.com/TragicWarrior/libviper.git
@@ -32,7 +32,7 @@ cd Moon-Flare
 cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on-failure
 ```
 
-For a libviper somewhere else, configure with `-DLIBVIPER_SOURCE_DIR=/path/to/libviper`. If libviper is missing, older than 7.8.0, or not rebuilt since its last `git pull`, the configure step stops and says what to run.
+For a libviper somewhere else, configure with `-DLIBVIPER_SOURCE_DIR=/path/to/libviper`. If libviper is missing, older than 9.0.0, or not rebuilt since its last `git pull`, the configure step stops and says what to run.
 
 ## Binaries
 

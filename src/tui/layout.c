@@ -54,6 +54,19 @@ static void put_str(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
         grid[y][x + i] = s[i];
 }
 
+/* Bottom-right version, one column in from the edge. */
+static void put_version(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1])
+{
+    int n = (int)strlen(MF_VERSION);
+    int x = MF_TUI_COLS - 1 - n;
+
+    if (n < 1)
+        return;
+    if (x < 0)
+        x = 0;
+    put_str(grid, MF_TUI_ROWS - 1, x, MF_VERSION);
+}
+
 static void draw_box(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
                      int y, int x, int w, int h, const char *title)
 {
@@ -147,6 +160,7 @@ void mf_tui_paint_dashboard(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
     fill_card_at(grid, 1, 27, "Actuators (0)", 0, NULL, "not connected");
     fill_card_at(grid, 1, 54, "Services (0)", 0, NULL, "not connected");
     put_str(grid, 24, 0, "F10 menu  Arrows select  Enter open  e edit  Space active  q quit");
+    put_version(grid);
 }
 
 void mf_tui_paint_settings(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
@@ -167,6 +181,7 @@ void mf_tui_paint_settings(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
     snprintf(line, sizeof(line), "[%.2f]", refresh_s);
     put_str(grid, y + 6, x + 16, line);
     put_str(grid, y + h - 2, x + 2, "OK                   Cancel");
+    put_version(grid);
 }
 
 void mf_tui_devsettings_geom(int cols, int rows, int *x, int *y, int *w, int *h)
@@ -225,6 +240,7 @@ void mf_tui_paint_pack(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1], int has_switch)
     }
     put_str(grid, 14, 2, "dV 18 mV");
     put_str(grid, 24, 0, "c charge  d discharge  b balancer  Esc dashboard");
+    put_version(grid);
 }
 
 void mf_tui_paint_charger(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1])
@@ -246,6 +262,7 @@ void mf_tui_paint_charger(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1])
             grid[13][2 + 1 + c] = '#';
     }
     put_str(grid, 24, 0, "Esc dashboard");
+    put_version(grid);
 }
 
 void mf_tui_paint_inverter(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1])
@@ -264,6 +281,7 @@ void mf_tui_paint_inverter(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1])
     put_str(grid, 10, 2, "remote: absorb 54.8 V  float 54.8 V  charge 60%  AC in 15 A");
     draw_box(grid, 12, 0, 80, 11, "Power History");
     put_str(grid, 24, 0, "+/- zoom (30m)  e settings  Esc dashboard");
+    put_version(grid);
 }
 
 void mf_tui_paint_devsettings(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
@@ -287,6 +305,7 @@ void mf_tui_paint_devsettings(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
             "UUID ....................... [(read-only, shown in gray)]");
     put_str(grid, y + h - 3, x + 2, "[Modify]");
     put_str(grid, y + h - 3, x + w - 18, "[Save] [Close]");
+    put_version(grid);
 }
 
 void mf_tui_paint_confirm(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
@@ -300,4 +319,5 @@ void mf_tui_paint_confirm(char grid[MF_TUI_ROWS][MF_TUI_COLS + 1],
     draw_box(grid, y, x, w, h, line);
     put_str(grid, y + 2, x + 2, "Turn off charge MOSFET?");
     put_str(grid, y + 4, x + 2, "y / n");
+    put_version(grid);
 }
