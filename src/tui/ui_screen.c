@@ -404,6 +404,18 @@ static void box_vacate(vk_box_t *box)
         vk_box_set_widget(box, i, NULL, VK_INHERIT_NONE);
 }
 
+/* Empty a 2x1 grid (the label|input and fields|hint rows of the forms).
+ * Since libviper 10 a grid destroys whatever is still in its cells, and
+ * the forms here destroy each cell's widget themselves: left in, those
+ * would be freed twice.  (Harmless on older libviper.) */
+static void grid_vacate(vk_grid_t *grid)
+{
+    if (!grid)
+        return;
+    vk_grid_set_widget(grid, 0, 0, NULL, VK_INHERIT_NONE);
+    vk_grid_set_widget(grid, 1, 0, NULL, VK_INHERIT_NONE);
+}
+
 static void destroy_filler(vk_filler_t **f)
 {
     if (*f)
@@ -445,6 +457,10 @@ static void close_settings(void)
     box_vacate(g_set_bar);
     for (i = 0; i < SET_ROWS; i++)
     {
+        /* the row holds the fields grid, which holds the label and
+         * the input: empty both before any of them is destroyed */
+        grid_vacate(g_set_row[i]);
+        grid_vacate(g_set_fields[i]);
         if (g_set_row[i])
         {
             vk_grid_destroy(g_set_row[i]);
@@ -1292,6 +1308,10 @@ static void close_editor(void)
     box_vacate(g_ed_bar);
     for (i = 0; i < 3; i++)
     {
+        /* the row holds the fields grid, which holds the label and
+         * the input: empty both before any of them is destroyed */
+        grid_vacate(g_ed_row[i]);
+        grid_vacate(g_ed_fields[i]);
         if (g_ed_row[i])
         {
             vk_grid_destroy(g_ed_row[i]);

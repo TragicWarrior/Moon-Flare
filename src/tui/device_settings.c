@@ -1130,6 +1130,10 @@ static void msg_close(void)
     if (!g_msg)
         return;
     vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_msg));
+    /* libviper 10: a popup destroys its client with itself.  The
+     * client and what is in it are freed by free_owned() below, so
+     * take the client out first.  (Harmless on older libviper.) */
+    vk_popup_set_client(g_msg, NULL);
     vk_popup_destroy(g_msg);
     free_owned(&g_own_msg);
     g_msg = NULL;
@@ -1173,6 +1177,10 @@ static void pop_close(void)
     if (!g_pop)
         return;
     vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_pop));
+    /* libviper 10: a popup destroys its client with itself.  The
+     * client and what is in it are freed by free_owned() below, so
+     * take the client out first.  (Harmless on older libviper.) */
+    vk_popup_set_client(g_pop, NULL);
     vk_popup_destroy(g_pop);
     free_owned(&g_own_pop);
     g_pop = NULL;
@@ -1654,6 +1662,10 @@ void mf_devset_close(void)
     if (g_msg)
     {
         vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_msg));
+        /* libviper 10: a popup destroys its client with itself.  The
+         * client and what is in it are freed by free_owned() below, so
+         * take the client out first.  (Harmless on older libviper.) */
+        vk_popup_set_client(g_msg, NULL);
         vk_popup_destroy(g_msg);
         free_owned(&g_own_msg);
         g_msg = NULL;
@@ -1661,6 +1673,10 @@ void mf_devset_close(void)
     if (g_pop)
     {
         vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_pop));
+        /* libviper 10: a popup destroys its client with itself.  The
+         * client and what is in it are freed by free_owned() below, so
+         * take the client out first.  (Harmless on older libviper.) */
+        vk_popup_set_client(g_pop, NULL);
         vk_popup_destroy(g_pop);
         free_owned(&g_own_pop);
         g_pop = NULL;
@@ -2153,6 +2169,11 @@ void mf_confirm_close(void)
         g_cf_win = NULL;
     }
     g_cf_open = 0;
+    /* The confirm window was put on the front list when it opened
+     * (mf_confirm_show).  Take it off now that it is destroyed, or the
+     * refresh below -- and every one after it -- draws a freed widget.
+     * front_restack() rebuilds the list from what is still open. */
+    front_restack();
     mf_ui_refresh();
 }
 

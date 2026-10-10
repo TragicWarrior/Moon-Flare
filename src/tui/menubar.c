@@ -411,7 +411,15 @@ void mf_menubar_shutdown(void)
     close_dropdown();
     if (g_row)
     {
+        int i, n = vk_box_get_slot_count(g_row);
+
         vk_screen_detach_widget(mf_ui_screen(), 0, VK_WIDGET(g_row));
+        /* Empty the row before destroying it.  Since libviper 10 a box
+         * destroys whatever is still in its slots, and the widgets in
+         * this one are each destroyed just below: left in, they would
+         * be freed twice.  (Harmless on older libviper.) */
+        for (i = 0; i < n; i++)
+            vk_box_set_widget(g_row, i, NULL, VK_INHERIT_NONE);
         vk_box_destroy(g_row);
         g_row = NULL;
     }
