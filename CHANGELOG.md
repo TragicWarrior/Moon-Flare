@@ -18,6 +18,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The TUI shows its version in the bottom-right corner, one column in
   from the edge.
 
+### Fixed
+
+- The TUI is ready for libviper 10, where a container destroys what is
+  still inside it. Three teardown paths destroyed a container first and
+  its contents afterwards, which libviper 10 would free twice: the menu
+  bar row on exit, the form grids of the General and connection-editor
+  dialogs, and the popups of the module settings dialog. Each now takes
+  its contents out before the container is destroyed. The change is
+  harmless with libviper 9.
+- Answering or cancelling a confirm dialog ("Remove this module?") no
+  longer leaves its destroyed window on the list of widgets drawn on
+  top of the screen, where every later refresh drew freed memory.
+- The build is free of warnings again. `config.h` defined
+  `_POSIX_C_SOURCE` unconditionally, which drew a redefinition warning
+  in every source file that had included a system header first. It and
+  the four CLI headers with the same line now define it only when
+  nothing has yet.
+
 ## [0.15.2] - 2026-10-07
 
 ### Fixed
