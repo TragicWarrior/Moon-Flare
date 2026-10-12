@@ -130,7 +130,7 @@ static vk_frame_t *mk_card(int idx, char *cap)
     vk_frame_set_child(f, VK_WIDGET(lb), VK_INHERIT_NONE);
     vk_object_register_event(VK_OBJECT(f), VK_EVENT_ON_FINALIZE,
                              frame_caption, cap);
-    vk_frame_update(f);
+    vk_frame_redraw(f);
     g_lb[idx] = lb;
     return f;
 }
@@ -157,7 +157,7 @@ static vk_frame_t *mk_info(void)
     snprintf(g_info_cap, sizeof(g_info_cap), "Info");
     vk_object_register_event(VK_OBJECT(f), VK_EVENT_ON_FINALIZE,
                              frame_caption, g_info_cap);
-    vk_frame_update(f);
+    vk_frame_redraw(f);
     g_info_lb = lb;
     return f;
 }
@@ -208,7 +208,7 @@ static vk_box_t *mk_sys_name_col(const char *const *text)
         if (i % 2 == 0)   /* bold white reads bright white */
             vk_widget_set_attrs(VK_WIDGET(g_sys_name[i]), A_BOLD);
         vk_box_set_widget(col, i, VK_WIDGET(g_sys_name[i]), VK_INHERIT_NONE);
-        vk_label_update(g_sys_name[i]);
+        vk_label_redraw(g_sys_name[i]);
     }
     return col;
 }
@@ -247,7 +247,7 @@ static void mk_system(int w)
     g_sys_pad = mk_sys_label(SYS_PAD_W, NULL);
     vk_widget_resize(VK_WIDGET(g_sys_pad), SYS_PAD_W, SYS_LINES);
     vk_box_set_widget(g_sys_body, 2, VK_WIDGET(g_sys_pad), VK_INHERIT_NONE);
-    vk_label_update(g_sys_pad);
+    vk_label_redraw(g_sys_pad);
     for (i = 0; i < SYS_ROWS; i++)
     {
         g_sys_mt[i] = mk_sys_bar(sys_meter_w(iw));
@@ -256,7 +256,7 @@ static void mk_system(int w)
         g_sys_gap[i] = mk_sys_label(sys_meter_w(iw), NULL);
         vk_box_set_widget(g_sys_col[1], i * 2 + 1, VK_WIDGET(g_sys_gap[i]),
                           VK_INHERIT_NONE);
-        vk_label_update(g_sys_gap[i]);
+        vk_label_redraw(g_sys_gap[i]);
     }
 }
 
@@ -270,13 +270,13 @@ static void size_system(int w)
     vk_widget_resize(VK_WIDGET(g_sys_body), iw, SYS_LINES);
     vk_widget_resize(VK_WIDGET(g_sys_col[1]), sys_meter_w(iw), SYS_LINES);
     vk_widget_resize(VK_WIDGET(g_sys_pad), SYS_PAD_W, SYS_LINES);
-    vk_label_update(g_sys_pad);
+    vk_label_redraw(g_sys_pad);
     for (i = 0; i < SYS_ROWS; i++)
     {
         vk_widget_resize(VK_WIDGET(g_sys_mt[i]), sys_meter_w(iw), 1);
-        vk_progress_update(g_sys_mt[i]);
+        vk_progress_redraw(g_sys_mt[i]);
         vk_widget_resize(VK_WIDGET(g_sys_gap[i]), sys_meter_w(iw), 1);
-        vk_label_update(g_sys_gap[i]);
+        vk_label_redraw(g_sys_gap[i]);
     }
 }
 
@@ -343,7 +343,7 @@ static void show_too_small(int cols)
         vk_widget_resize(VK_WIDGET(g_small), w, 1);
         vk_widget_show(VK_WIDGET(g_small));
     }
-    vk_label_update(g_small);
+    vk_label_redraw(g_small);
 }
 
 void mf_dash_init(void)
@@ -364,7 +364,7 @@ void mf_dash_init(void)
     vk_label_set_text(g_hints,
                       "F10 menu  Arrows select  Enter open  e edit  Space active  q quit");
     mf_ui_attach(VK_WIDGET(g_hints), 0, rows > 0 ? rows - 1 : 24);
-    vk_label_update(g_hints);
+    vk_label_redraw(g_hints);
     mf_dash_on_resize();
 }
 
@@ -382,7 +382,7 @@ void mf_dash_on_resize(void)
         vk_widget_resize(VK_WIDGET(g_hints), cw, 1);
         vk_widget_move(VK_WIDGET(g_hints), 0, rows > 0 ? rows - 1 : 24);
         /* A resize keeps the old pixels; the new columns stay black. */
-        vk_label_update(g_hints);
+        vk_label_redraw(g_hints);
     }
     if (!g_dash_visible)
     {
@@ -464,7 +464,7 @@ static void fill_lb(vk_listbox_t *lb, cJSON *arr, int card)
     if (n <= 0)
     {
         vk_listbox_add_item(lb, "not connected", NULL, NULL);
-        vk_listbox_update(lb);
+        vk_listbox_redraw(lb);
         return;
     }
     for (i = 0; i < n && i < MAX_LINE; i++)
@@ -560,7 +560,7 @@ static void fill_lb(vk_listbox_t *lb, cJSON *arr, int card)
         if (ph)
             vk_listbox_set_item_submenu(lb, i, true);
     }
-    vk_listbox_update(lb);
+    vk_listbox_redraw(lb);
 }
 
 /* Keep the cursor on a real row; hop off an empty card when another has
@@ -591,7 +591,7 @@ static void apply_selection(void)
             continue;
         vk_listbox_set_focused(g_lb[i], i == g_sel_card);
         vk_listbox_set_curr(g_lb[i], g_sel_row[i]);
-        vk_listbox_update(g_lb[i]);
+        vk_listbox_redraw(g_lb[i]);
     }
 }
 
@@ -603,7 +603,7 @@ static void set_sys_row(int i, double pct, const char *val)
         pct = 100;
     vk_progress_set_value(g_sys_mt[i], pct);
     vk_progress_set_value_text(g_sys_mt[i], val);
-    vk_progress_update(g_sys_mt[i]);
+    vk_progress_redraw(g_sys_mt[i]);
 }
 
 static double jnum_or(const cJSON *o, const char *key, double dflt)
@@ -744,7 +744,7 @@ static void set_flow_look(int charging)
     if (name)
     {
         vk_label_set_text(name, charging ? " Charge" : " Discharge");
-        vk_label_update(name);
+        vk_label_redraw(name);
     }
 }
 
@@ -962,18 +962,18 @@ static void repaint_cards(void)
 
     for (i = 0; i < NCARD; i++)
         if (g_fr[i])
-            vk_frame_update(g_fr[i]);
+            vk_frame_redraw(g_fr[i]);
     if (g_info_fr)
-        vk_frame_update(g_info_fr);
+        vk_frame_redraw(g_info_fr);
     for (i = 0; i < 2; i++)
         if (g_grid_row[i])
-            vk_box_update(g_grid_row[i]);
+            vk_box_redraw(g_grid_row[i]);
     if (g_cards_box)
-        vk_box_update(g_cards_box);
+        vk_box_redraw(g_cards_box);
     if (g_body)
-        vk_box_update(g_body);
+        vk_box_redraw(g_body);
     if (g_client)
-        vk_frame_update(g_client);
+        vk_frame_redraw(g_client);
 }
 
 static void info_line(const char *fmt, ...)
@@ -1078,7 +1078,7 @@ static void fill_info(const cJSON *services)
         info_line("%s", nsvc ? "waiting for weather" : "no weather service");
         if (why)                        /* e.g. "ZIP 12345 not found" */
             info_line("%s", why);
-        vk_listbox_update(g_info_lb);
+        vk_listbox_redraw(g_info_lb);
         return;
     }
     {
@@ -1159,7 +1159,7 @@ static void fill_info(const cJSON *services)
             info_line("%s %s", cJSON_IsString(st) ? st->valuestring : "",
                       cJSON_IsString(at) ? at->valuestring : "");
     }
-    vk_listbox_update(g_info_lb);
+    vk_listbox_redraw(g_info_lb);
 }
 
 void mf_dash_update(const char *hostport, const char *tag, const char *json)
@@ -1175,7 +1175,7 @@ void mf_dash_update(const char *hostport, const char *tag, const char *json)
     if (g_status)
     {
         vk_label_set_text(g_status, st);
-        vk_label_update(g_status);
+        vk_label_redraw(g_status);
     }
     if (!json || !json[0])
         return;
@@ -1206,8 +1206,8 @@ void mf_dash_update(const char *hostport, const char *tag, const char *json)
         int r;
 
         for (r = 0; r < 2; r++)
-            vk_box_update(g_sys_col[r]);
-        vk_box_update(g_sys_body);
+            vk_box_redraw(g_sys_col[r]);
+        vk_box_redraw(g_sys_body);
     }
     repaint_cards();
     if (root)

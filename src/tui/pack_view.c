@@ -101,7 +101,7 @@ static vk_label_t *mk_lab_txt_c(int w, const char *txt)
     if (txt)
     {
         vk_label_set_text(l, txt);
-        vk_label_update(l);
+        vk_label_redraw(l);
     }
     return l;
 }
@@ -237,8 +237,8 @@ static void inverter_init(int cols, int iw)
     vk_box_set_widget(g_iv_w_row, 2, VK_WIDGET(g_lb_viw), VK_INHERIT_COLOR);
     vk_box_set_widget(g_iv_w_row, 3, VK_WIDGET(g_iv_rfill1), VK_INHERIT_COLOR);
     /* Static name labels were painted before inheriting; repaint. */
-    vk_label_update(g_lb_nidc);
-    vk_label_update(g_lb_niw);
+    vk_label_redraw(g_lb_nidc);
+    vk_label_redraw(g_lb_niw);
 
     /* Power History: the charger's Production History, for dc_power_w. */
     g_iv_graph = vk_graph_create(cols - 4, 8);
@@ -341,9 +341,9 @@ void mf_pack_init(void)
     /* mk_lab_txt_c painted these static name labels before they inherited the
        window's colours (VK_INHERIT_COLOR only copies fg/bg, it doesn't repaint);
        repaint now so "Pack"/"SOC"/"Cap" pick up white-on-blue. */
-    vk_label_update(g_lb_npack);
-    vk_label_update(g_lb_nsoc);
-    vk_label_update(g_lb_ncap);
+    vk_label_redraw(g_lb_npack);
+    vk_label_redraw(g_lb_nsoc);
+    vk_label_redraw(g_lb_ncap);
 
     g_fr_cells = vk_window_create(cols, 7);
     style_frame(g_fr_cells);
@@ -557,8 +557,8 @@ void mf_pack_init(void)
     vk_box_set_widget(g_cl_watts_row, 3, VK_WIDGET(g_cl_rfill1), VK_INHERIT_COLOR);
 
     /* Static name labels were painted by mk_lab_txt_c before inheriting; repaint. */
-    vk_label_update(g_lb_nbatt);
-    vk_label_update(g_lb_nwatts);
+    vk_label_redraw(g_lb_nbatt);
+    vk_label_redraw(g_lb_nwatts);
 
     /* Wrap the client areas in flat cyan/blue frames and reparent the windows.
        Top-down attach so the frame's colours cascade; the windows keep their own
@@ -681,16 +681,16 @@ static void size_inverter(int cols, int clientH, int bw)
 /* Repaint the Inverter view and composite it up to the screen. */
 static void update_inverter(void)
 {
-    vk_box_update(g_iv_dc_row);
-    vk_box_update(g_iv_w_row);
-    vk_box_update(g_iv_body);
-    vk_window_update(g_fr_inv);
-    vk_box_update(g_iv_graph_row);
-    vk_box_update(g_ipow_body);
-    vk_window_update(g_fr_ipow);
-    vk_box_update(g_inv_box);
+    vk_box_redraw(g_iv_dc_row);
+    vk_box_redraw(g_iv_w_row);
+    vk_box_redraw(g_iv_body);
+    vk_window_redraw(g_fr_inv);
+    vk_box_redraw(g_iv_graph_row);
+    vk_box_redraw(g_ipow_body);
+    vk_window_redraw(g_fr_ipow);
+    vk_box_redraw(g_inv_box);
     if (g_cf_inv)
-        vk_frame_update(g_cf_inv);
+        vk_frame_redraw(g_cf_inv);
 }
 
 void mf_pack_show(int view)
@@ -785,20 +785,20 @@ void mf_pack_show(int view)
                 vk_widget_resize(VK_WIDGET(g_mt_pack), m0, 1);
                 vk_widget_resize(VK_WIDGET(g_mt_soc), m0, 1);
                 vk_widget_resize(VK_WIDGET(g_pr_cap), m0, 1);
-                vk_progress_update(VK_PROGRESS(g_mt_pack));
-                vk_progress_update(VK_PROGRESS(g_mt_soc));
-                vk_progress_update(g_pr_cap);
+                vk_progress_redraw(VK_PROGRESS(g_mt_pack));
+                vk_progress_redraw(VK_PROGRESS(g_mt_soc));
+                vk_progress_redraw(g_pr_cap);
                 for (i = 0; i < NCELL_SHOW; i++)
                 {
                     vk_widget_resize(VK_WIDGET(g_mt_cell[i]), mc, 1);
-                    vk_progress_update(VK_PROGRESS(g_mt_cell[i]));
+                    vk_progress_redraw(VK_PROGRESS(g_mt_cell[i]));
                 }
             }
             /* Size the charger graph area explicitly.  The frame->window->body
                resize cascade only fires on an actual size change and only
                resizes an EXPAND child one level deep, so g_cl_body's canvas is
                NOT reliably grown to the window interior here -- it keeps its
-               small creation height, and vk_box_update(g_cl_body) then hands the
+               small creation height, and vk_box_redraw(g_cl_body) then hands the
                graph wrapper only that tiny leftover.  Grow the body ourselves
                from the terminal geometry (same derivation as clientH), then size
                the wrapper row and graph to fill the space below the 5 label rows
@@ -890,55 +890,55 @@ void mf_pack_show(int view)
     pack_hints();
     if (g_fr_pack)
     {
-        vk_box_update(g_pack_row0);
-        vk_box_update(g_pack_row1);
-        vk_box_update(g_pack_body);
-        vk_window_update(g_fr_pack);
+        vk_box_redraw(g_pack_row0);
+        vk_box_redraw(g_pack_row1);
+        vk_box_redraw(g_pack_body);
+        vk_window_redraw(g_fr_pack);
     }
     if (g_fr_cells)
     {
         for (i = 0; i < NCELL_SHOW; i++)
-            vk_box_update(g_cell_box[i]);
+            vk_box_redraw(g_cell_box[i]);
         for (i = 0; i < 4; i++)
-            vk_box_update(g_cell_row[i]);
-        vk_box_update(g_cells_body);
-        vk_window_update(g_fr_cells);
+            vk_box_redraw(g_cell_row[i]);
+        vk_box_redraw(g_cells_body);
+        vk_window_redraw(g_fr_cells);
     }
     if (g_fr_charger)
     {
-        vk_box_update(g_cl_batt_row);
-        vk_box_update(g_cl_watts_row);
-        vk_box_update(g_cl_body);
-        vk_window_update(g_fr_charger);
+        vk_box_redraw(g_cl_batt_row);
+        vk_box_redraw(g_cl_watts_row);
+        vk_box_redraw(g_cl_body);
+        vk_window_redraw(g_fr_charger);
     }
     if (g_fr_prod)
     {
-        vk_box_update(g_cl_graph_row);
-        vk_box_update(g_prod_body);
-        vk_window_update(g_fr_prod);
+        vk_box_redraw(g_cl_graph_row);
+        vk_box_redraw(g_prod_body);
+        vk_window_redraw(g_fr_prod);
     }
     if (g_kind == MF_VIEW_INVERTER)
         update_inverter();
     else if (g_kind == MF_VIEW_CHARGER)
     {
-        vk_box_update(g_chg_box);
+        vk_box_redraw(g_chg_box);
         if (g_cf_chg)
-            vk_frame_update(g_cf_chg);
+            vk_frame_redraw(g_cf_chg);
     }
     else
     {
         if (g_pk_graph)
         {
-            vk_box_update(g_pk_graph_row);
-            vk_box_update(g_soc_body);
-            vk_window_update(g_fr_soc);
+            vk_box_redraw(g_pk_graph_row);
+            vk_box_redraw(g_soc_body);
+            vk_window_redraw(g_fr_soc);
             if (g_cf_batt)
-                vk_frame_update(g_cf_batt);
+                vk_frame_redraw(g_cf_batt);
         }
         if (g_batt_box)
-            vk_box_update(g_batt_box);
+            vk_box_redraw(g_batt_box);
         if (g_cf_batt)
-            vk_frame_update(g_cf_batt);
+            vk_frame_redraw(g_cf_batt);
     }
 }
 
@@ -1143,7 +1143,7 @@ static void pack_hints(void)
                       g_graph_interval_min);
         vk_label_set_text(g_hints, buf);
     }
-    vk_label_update(g_hints);
+    vk_label_redraw(g_hints);
 }
 
 static int graph_bar_cells(int minutes)
@@ -1224,12 +1224,12 @@ void mf_pack_set_history(const double *values, int count, double y_max,
         if (labels)
             vk_graph_set_x_labels(g_pk_graph, labels, count);
         vk_graph_set_y_range(g_pk_graph, 0.0, 100.0);
-        vk_graph_update(g_pk_graph);
-        vk_box_update(g_pk_graph_row);
-        vk_box_update(g_soc_body);
-        vk_window_update(g_fr_soc);
+        vk_graph_redraw(g_pk_graph);
+        vk_box_redraw(g_pk_graph_row);
+        vk_box_redraw(g_soc_body);
+        vk_window_redraw(g_fr_soc);
         if (g_cf_batt)
-            vk_frame_update(g_cf_batt);
+            vk_frame_redraw(g_cf_batt);
      } else if (g_kind == MF_VIEW_INVERTER && g_iv_graph)
      {
          /* Inverter view: DC power chart, data-driven y-range. */
@@ -1237,7 +1237,7 @@ void mf_pack_set_history(const double *values, int count, double y_max,
          if (labels)
              vk_graph_set_x_labels(g_iv_graph, labels, count);
          vk_graph_set_y_range(g_iv_graph, 0.0, y_max);
-         vk_graph_update(g_iv_graph);
+         vk_graph_redraw(g_iv_graph);
          update_inverter();
      } else if (g_cl_graph)
      {
@@ -1246,17 +1246,17 @@ void mf_pack_set_history(const double *values, int count, double y_max,
          if (labels)
              vk_graph_set_x_labels(g_cl_graph, labels, count);
          vk_graph_set_y_range(g_cl_graph, 0.0, y_max);
-         vk_graph_update(g_cl_graph);
-         vk_box_update(g_cl_batt_row);
-         vk_box_update(g_cl_watts_row);
-         vk_box_update(g_cl_body);
-         vk_window_update(g_fr_charger);
-         vk_box_update(g_cl_graph_row);
-         vk_box_update(g_prod_body);
-         vk_window_update(g_fr_prod);
-         vk_box_update(g_chg_box);
+         vk_graph_redraw(g_cl_graph);
+         vk_box_redraw(g_cl_batt_row);
+         vk_box_redraw(g_cl_watts_row);
+         vk_box_redraw(g_cl_body);
+         vk_window_redraw(g_fr_charger);
+         vk_box_redraw(g_cl_graph_row);
+         vk_box_redraw(g_prod_body);
+         vk_window_redraw(g_fr_prod);
+         vk_box_redraw(g_chg_box);
          if (g_cf_chg)
-             vk_frame_update(g_cf_chg);
+             vk_frame_redraw(g_cf_chg);
      }
 }
 
@@ -1281,7 +1281,7 @@ static const char *numstr(char *out, size_t cap, cJSON *o, const char *k,
 static void set_lab(vk_label_t *l, const char *text)
 {
     vk_label_set_text(l, text);
-    vk_label_update(l);
+    vk_label_redraw(l);
 }
 
 /* The Inverter view's readout: the DC and power meters, then mode and
@@ -1297,8 +1297,8 @@ static void inverter_fill(cJSON *data)
     vk_progress_set_value(VK_PROGRESS(g_mt_idc), jnum(data, "dc_voltage_v", 0));
     vk_progress_set_range(VK_PROGRESS(g_mt_iw), 0.0, rated > 0 ? rated : 4000.0);
     vk_progress_set_value(VK_PROGRESS(g_mt_iw), jnum(data, "dc_power_w", 0));
-    vk_progress_update(VK_PROGRESS(g_mt_idc));
-    vk_progress_update(VK_PROGRESS(g_mt_iw));
+    vk_progress_redraw(VK_PROGRESS(g_mt_idc));
+    vk_progress_redraw(VK_PROGRESS(g_mt_iw));
     snprintf(line, sizeof(line), " %s V", numstr(a, sizeof(a), data, "dc_voltage_v", "%.1f"));
     set_lab(g_lb_vidc, line);
     snprintf(line, sizeof(line), "%s A", numstr(a, sizeof(a), data, "dc_current_a", "%+.1f"));
@@ -1365,7 +1365,7 @@ void mf_pack_update(const char *json)
     snprintf(line, sizeof(line), "%s  %s/%s  %s  seq %d",
              name, kind, driver, state, seq);
     vk_label_set_text(g_chrome1, line);
-    vk_label_update(g_chrome1);
+    vk_label_redraw(g_chrome1);
     {
         const char *ep = jstr(root, "endpoint", "");
         const cJSON *of = cJSON_GetObjectItemCaseSensitive(data_obj(root),
@@ -1385,7 +1385,7 @@ void mf_pack_update(const char *json)
                                             it->valuestring);
         }
         vk_label_set_text(g_chrome2, line);
-        vk_label_update(g_chrome2);
+        vk_label_redraw(g_chrome2);
     }
     g_has_switch = caps_switch(root);
 
@@ -1419,23 +1419,23 @@ void mf_pack_update(const char *json)
                          jnum(data, "soh_pct", 0));
             }
         }
-        vk_progress_update(VK_PROGRESS(g_mt_pack));
-        vk_progress_update(VK_PROGRESS(g_mt_soc));
-        vk_progress_update(g_pr_cap);
+        vk_progress_redraw(VK_PROGRESS(g_mt_pack));
+        vk_progress_redraw(VK_PROGRESS(g_mt_soc));
+        vk_progress_redraw(g_pr_cap);
         vk_label_set_text(g_lb_vcap, line);
-        vk_label_update(g_lb_vcap);
+        vk_label_redraw(g_lb_vcap);
         snprintf(line, sizeof(line), " %.2f V", pack_v);
         vk_label_set_text(g_lb_vpack, line);
-        vk_label_update(g_lb_vpack);
+        vk_label_redraw(g_lb_vpack);
         snprintf(line, sizeof(line), " %.0f%%", soc);
         vk_label_set_text(g_lb_vsoc, line);
-        vk_label_update(g_lb_vsoc);
+        vk_label_redraw(g_lb_vsoc);
         snprintf(line, sizeof(line), "%+.2f A", cur);
         vk_label_set_text(g_lb_cur, line);
-        vk_label_update(g_lb_cur);
+        vk_label_redraw(g_lb_cur);
         fmt_temps(data, line, sizeof(line), "MOS --  T1 --  T2 --");
         vk_label_set_text(g_lb_temp, line);
-        vk_label_update(g_lb_temp);
+        vk_label_redraw(g_lb_temp);
         g_chg_on = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(data, "charge_mosfet_on"));
         g_dsg_on = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(data, "discharge_mosfet_on"));
         g_bal_on = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(data, "balancer_switch"));
@@ -1454,7 +1454,7 @@ void mf_pack_update(const char *json)
         {
             vk_label_set_text(g_lb_mos, "--");
         }
-        vk_label_update(g_lb_mos);
+        vk_label_redraw(g_lb_mos);
         cells = cJSON_GetObjectItemCaseSensitive(data, "cells");
         if (cells && cJSON_IsArray(cells))
             ncell = cJSON_GetArraySize(cells);
@@ -1507,12 +1507,12 @@ void mf_pack_update(const char *json)
                 }
                 vk_label_set_text(g_lb_cidx[i], idx);
                 style_cell_idx(g_lb_cidx[i], role);
-                vk_label_update(g_lb_cidx[i]);
+                vk_label_redraw(g_lb_cidx[i]);
                 vk_label_set_text(g_lb_cell[i], lab);
-                vk_label_update(g_lb_cell[i]);
+                vk_label_redraw(g_lb_cell[i]);
                 vk_progress_set_value(VK_PROGRESS(g_mt_cell[i]),
                                       cv[i] > 0 ? cv[i] : 2.80);
-                vk_progress_update(VK_PROGRESS(g_mt_cell[i]));
+                vk_progress_redraw(VK_PROGRESS(g_mt_cell[i]));
             }
             {
                 double full = jnum(data, "full_capacity_ah", 0);
@@ -1524,10 +1524,10 @@ void mf_pack_update(const char *json)
             }
         }
         vk_progress_set_value(VK_PROGRESS(g_mt_soc), soc);
-        vk_progress_update(VK_PROGRESS(g_mt_soc));
+        vk_progress_redraw(VK_PROGRESS(g_mt_soc));
         snprintf(line, sizeof(line), " %.0f%%", soc);
         vk_label_set_text(g_lb_vsoc, line);
-        vk_label_update(g_lb_vsoc);
+        vk_label_redraw(g_lb_vsoc);
         if (ncell > 0 && vmax >= vmin)
             snprintf(line, sizeof(line), "dV %.0f mV", (vmax - vmin) * 1000.0);
         else
@@ -1539,17 +1539,17 @@ void mf_pack_update(const char *json)
             strncat(line, extra, sizeof(line) - strlen(line) - 1);
         }
         vk_label_set_text(g_lb_spread, line);
-        vk_label_update(g_lb_spread);
-        vk_box_update(g_pack_row0);
-        vk_box_update(g_pack_row1);
-        vk_box_update(g_pack_body);
-        vk_window_update(g_fr_pack);
+        vk_label_redraw(g_lb_spread);
+        vk_box_redraw(g_pack_row0);
+        vk_box_redraw(g_pack_row1);
+        vk_box_redraw(g_pack_body);
+        vk_window_redraw(g_fr_pack);
         for (i = 0; i < NCELL_SHOW; i++)
-            vk_box_update(g_cell_box[i]);
+            vk_box_redraw(g_cell_box[i]);
         for (i = 0; i < 4; i++)
-            vk_box_update(g_cell_row[i]);
-        vk_box_update(g_cells_body);
-        vk_window_update(g_fr_cells);
+            vk_box_redraw(g_cell_row[i]);
+        vk_box_redraw(g_cells_body);
+        vk_window_redraw(g_fr_cells);
     }
     else if (g_kind == MF_VIEW_INVERTER)
         inverter_fill(data);
@@ -1559,49 +1559,49 @@ void mf_pack_update(const char *json)
         double w = jnum(data, "charging_watts", 0);
         vk_progress_set_value(VK_PROGRESS(g_mt_batt), bv);
         vk_progress_set_value(VK_PROGRESS(g_mt_watts), w);
-        vk_progress_update(VK_PROGRESS(g_mt_batt));
-        vk_progress_update(VK_PROGRESS(g_mt_watts));
+        vk_progress_redraw(VK_PROGRESS(g_mt_batt));
+        vk_progress_redraw(VK_PROGRESS(g_mt_watts));
         snprintf(line, sizeof(line), " %.2f V", bv);
         vk_label_set_text(g_lb_vbatt, line);
-        vk_label_update(g_lb_vbatt);
+        vk_label_redraw(g_lb_vbatt);
         snprintf(line, sizeof(line), " %.0f W", w);
         vk_label_set_text(g_lb_vwatts, line);
-        vk_label_update(g_lb_vwatts);
+        vk_label_redraw(g_lb_vwatts);
         snprintf(line, sizeof(line), "stage %s", jstr(data, "charge_stage", "--"));
         vk_label_set_text(g_lb_stage, line);
-        vk_label_update(g_lb_stage);
+        vk_label_redraw(g_lb_stage);
         snprintf(line, sizeof(line), "kWh today %.1f   Ah today %.0f",
                  jnum(data, "kwh_today", 0), jnum(data, "ah_today", 0));
         vk_label_set_text(g_lb_energy, line);
-        vk_label_update(g_lb_energy);
+        vk_label_redraw(g_lb_energy);
         fmt_temps(data, line, sizeof(line), "FET --  Batt --  PCB --");
         vk_label_set_text(g_lb_ctemp, line);
-        vk_label_update(g_lb_ctemp);
-        vk_box_update(g_cl_batt_row);
-        vk_box_update(g_cl_watts_row);
-        vk_box_update(g_cl_body);
-        vk_window_update(g_fr_charger);
-        vk_box_update(g_cl_graph_row);
-        vk_box_update(g_prod_body);
-        vk_window_update(g_fr_prod);
+        vk_label_redraw(g_lb_ctemp);
+        vk_box_redraw(g_cl_batt_row);
+        vk_box_redraw(g_cl_watts_row);
+        vk_box_redraw(g_cl_body);
+        vk_window_redraw(g_fr_charger);
+        vk_box_redraw(g_cl_graph_row);
+        vk_box_redraw(g_prod_body);
+        vk_window_redraw(g_fr_prod);
     }
     /* Composite the freshly rendered windows up through the client frame to the
-       screen.  The vk_window_update calls above only redraw onto the window
+       screen.  The vk_window_redraw calls above only redraw onto the window
        canvases; without this the new content never reaches the frame. */
     if (g_kind == MF_VIEW_INVERTER)
         update_inverter();
     else if (g_kind == MF_VIEW_CHARGER)
     {
-        vk_box_update(g_chg_box);
+        vk_box_redraw(g_chg_box);
         if (g_cf_chg)
-            vk_frame_update(g_cf_chg);
+            vk_frame_redraw(g_cf_chg);
     }
     else
     {
         if (g_batt_box)
-            vk_box_update(g_batt_box);
+            vk_box_redraw(g_batt_box);
         if (g_cf_batt)
-            vk_frame_update(g_cf_batt);
+            vk_frame_redraw(g_cf_batt);
     }
     cJSON_Delete(root);
 }
