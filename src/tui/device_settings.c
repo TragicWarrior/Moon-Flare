@@ -867,7 +867,7 @@ static void highlight_buttons(void)
                              COL_MENU);
         vk_widget_set_attrs(VK_WIDGET(g_btn[i]), A_BOLD);
         vk_button_release(g_btn[i]);
-        vk_button_update(g_btn[i]);
+        vk_button_redraw(g_btn[i]);
     }
     if (g_frame)
     {
@@ -890,13 +890,13 @@ static void paint_dialog(void)
         return;
     set_title();
     highlight_buttons();
-    vk_listbox_update(g_list);
+    vk_listbox_redraw(g_list);
     if (g_scroll)
-        vk_scroller_update(g_scroll);
-    vk_frame_update(g_frame);
-    vk_box_update(g_bar);
-    vk_box_update(g_vbox);
-    vk_window_update(g_win);
+        vk_scroller_redraw(g_scroll);
+    vk_frame_redraw(g_frame);
+    vk_box_redraw(g_bar);
+    vk_box_redraw(g_vbox);
+    vk_window_redraw(g_win);
     paint_popups();
     mf_ui_refresh();
 }
@@ -1073,7 +1073,7 @@ static void pop_buttons(vk_popup_t *p, int lit, int fg, int bg)
         vk_button_release(b);
         vk_widget_set_colors(VK_WIDGET(b), i == lit ? COLOR_YELLOW : fg, bg);
         vk_widget_set_attrs(VK_WIDGET(b), A_BOLD);
-        vk_button_update(b);
+        vk_button_redraw(b);
     }
 }
 
@@ -1101,7 +1101,7 @@ static vk_box_t *pop_lines(owned_t *o, int w, int fg, int bg, const char *l1,
         vk_label_set_justify(lab, VK_JUSTIFY_CENTER);
         vk_label_set_text(lab, lines[k]);
         vk_widget_set_colors(VK_WIDGET(lab), fg, bg);
-        vk_label_update(lab);
+        vk_label_redraw(lab);
         vk_box_set_widget(box, i++, VK_WIDGET(lab), VK_INHERIT_NONE);
     }
     {
@@ -1220,23 +1220,23 @@ static void paint_popups(void)
                                  g_pop_focus == 0 ? COLOR_CYAN : COLOR_WHITE,
                                  COLOR_BLUE);
             vk_input_show_cursor(g_pop_in, g_pop_focus == 0);
-            vk_input_update(g_pop_in);
+            vk_input_redraw(g_pop_in);
         }
         if (g_pop_lb)
         {
             vk_listbox_set_focused(g_pop_lb, g_pop_focus == 0);
-            vk_listbox_update(g_pop_lb);
+            vk_listbox_redraw(g_pop_lb);
         }
         pop_buttons(g_pop, g_pop_focus == 1 ? g_pop_btn : -1, fg, bg);
         if (g_pop_client)
-            vk_box_update(g_pop_client);
-        vk_popup_update(g_pop);
+            vk_box_redraw(g_pop_client);
+        vk_popup_redraw(g_pop);
     }
     if (g_msg)
     {
         if (g_msg_client)
-            vk_box_update(g_msg_client);
-        vk_popup_update(g_msg);
+            vk_box_redraw(g_msg_client);
+        vk_popup_redraw(g_msg);
     }
 }
 
@@ -1289,7 +1289,7 @@ static void modify_open(int ri)
         pl = own(&g_own_pop, vk_label_create(w - 2), W_LABEL);
         vk_label_set_text(pl, "  Space toggles, Enter applies:");
         vk_widget_set_colors(VK_WIDGET(pl), COLOR_WHITE, COLOR_BLUE);
-        vk_label_update(pl);
+        vk_label_redraw(pl);
         vk_box_set_widget(g_pop_client, 0, VK_WIDGET(pl), VK_INHERIT_NONE);
         g_pop_lb = own(&g_own_pop, vk_listbox_create(w - 2, rows), W_LISTBOX);
         vk_listbox_set_wrap(g_pop_lb, false);
@@ -1348,7 +1348,7 @@ static void modify_open(int ri)
             snprintf(prompt, sizeof(prompt), "  %s%s:", lab, hint);
         vk_label_set_text(pl, prompt);
         vk_widget_set_colors(VK_WIDGET(pl), COLOR_WHITE, COLOR_BLUE);
-        vk_label_update(pl);
+        vk_label_redraw(pl);
         vk_box_set_widget(g_pop_client, 0, VK_WIDGET(pl), VK_INHERIT_NONE);
         g_pop_in = own(&g_own_pop, vk_input_create(w - 4), W_INPUT);
         vk_input_set_border_style(g_pop_in, VK_BORDER_SINGLE);
@@ -2216,20 +2216,20 @@ void mf_confirm_show_msg(const char *name, const char *text, const char *key)
     vk_window_set_border_attrs(g_cf_win, A_BOLD);
     vk_widget_set_colors(VK_WIDGET(g_cf_win), COL_TEXT, COL_MENU);
     mf_ui_attach(VK_WIDGET(g_cf_win), x, y);
-    vk_window_update(g_cf_win);
+    vk_window_redraw(g_cf_win);
 
     g_cf_l1 = vk_label_create(w - 4);
     vk_widget_set_colors(VK_WIDGET(g_cf_l1), COL_TEXT, COL_MENU);
     snprintf(msg, sizeof(msg), "%s", text ? text : "");
     vk_label_set_text(g_cf_l1, msg);
     mf_ui_attach(VK_WIDGET(g_cf_l1), x + 2, y + 2);
-    vk_label_update(g_cf_l1);
+    vk_label_redraw(g_cf_l1);
 
     g_cf_l2 = vk_label_create(w - 4);
     vk_widget_set_colors(VK_WIDGET(g_cf_l2), COL_TEXT, COL_MENU);
     vk_label_set_text(g_cf_l2, "y / n");
     mf_ui_attach(VK_WIDGET(g_cf_l2), x + 2, y + 4);
-    vk_label_update(g_cf_l2);
+    vk_label_redraw(g_cf_l2);
 
     g_cf_open = 1;
     mf_ui_front_clear();

@@ -159,7 +159,7 @@ static void paint_clock(void)
     snprintf(buf, sizeof(buf), " %02d:%02d:%02d ",
              tm.tm_hour, tm.tm_min, tm.tm_sec);
     vk_label_set_text(g_clock, buf);
-    vk_label_update(g_clock);
+    vk_label_redraw(g_clock);
     g_clock_sec = now;
 }
 
@@ -184,7 +184,7 @@ static int on_drop_item(vk_widget_t *w, void *idxp)
     if (g_bar)
     {
         vk_menubar_set_focused(g_bar, false);
-        vk_menubar_update(g_bar);
+        vk_menubar_redraw(g_bar);
     }
     mf_ui_refresh();
     if (g_open_table && i >= 0 && g_open_table[i].fn == on_dyn_item)
@@ -302,8 +302,8 @@ static void open_dropdown(int idx)
     if (item_x < 0)
         item_x = 0;
     mf_ui_attach(VK_WIDGET(win), bar_x + item_x, MF_MENUBAR_H);
-    vk_listbox_update(lb);
-    vk_window_update(win);
+    vk_listbox_redraw(lb);
+    vk_window_redraw(win);
     g_drop = win;
     g_drop_idx = idx;
     mf_ui_front_clear();
@@ -339,7 +339,7 @@ void mf_menubar_init(void)
         vk_menubar_add_item(g_bar, (char *)titles[i], on_bar_activate,
                             (void *)(intptr_t)i);
     vk_menubar_set_focused(g_bar, false);
-    vk_menubar_update(g_bar);
+    vk_menubar_redraw(g_bar);
 
     g_spacer = vk_filler_create();
     vk_widget_set_colors(VK_WIDGET(g_spacer), COL_TEXT, COL_BG);
@@ -359,7 +359,7 @@ void mf_menubar_init(void)
     g_pad = vk_label_create(PAD_W);
     vk_widget_set_colors(VK_WIDGET(g_pad), COL_TEXT, COLOR_CYAN);
     vk_label_set_text(g_pad, " ");
-    vk_label_update(g_pad);
+    vk_label_redraw(g_pad);
 
     g_row = vk_box_create(cols, 1, VK_BOX_HORIZONTAL, 5);
     vk_box_set_homogeneous(g_row, false);
@@ -370,7 +370,7 @@ void mf_menubar_init(void)
     vk_box_set_widget(g_row, 3, VK_WIDGET(g_throb), VK_INHERIT_NONE);
     vk_box_set_widget(g_row, 4, VK_WIDGET(g_pad), VK_INHERIT_NONE);
     mf_ui_attach(VK_WIDGET(g_row), 0, 0);
-    vk_box_update(g_row);
+    vk_box_redraw(g_row);
     g_focused = 0;
 }
 
@@ -382,12 +382,12 @@ void mf_menubar_on_resize(void)
     {
         vk_widget_resize(VK_WIDGET(g_bar), menu_width(), 1);
         vk_menubar_set_focused(g_bar, false);
-        vk_menubar_update(g_bar);
+        vk_menubar_redraw(g_bar);
     }
     if (g_row)
     {
         vk_widget_resize(VK_WIDGET(g_row), row_width(), 1);
-        vk_box_update(g_row);
+        vk_box_redraw(g_row);
     }
 }
 
@@ -402,7 +402,7 @@ void mf_menubar_tick(void)
         paint_clock();
     if (g_throb)
         vk_activity_run(g_throb);
-    vk_box_update(g_row);
+    vk_box_redraw(g_row);
     mf_ui_refresh();
 }
 
@@ -467,7 +467,7 @@ int mf_menubar_key(wint_t c)
             if (g_bar)
             {
                 vk_menubar_set_focused(g_bar, false);
-                vk_menubar_update(g_bar);
+                vk_menubar_redraw(g_bar);
             }
         }
         else
@@ -476,7 +476,7 @@ int mf_menubar_key(wint_t c)
             vk_menubar_set_focused(g_bar, true);
             if (vk_menubar_get_curr(g_bar) < 0)
                 vk_menubar_set_curr(g_bar, 0);
-            vk_menubar_update(g_bar);
+            vk_menubar_redraw(g_bar);
         }
         mf_ui_refresh();
         return 1;
@@ -495,16 +495,16 @@ int mf_menubar_key(wint_t c)
         if (c == KEY_UP && lb)
         {
             vk_listbox_set_prev(lb);
-            vk_listbox_update(lb);
-            vk_window_update(g_drop);
+            vk_listbox_redraw(lb);
+            vk_window_redraw(g_drop);
             mf_ui_refresh();
             return 1;
         }
         if (c == KEY_DOWN && lb)
         {
             vk_listbox_set_next(lb);
-            vk_listbox_update(lb);
-            vk_window_update(g_drop);
+            vk_listbox_redraw(lb);
+            vk_window_redraw(g_drop);
             mf_ui_refresh();
             return 1;
         }
@@ -517,7 +517,7 @@ int mf_menubar_key(wint_t c)
         {
             close_dropdown();
             vk_menubar_set_prev(g_bar);
-            vk_menubar_update(g_bar);
+            vk_menubar_redraw(g_bar);
             open_dropdown(vk_menubar_get_curr(g_bar));
             return 1;
         }
@@ -525,7 +525,7 @@ int mf_menubar_key(wint_t c)
         {
             close_dropdown();
             vk_menubar_set_next(g_bar);
-            vk_menubar_update(g_bar);
+            vk_menubar_redraw(g_bar);
             open_dropdown(vk_menubar_get_curr(g_bar));
             return 1;
         }
@@ -535,21 +535,21 @@ int mf_menubar_key(wint_t c)
     {
         g_focused = 0;
         vk_menubar_set_focused(g_bar, false);
-        vk_menubar_update(g_bar);
+        vk_menubar_redraw(g_bar);
         mf_ui_refresh();
         return 1;
     }
     if (c == KEY_LEFT)
     {
         vk_menubar_set_prev(g_bar);
-        vk_menubar_update(g_bar);
+        vk_menubar_redraw(g_bar);
         mf_ui_refresh();
         return 1;
     }
     if (c == KEY_RIGHT)
     {
         vk_menubar_set_next(g_bar);
-        vk_menubar_update(g_bar);
+        vk_menubar_redraw(g_bar);
         mf_ui_refresh();
         return 1;
     }
@@ -592,8 +592,8 @@ mf_menubar_mouse(int x, int y, mmask_t bstate)
                     vk_listbox_set_prev(lb);
                 else
                     vk_listbox_set_next(lb);
-                vk_listbox_update(lb);
-                vk_window_update(g_drop);
+                vk_listbox_redraw(lb);
+                vk_window_redraw(g_drop);
                 mf_ui_refresh();
             }
             return 1;
@@ -621,8 +621,8 @@ mf_menubar_mouse(int x, int y, mmask_t bstate)
                 if (row >= 0 && row < n)
                 {
                     vk_listbox_set_curr(lb, row);
-                    vk_listbox_update(lb);
-                    vk_window_update(g_drop);
+                    vk_listbox_redraw(lb);
+                    vk_window_redraw(g_drop);
                     vk_listbox_exec_curr(lb);
                     return 1;
                 }
@@ -645,7 +645,7 @@ mf_menubar_mouse(int x, int y, mmask_t bstate)
         {
             g_focused = 0;
             vk_menubar_set_focused(g_bar, false);
-            vk_menubar_update(g_bar);
+            vk_menubar_redraw(g_bar);
             mf_ui_refresh();
             return 1;
         }
@@ -662,7 +662,7 @@ mf_menubar_mouse(int x, int y, mmask_t bstate)
             vk_menubar_set_focused(g_bar, true);
             if (vk_menubar_get_curr(g_bar) < 0)
                 vk_menubar_set_curr(g_bar, 0);
-            vk_menubar_update(g_bar);
+            vk_menubar_redraw(g_bar);
             mf_ui_refresh();
         }
         return 1;
@@ -674,7 +674,7 @@ mf_menubar_mouse(int x, int y, mmask_t bstate)
         vk_menubar_set_focused(g_bar, true);
     }
     vk_menubar_set_curr(g_bar, idx);
-    vk_menubar_update(g_bar);
+    vk_menubar_redraw(g_bar);
     open_dropdown(idx);
     return 1;
 }
