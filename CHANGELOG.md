@@ -5,10 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.16.0] - 2026-10-13
 
 ### Changed
 
+- In **File → General**, Discharge and Load are pull-down lists. Enter
+  or Space on the row opens the list, Up and Down move in it, Enter
+  takes the row and Esc leaves the choice as it was; a click on the row
+  opens the list and a click on an entry takes it. Left and Right no
+  longer cycle the choice, and the hint beside each row says so.
 - The TUI waits on the screen's input descriptor and, on a Linux console,
   on the gpm socket, and it drains `vk_kmio_fetch` until the queue is
   empty. `vk_kmio_fetch` no longer pauses when nothing is pending.

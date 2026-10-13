@@ -41,8 +41,8 @@ static int g_port = 5250;
 static double g_refresh = 1.0;
 static double g_last_get;
 static int g_settings_open;
-/* File > General: Refresh, the Discharge meter's scale (a choice cycled
- * with Left/Right), the watts of a fixed scale, and what the Load meter
+/* File > General: Refresh, the Discharge meter's scale (a choice from a
+ * pull-down list), the watts of a fixed scale, and what the Load meter
  * shows (another choice); a line under each choice says what it gives
  * right now. */
 #define SET_ROWS 4                      /* Refresh, Discharge, Watts, Load */
@@ -55,6 +55,10 @@ static vk_grid_t *g_set_fields[SET_ROWS];
 static vk_label_t *g_set_lab[SET_ROWS];
 static vk_label_t *g_set_hint[SET_ROWS];
 static vk_input_t *g_set_in[SET_ROWS];
+/* The Discharge and Load rows are a choice from a list, not typed: they
+ * hold a pull-down here and no input. */
+static vk_dropdown_t *g_set_dd[SET_ROWS];
+static int g_set_drop = -1;             /* the row whose list is open, or -1 */
 static vk_label_t *g_set_info, *g_set_load_info;
 static vk_button_t *g_set_ok, *g_set_reset, *g_set_cancel;
 static vk_filler_t *g_set_fill, *g_set_fill2, *g_set_form_fill;
@@ -63,6 +67,7 @@ static int g_set_focus;
 static int g_set_scale;                 /* the Discharge choice being edited */
 static int g_set_load;                  /* the Load choice being edited */
 static void close_settings(void);
+static void set_drop_close(int take);
 static void paint_settings(void);
 static void apply_settings(void);
 
@@ -299,6 +304,17 @@ static void style_set_input(vk_input_t *in, int focused)
     vk_input_show_cursor(in, focused ? true : false);
 }
 
+/* A pull-down in the colors an input has: bold white while it has focus. */
+static void style_set_dropdown(vk_dropdown_t *dd, int focused)
+{
+    if (!dd)
+        return;
+    vk_widget_set_colors(VK_WIDGET(dd), focused ? COLOR_WHITE : COL_TEXT, COL_MENU);
+    vk_widget_set_attrs(VK_WIDGET(dd), focused ? A_BOLD : A_NORMAL);
+    vk_widget_set_relief_colors(VK_WIDGET(dd), COLOR_WHITE, COLOR_BLACK);
+    vk_dropdown_set_highlight(dd, COLOR_WHITE, COLOR_BLACK);
+}
+
 static const char *const k_scale_key[] = { "auto", "battery", "inverter", "fixed" };
 static const char *const k_scale_name[] = {
     "Auto (high mark)", "Battery limits", "Inverter ratings", "Fixed watts"
@@ -339,7 +355,10 @@ static void paint_settings(void)
 
     /* Style what shows focus; redrawing the window repaints all it holds. */
     for (i = 0; i < SET_ROWS; i++)
+    {
         style_set_input(g_set_in[i], i == g_set_focus);
+        style_set_dropdown(g_set_dd[i], i == g_set_focus);
+    }
     if (g_set_win)
         vk_window_redraw(g_set_win);
     mf_ui_refresh();
@@ -415,6 +434,7 @@ static void close_settings(void)
     int i;
     if (!g_settings_open)
         return;
+    set_drop_close(0);                  /* an open list goes first */
     if (g_set_win)
         vk_window_set_child(g_set_win, NULL, VK_INHERIT_NONE);
     box_vacate(g_set_vbox);
@@ -442,6 +462,11 @@ static void close_settings(void)
         {
             vk_input_destroy(g_set_in[i]);
             g_set_in[i] = NULL;
+        }
+        if (g_set_dd[i])
+        {
+            vk_dropdown_destroy(g_set_dd[i]);
+            g_set_dd[i] = NULL;
         }
         if (g_set_lab[i])
         {
@@ -490,8 +515,11 @@ static void close_settings(void)
     mf_ui_refresh();
 }
 
-/* One "Label [input] hint" row of the form, in slot `slot` of g_set_form. */
-static void mk_set_row(int i, int slot, int iw, const char *label, const char *hint)
+/* One "Label [input] hint" row of the form, in slot `slot` of g_set_form.
+ * With `choices` the row holds a pull-down of those `n` names where the
+ * input would be. */
+static void mk_set_row(int i, int slot, int iw, const char *label, const char *hint,
+                       const char *const *choices, int n)
 {
     int fields_w = iw - 2 - 13;
     int in_w;
@@ -511,10 +539,24 @@ static void mk_set_row(int i, int slot, int iw, const char *label, const char *h
     vk_widget_set_expand(VK_WIDGET(g_set_fields[i]));
     g_set_lab[i] = vk_label_create(12);
     vk_label_set_text(g_set_lab[i], label);
-    g_set_in[i] = vk_input_create(in_w);
-    vk_input_set_border_style(g_set_in[i], VK_BORDER_SINGLE);
     vk_grid_set_widget(g_set_fields[i], 0, 0, VK_WIDGET(g_set_lab[i]), VK_INHERIT_AUTO);
-    vk_grid_set_widget(g_set_fields[i], 1, 0, VK_WIDGET(g_set_in[i]), VK_INHERIT_NONE);
+    if (choices)
+    {
+        int k;
+
+        /* three rows tall with its border, like the inputs beside it */
+        g_set_dd[i] = vk_dropdown_create(in_w, n);
+        vk_dropdown_set_border_style(g_set_dd[i], VK_BORDER_SINGLE);
+        for (k = 0; k < n; k++)
+            vk_dropdown_add_item(g_set_dd[i], (char *)choices[k], NULL, NULL);
+        vk_grid_set_widget(g_set_fields[i], 1, 0, VK_WIDGET(g_set_dd[i]), VK_INHERIT_NONE);
+    }
+    else
+    {
+        g_set_in[i] = vk_input_create(in_w);
+        vk_input_set_border_style(g_set_in[i], VK_BORDER_SINGLE);
+        vk_grid_set_widget(g_set_fields[i], 1, 0, VK_WIDGET(g_set_in[i]), VK_INHERIT_NONE);
+    }
 
     g_set_hint[i] = vk_label_create(13);
     vk_label_set_text(g_set_hint[i], hint);
@@ -535,14 +577,11 @@ static void mk_set_row(int i, int slot, int iw, const char *label, const char *h
 /* The choice as its row shows it, and what it gives on the line below. */
 static void show_scale(void)
 {
-    char buf[48], info[96], line[112];
+    char info[96], line[112];
     const char *ws = g_set_in[SF_WATTS] ? vk_input_get_text(g_set_in[SF_WATTS]) : NULL;
 
-    if (g_set_in[SF_SCALE])
-    {
-        snprintf(buf, sizeof(buf), "< %s >", k_scale_name[g_set_scale]);
-        vk_input_set_text(g_set_in[SF_SCALE], buf);
-    }
+    if (g_set_dd[SF_SCALE])
+        vk_dropdown_set_curr(g_set_dd[SF_SCALE], g_set_scale);
     mf_dash_discharge_info(g_set_scale, ws ? atof(ws) : 0.0, info, sizeof(info));
     snprintf(line, sizeof(line), "%13s%s", "", info);   /* under the inputs */
     if (g_set_info)
@@ -552,13 +591,10 @@ static void show_scale(void)
 /* The same for the Load choice. */
 static void show_load(void)
 {
-    char buf[48], info[96], line[112];
+    char info[96], line[112];
 
-    if (g_set_in[SF_LOAD])
-    {
-        snprintf(buf, sizeof(buf), "< %s >", k_load_name[g_set_load]);
-        vk_input_set_text(g_set_in[SF_LOAD], buf);
-    }
+    if (g_set_dd[SF_LOAD])
+        vk_dropdown_set_curr(g_set_dd[SF_LOAD], g_set_load);
     mf_dash_load_info(g_set_load, info, sizeof(info));
     snprintf(line, sizeof(line), "%13s%s", "", info);
     if (g_set_load_info)
@@ -597,12 +633,12 @@ void mf_ui_open_settings(void)
     g_set_form = vk_box_create(iw - 2, ih - 5, VK_BOX_VERTICAL, 7);
     vk_box_set_homogeneous(g_set_form, false);
     vk_widget_set_expand(VK_WIDGET(g_set_form));
-    mk_set_row(SF_REFRESH, 0, iw, "Refresh", " (Seconds)");
-    mk_set_row(SF_SCALE, 1, iw, "Discharge", " (Left/Right)");
+    mk_set_row(SF_REFRESH, 0, iw, "Refresh", " (Seconds)", NULL, 0);
+    mk_set_row(SF_SCALE, 1, iw, "Discharge", " (Enter)", k_scale_name, 4);
     g_set_info = vk_label_create(iw - 2);
     vk_box_set_widget(g_set_form, 2, VK_WIDGET(g_set_info), VK_INHERIT_AUTO);
-    mk_set_row(SF_WATTS, 3, iw, "Watts", " (Fixed)");
-    mk_set_row(SF_LOAD, 4, iw, "Load", " (Left/Right)");
+    mk_set_row(SF_WATTS, 3, iw, "Watts", " (Fixed)", NULL, 0);
+    mk_set_row(SF_LOAD, 4, iw, "Load", " (Enter)", k_load_name, 2);
     g_set_load_info = vk_label_create(iw - 2);
     vk_box_set_widget(g_set_form, 5, VK_WIDGET(g_set_load_info), VK_INHERIT_AUTO);
     slack = (ih - 5) - (3 * SET_ROWS + 2);
@@ -722,18 +758,139 @@ static void set_settings_focus(int f)
     paint_settings();
 }
 
-static void cycle_scale(int dir)
+/* Where a row's pull-down sits on the screen: its place in each box
+ * between it and the dialog window, added up. */
+static void set_drop_origin(int row, int *x, int *y)
 {
-    g_set_scale = (g_set_scale + dir + 4) % 4;
-    show_scale();
+    vk_widget_t *chain[8];
+    int i, px, py;
+
+    chain[0] = VK_WIDGET(g_set_dd[row]);
+    chain[1] = VK_WIDGET(g_set_fields[row]);
+    chain[2] = VK_WIDGET(g_set_row[row]);
+    chain[3] = VK_WIDGET(g_set_form);
+    chain[4] = VK_WIDGET(g_set_inner);
+    chain[5] = VK_WIDGET(g_set_mid);
+    chain[6] = VK_WIDGET(g_set_vbox);
+    chain[7] = VK_WIDGET(g_set_win);
+    *x = 0;
+    *y = 0;
+    for (i = 0; i < 8; i++)
+    {
+        px = 0;
+        py = 0;
+        if (chain[i])
+            vk_widget_get_position(chain[i], &px, &py);
+        *x += px;
+        *y += py;
+    }
+}
+
+/* Open the list of a choice row, under the row (above it when there is
+ * no room below). */
+static void set_drop_open(int row)
+{
+    vk_dropdown_t *dd = (row >= 0 && row < SET_ROWS) ? g_set_dd[row] : NULL;
+    vk_widget_t *popup, *list;
+    int x, y, dh = 3, pw = 0, ph = 0;
+
+    if (!dd || g_set_drop >= 0)
+        return;
+    vk_dropdown_set_expanded(dd, true);
+    popup = vk_dropdown_get_popup(dd);
+    if (!popup)
+        return;
+    /* the list in the dialog's colors, the row in play in black */
+    vk_window_set_border_colors(VK_WINDOW(popup), COLOR_WHITE, COL_MENU);
+    vk_window_set_border_attrs(VK_WINDOW(popup), A_BOLD);
+    vk_widget_set_colors(popup, COL_TEXT, COL_MENU);
+    list = vk_window_get_child(VK_WINDOW(popup));
+    if (list)
+    {
+        vk_widget_set_colors(list, COL_TEXT, COL_MENU);
+        vk_widget_set_attrs(list, A_NORMAL);
+    }
+
+    set_drop_origin(row, &x, &y);
+    vk_widget_get_metrics(VK_WIDGET(dd), NULL, &dh);
+    vk_widget_get_metrics(popup, &pw, &ph);
+    /* its top border on the pull-down's bottom border, so the two read
+     * as one; flipped above when it would run off the screen */
+    y += dh - 1;
+    if (y + ph > mf_ui_rows())
+        y -= (dh - 1) + (ph - 1);
+    if (y < 0)
+        y = 0;
+    if (x + pw > mf_ui_cols())
+        x = mf_ui_cols() - pw;
+    if (x < 0)
+        x = 0;
+    mf_ui_attach(popup, x, y);
+    vk_window_redraw(VK_WINDOW(popup));
+    g_set_drop = row;
+    mf_ui_front_clear();
+    mf_ui_front_push(VK_WIDGET(g_set_win));
+    mf_ui_front_push(popup);
+    mf_ui_refresh();
+}
+
+/* Close the open list.  With `take` the row it shows becomes the
+ * choice; without, the choice stays as it was. */
+static void set_drop_close(int take)
+{
+    vk_dropdown_t *dd;
+    vk_widget_t *popup;
+    int row = g_set_drop;
+
+    if (row < 0)
+        return;
+    g_set_drop = -1;
+    dd = g_set_dd[row];
+    if (!dd)
+        return;
+    popup = vk_dropdown_get_popup(dd);
+    if (popup)
+        vk_screen_detach_widget(g_screen, 0, popup);
+    if (take)
+        vk_dropdown_popup_select(dd);   /* takes the row and closes the list */
+    vk_dropdown_set_expanded(dd, false);
+    if (take)
+    {
+        if (row == SF_SCALE)
+        {
+            g_set_scale = vk_dropdown_get_curr(dd);
+            show_scale();
+        }
+        else
+        {
+            g_set_load = vk_dropdown_get_curr(dd);
+            show_load();
+        }
+    }
+    mf_ui_front_clear();
+    if (g_set_win)
+        mf_ui_front_push(VK_WIDGET(g_set_win));
     paint_settings();
 }
 
-static void cycle_load(void)
+/* A key while a list is open: Up and Down move in it, Enter and Space
+ * take the row, Esc leaves the choice as it was. */
+static void set_drop_key(wint_t c)
 {
-    g_set_load = g_set_load == MF_LOAD_NET ? MF_LOAD_INVERTERS : MF_LOAD_NET;
-    show_load();
-    paint_settings();
+    vk_dropdown_t *dd = g_set_dd[g_set_drop];
+    vk_widget_t *popup = dd ? vk_dropdown_get_popup(dd) : NULL;
+
+    if (c == KEY_UP || c == KEY_DOWN)
+    {
+        vk_dropdown_popup_navigate(dd, c == KEY_UP ? -1 : 1);
+        if (popup)
+            vk_window_redraw(VK_WINDOW(popup));
+        mf_ui_refresh();
+    }
+    else if (c == '\n' || c == KEY_ENTER || c == ' ')
+        set_drop_close(1);
+    else if (c == 27 || c == KEY_EXIT || c == KEY_CANCEL)
+        set_drop_close(0);
 }
 
 static int settings_key(wint_t c)
@@ -741,6 +898,16 @@ static int settings_key(wint_t c)
     vk_input_t *in;
     if (!g_settings_open)
         return 0;
+    if (g_set_drop >= 0)
+    {
+        /* Tab leaves the list as Esc does, then moves on */
+        if (c != '\t' && c != KEY_BTAB)
+        {
+            set_drop_key(c);
+            return 1;
+        }
+        set_drop_close(0);
+    }
     if (c == 27 || c == KEY_EXIT || c == KEY_CANCEL)
     {
         close_settings();
@@ -763,14 +930,11 @@ static int settings_key(wint_t c)
             set_settings_focus(g_set_focus + 1);
         return 1;
     }
-    if (g_set_focus == SF_SCALE && (c == KEY_LEFT || c == KEY_RIGHT || c == ' '))
+    /* on a choice, Enter and Space open its list */
+    if ((g_set_focus == SF_SCALE || g_set_focus == SF_LOAD)
+        && (c == '\n' || c == KEY_ENTER || c == ' '))
     {
-        cycle_scale(c == KEY_LEFT ? -1 : 1);
-        return 1;
-    }
-    if (g_set_focus == SF_LOAD && (c == KEY_LEFT || c == KEY_RIGHT || c == ' '))
-    {
-        cycle_load();
+        set_drop_open(g_set_focus);
         return 1;
     }
     if ((c == KEY_LEFT || c == KEY_RIGHT) && g_set_focus >= SF_OK)
@@ -2888,6 +3052,46 @@ mf_settings_mouse(int x, int y, mmask_t bstate)
     if (!g_settings_open || !g_set_win)
         return 0;
 
+    /* An open list takes the mouse: the wheel moves in it, a click on a
+     * row takes that row, and a click anywhere else closes it. */
+    if (g_set_drop >= 0)
+    {
+        vk_dropdown_t *dd = g_set_dd[g_set_drop];
+        vk_widget_t *popup = dd ? vk_dropdown_get_popup(dd) : NULL;
+        int px = 0, py = 0, pw = 0, ph = 0;
+
+        if (!popup)
+        {
+            set_drop_close(0);
+            return 1;
+        }
+        vk_widget_get_position(popup, &px, &py);
+        vk_widget_get_metrics(popup, &pw, &ph);
+        if (bstate & (BUTTON4_PRESSED | BUTTON5_PRESSED))
+        {
+            vk_dropdown_popup_navigate(dd, (bstate & BUTTON4_PRESSED) ? -1 : 1);
+            vk_window_redraw(VK_WINDOW(popup));
+            mf_ui_refresh();
+            return 1;
+        }
+        if (!(bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON1_DOUBLE_CLICKED)))
+            return 1;
+        if (x > px && x < px + pw - 1 && y > py && y < py + ph - 1)
+        {
+            vk_listbox_t *list = VK_LISTBOX(vk_window_get_child(VK_WINDOW(popup)));
+            int row = (y - py - 1) + (list ? vk_listbox_get_scroll_pos(list) : 0);
+
+            if (list && row >= 0 && row < vk_listbox_get_item_count(list))
+            {
+                vk_listbox_set_curr(list, row);
+                set_drop_close(1);
+            }
+            return 1;
+        }
+        set_drop_close(0);
+        return 1;
+    }
+
     vk_widget_get_position(VK_WIDGET(g_set_win), &win_x, &win_y);
     vk_widget_get_metrics(VK_WIDGET(g_set_win), &win_w, &win_h);
     if (x < win_x || y < win_y || x >= win_x + win_w || y >= win_y + win_h)
@@ -2913,13 +3117,11 @@ mf_settings_mouse(int x, int y, mmask_t bstate)
                 rh = 3;
             if (lx >= 2 && lx < win_w - 2 && ly >= cy && ly < cy + rh)
             {
-                /* A click on the choice, once it has focus, moves it on. */
-                if (i == SF_SCALE && g_set_focus == SF_SCALE)
-                    cycle_scale(1);
-                else if (i == SF_LOAD && g_set_focus == SF_LOAD)
-                    cycle_load();
-                else if (g_set_focus != i)
+                /* A click on a choice opens its list. */
+                if (g_set_focus != i)
                     set_settings_focus(i);
+                if (g_set_dd[i])
+                    set_drop_open(i);
                 return 1;
             }
             cy += rh + (i == SF_SCALE ? 1 : 0);
