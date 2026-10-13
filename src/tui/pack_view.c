@@ -154,8 +154,7 @@ static void band_pct(vk_meter_t *m)
 static void hide_w(vk_widget_t *w)
 {
     if (w)
-        vk_widget_set_state(w,
-            (uint32_t)(vk_widget_get_state(w) & ~VK_STATE_VISIBLE));
+        vk_widget_hide(w);
 }
 
 static void show_w(vk_widget_t *w)
@@ -181,8 +180,7 @@ static vk_filler_t *mk_pad(void)
 
     vk_widget_set_colors(VK_WIDGET(p), COL_TEXT, COL_BG);
     vk_widget_resize(VK_WIDGET(p), 1, 1);
-    vk_widget_set_state(VK_WIDGET(p),
-        (uint32_t)(vk_widget_get_state(VK_WIDGET(p)) & ~VK_STATE_EXPAND));
+    vk_widget_clear_expand(VK_WIDGET(p));
     return p;
 }
 
@@ -426,8 +424,6 @@ void mf_pack_init(void)
     g_cl_pad_r = vk_filler_create();
     g_cl_pad_t = vk_filler_create();
     g_cl_pad_b = vk_filler_create();
-    vk_widget_set_colors(VK_WIDGET(g_cl_pad_l), COL_TEXT, COL_BG);
-    vk_widget_set_colors(VK_WIDGET(g_cl_pad_r), COL_TEXT, COL_BG);
     vk_widget_set_colors(VK_WIDGET(g_cl_pad_t), COL_TEXT, COL_BG);
     vk_widget_set_colors(VK_WIDGET(g_cl_pad_b), COL_TEXT, COL_BG);
     vk_widget_resize(VK_WIDGET(g_cl_pad_l), 1, 1);   /* reserve 1 col (L)       */
@@ -438,44 +434,34 @@ void mf_pack_init(void)
        space evenly with the graph (each pad eating an equal share) instead of
        staying 1 cell.  Clear it so the pads are fixed and the graph gets all
        the leftover. */
-    vk_widget_set_state(VK_WIDGET(g_cl_pad_l),
-        (uint32_t)(vk_widget_get_state(VK_WIDGET(g_cl_pad_l)) & ~VK_STATE_EXPAND));
-    vk_widget_set_state(VK_WIDGET(g_cl_pad_r),
-        (uint32_t)(vk_widget_get_state(VK_WIDGET(g_cl_pad_r)) & ~VK_STATE_EXPAND));
-    vk_widget_set_state(VK_WIDGET(g_cl_pad_t),
-        (uint32_t)(vk_widget_get_state(VK_WIDGET(g_cl_pad_t)) & ~VK_STATE_EXPAND));
-    vk_widget_set_state(VK_WIDGET(g_cl_pad_b),
-        (uint32_t)(vk_widget_get_state(VK_WIDGET(g_cl_pad_b)) & ~VK_STATE_EXPAND));
+    vk_widget_clear_expand(VK_WIDGET(g_cl_pad_l));
+    vk_widget_clear_expand(VK_WIDGET(g_cl_pad_r));
+    vk_widget_clear_expand(VK_WIDGET(g_cl_pad_t));
+    vk_widget_clear_expand(VK_WIDGET(g_cl_pad_b));
 
     g_cl_graph_row = vk_box_create(cols - 2, 8, VK_BOX_HORIZONTAL, 3);
     vk_box_set_homogeneous(g_cl_graph_row, false);
     vk_widget_set_colors(VK_WIDGET(g_cl_graph_row), COL_TEXT, COL_BG);
     vk_widget_set_expand(VK_WIDGET(g_cl_graph_row));
-    vk_box_set_widget(g_cl_graph_row, 0, VK_WIDGET(g_cl_pad_l), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_cl_graph_row, 0, VK_WIDGET(g_cl_pad_l), VK_INHERIT_AUTO);
     vk_box_set_widget(g_cl_graph_row, 1, VK_WIDGET(g_cl_graph), VK_INHERIT_COLOR);
-    vk_box_set_widget(g_cl_graph_row, 2, VK_WIDGET(g_cl_pad_r), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_cl_graph_row, 2, VK_WIDGET(g_cl_pad_r), VK_INHERIT_AUTO);
 
     /* SOC chart graph: identical to charger but with "%" unit and 0-100 y-range. */
     g_pk_pad_l = vk_filler_create();
     g_pk_pad_r = vk_filler_create();
     g_pk_pad_t = vk_filler_create();
     g_pk_pad_b = vk_filler_create();
-    vk_widget_set_colors(VK_WIDGET(g_pk_pad_l), COL_TEXT, COL_BG);
-    vk_widget_set_colors(VK_WIDGET(g_pk_pad_r), COL_TEXT, COL_BG);
     vk_widget_set_colors(VK_WIDGET(g_pk_pad_t), COL_TEXT, COL_BG);
     vk_widget_set_colors(VK_WIDGET(g_pk_pad_b), COL_TEXT, COL_BG);
     vk_widget_resize(VK_WIDGET(g_pk_pad_l), 1, 1);
     vk_widget_resize(VK_WIDGET(g_pk_pad_r), 1, 1);
     vk_widget_resize(VK_WIDGET(g_pk_pad_t), 1, 1);
     vk_widget_resize(VK_WIDGET(g_pk_pad_b), 1, 1);
-    vk_widget_set_state(VK_WIDGET(g_pk_pad_l),
-        (uint32_t)(vk_widget_get_state(VK_WIDGET(g_pk_pad_l)) & ~VK_STATE_EXPAND));
-    vk_widget_set_state(VK_WIDGET(g_pk_pad_r),
-        (uint32_t)(vk_widget_get_state(VK_WIDGET(g_pk_pad_r)) & ~VK_STATE_EXPAND));
-    vk_widget_set_state(VK_WIDGET(g_pk_pad_t),
-        (uint32_t)(vk_widget_get_state(VK_WIDGET(g_pk_pad_t)) & ~VK_STATE_EXPAND));
-    vk_widget_set_state(VK_WIDGET(g_pk_pad_b),
-        (uint32_t)(vk_widget_get_state(VK_WIDGET(g_pk_pad_b)) & ~VK_STATE_EXPAND));
+    vk_widget_clear_expand(VK_WIDGET(g_pk_pad_l));
+    vk_widget_clear_expand(VK_WIDGET(g_pk_pad_r));
+    vk_widget_clear_expand(VK_WIDGET(g_pk_pad_t));
+    vk_widget_clear_expand(VK_WIDGET(g_pk_pad_b));
 
     g_pk_graph = vk_graph_create(cols - 4, 8);
     vk_widget_set_colors(VK_WIDGET(g_pk_graph), COL_TEXT, COL_BG);
@@ -490,9 +476,9 @@ void mf_pack_init(void)
     vk_box_set_homogeneous(g_pk_graph_row, false);
     vk_widget_set_colors(VK_WIDGET(g_pk_graph_row), COL_TEXT, COL_BG);
     vk_widget_set_expand(VK_WIDGET(g_pk_graph_row));
-    vk_box_set_widget(g_pk_graph_row, 0, VK_WIDGET(g_pk_pad_l), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_pk_graph_row, 0, VK_WIDGET(g_pk_pad_l), VK_INHERIT_AUTO);
     vk_box_set_widget(g_pk_graph_row, 1, VK_WIDGET(g_pk_graph), VK_INHERIT_COLOR);
-    vk_box_set_widget(g_pk_graph_row, 2, VK_WIDGET(g_pk_pad_r), VK_INHERIT_COLOR);
+    vk_box_set_widget(g_pk_graph_row, 2, VK_WIDGET(g_pk_pad_r), VK_INHERIT_AUTO);
 
     /* Attach the padded chart into the SOC body: pad_t / graph_row / pad_b
        (mirrors the charger's g_cl_body).  This was missing, so the whole chart

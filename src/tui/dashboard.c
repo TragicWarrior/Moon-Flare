@@ -85,7 +85,7 @@ static char          g_last_json[65536];
    Wrap it with the intended cast. */
 static void hide_w(vk_widget_t *w)
 {
-    vk_widget_set_state(w, (uint32_t)(vk_widget_get_state(w) & ~VK_STATE_VISIBLE));
+    vk_widget_hide(w);
 }
 
 static int frame_caption(vk_object_t *obj, int event, void *anything)
@@ -119,7 +119,6 @@ static vk_frame_t *mk_card(int idx, char *cap)
        the fixed-height list overflows the interior and paints over the
        frame's bottom border, erasing most of it. */
     vk_widget_set_expand(VK_WIDGET(lb));
-    vk_widget_set_colors(VK_WIDGET(lb), COL_TEXT, COL_BG);
     vk_listbox_set_wrap(lb, true);
     /* Only the selected card shows its cursor. */
     vk_listbox_set_highlight(lb, COLOR_BLACK, COLOR_CYAN);
@@ -127,7 +126,7 @@ static vk_frame_t *mk_card(int idx, char *cap)
     vk_listbox_set_focused(lb, idx == g_sel_card);
     /* Phantom rows carry the marker at their right edge. */
     vk_listbox_set_submenu_marker(lb, mf_ui_phantom_marker());
-    vk_frame_set_child(f, VK_WIDGET(lb), VK_INHERIT_NONE);
+    vk_frame_set_child(f, VK_WIDGET(lb), VK_INHERIT_AUTO);
     vk_object_register_event(VK_OBJECT(f), VK_EVENT_ON_FINALIZE,
                              frame_caption, cap);
     g_lb[idx] = lb;
@@ -148,11 +147,10 @@ static vk_frame_t *mk_info(void)
     vk_widget_set_expand(VK_WIDGET(f));
     lb = vk_listbox_create(MF_CARD_W - 2, MF_CARD_H - 2);
     vk_widget_set_expand(VK_WIDGET(lb));
-    vk_widget_set_colors(VK_WIDGET(lb), COL_TEXT, COL_BG);
     vk_listbox_set_highlight(lb, COL_TEXT, COL_BG);
     vk_listbox_set_unfocused(lb, COL_TEXT, COL_BG);
     vk_listbox_set_focused(lb, false);
-    vk_frame_set_child(f, VK_WIDGET(lb), VK_INHERIT_NONE);
+    vk_frame_set_child(f, VK_WIDGET(lb), VK_INHERIT_AUTO);
     snprintf(g_info_cap, sizeof(g_info_cap), "Info");
     vk_object_register_event(VK_OBJECT(f), VK_EVENT_ON_FINALIZE,
                              frame_caption, g_info_cap);

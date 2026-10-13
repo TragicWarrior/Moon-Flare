@@ -83,7 +83,6 @@ static vk_label_t *mk_line(int w, const char *text)
 {
     vk_label_t *l = vk_label_create(w);
 
-    vk_widget_set_colors(VK_WIDGET(l), COL_TEXT, COL_MENU);
     vk_label_set_text(l, text ? text : "");
     return l;
 }
@@ -159,13 +158,12 @@ void mf_picker_show(const char *tag, const char *title,
 
     g_vbox = vk_box_create(inner_w, list_h + 2, VK_BOX_VERTICAL, 3);
     vk_box_set_homogeneous(g_vbox, false);
-    vk_widget_set_colors(VK_WIDGET(g_vbox), COL_TEXT, COL_MENU);
     vk_widget_set_expand(VK_WIDGET(g_vbox));
     vk_box_set_widget(g_vbox, 0, VK_WIDGET(g_list), VK_INHERIT_NONE);
-    vk_box_set_widget(g_vbox, 1, VK_WIDGET(g_spacer), VK_INHERIT_NONE);
-    vk_box_set_widget(g_vbox, 2, VK_WIDGET(g_hint), VK_INHERIT_NONE);
+    vk_box_set_widget(g_vbox, 1, VK_WIDGET(g_spacer), VK_INHERIT_AUTO);
+    vk_box_set_widget(g_vbox, 2, VK_WIDGET(g_hint), VK_INHERIT_AUTO);
 
-    vk_window_set_child(g_win, VK_WIDGET(g_vbox), VK_INHERIT_NONE);
+    vk_window_set_child(g_win, VK_WIDGET(g_vbox), VK_INHERIT_AUTO);
     mf_ui_attach(VK_WIDGET(g_win), x, y);
     vk_listbox_set_curr(g_list, 0);
     vk_window_redraw(g_win);

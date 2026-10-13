@@ -938,7 +938,6 @@ static void build_dialog(int w, int h)
     g_own_dlg.n = 0;
     g_vbox = own(&g_own_dlg, vk_box_create(iw, ih, VK_BOX_VERTICAL, 2), W_BOX);
     vk_box_set_homogeneous(g_vbox, false);
-    vk_widget_set_colors(VK_WIDGET(g_vbox), COL_TEXT, COL_MENU);
 
     g_list = own(&g_own_dlg, vk_listbox_create(iw - 2, lb_h), W_LISTBOX);
     vk_listbox_set_wrap(g_list, false);
@@ -962,22 +961,20 @@ static void build_dialog(int w, int h)
 
     g_bar = own(&g_own_dlg, vk_box_create(iw, 3, VK_BOX_HORIZONTAL, 4), W_BOX);
     vk_box_set_homogeneous(g_bar, false);
-    vk_widget_set_colors(VK_WIDGET(g_bar), COL_TEXT, COL_MENU);
     g_btn[0] = own(&g_own_dlg, mk_btn("Modify"), W_BUTTON);
     g_btn[1] = own(&g_own_dlg, mk_btn(g_add_mode ? "Add" : "Save"), W_BUTTON);
     g_btn[2] = own(&g_own_dlg, mk_btn(g_add_mode ? "Cancel" : "Close"),
                    W_BUTTON);
     g_fill = own(&g_own_dlg, vk_filler_create(), W_FILLER);
-    vk_widget_set_colors(VK_WIDGET(g_fill), COL_TEXT, COL_MENU);
     vk_widget_set_expand(VK_WIDGET(g_fill));
     vk_box_set_widget(g_bar, 0, VK_WIDGET(g_btn[0]), VK_INHERIT_NONE);
-    vk_box_set_widget(g_bar, 1, VK_WIDGET(g_fill), VK_INHERIT_NONE);
+    vk_box_set_widget(g_bar, 1, VK_WIDGET(g_fill), VK_INHERIT_AUTO);
     vk_box_set_widget(g_bar, 2, VK_WIDGET(g_btn[1]), VK_INHERIT_NONE);
     vk_box_set_widget(g_bar, 3, VK_WIDGET(g_btn[2]), VK_INHERIT_NONE);
 
     vk_box_set_widget(g_vbox, 0, VK_WIDGET(g_frame), VK_INHERIT_NONE);
-    vk_box_set_widget(g_vbox, 1, VK_WIDGET(g_bar), VK_INHERIT_NONE);
-    vk_window_set_child(g_win, VK_WIDGET(g_vbox), VK_INHERIT_NONE);
+    vk_box_set_widget(g_vbox, 1, VK_WIDGET(g_bar), VK_INHERIT_AUTO);
+    vk_window_set_child(g_win, VK_WIDGET(g_vbox), VK_INHERIT_AUTO);
 }
 
 static void destroy_dialog(void)
@@ -1092,8 +1089,7 @@ static vk_box_t *pop_lines(owned_t *o, int w, int fg, int bg, const char *l1,
 
         vk_label_set_justify(lab, VK_JUSTIFY_CENTER);
         vk_label_set_text(lab, lines[k]);
-        vk_widget_set_colors(VK_WIDGET(lab), fg, bg);
-        vk_box_set_widget(box, i++, VK_WIDGET(lab), VK_INHERIT_NONE);
+        vk_box_set_widget(box, i++, VK_WIDGET(lab), VK_INHERIT_AUTO);
     }
     {
         vk_filler_t *pad = own(o, vk_filler_create(), W_FILLER);
