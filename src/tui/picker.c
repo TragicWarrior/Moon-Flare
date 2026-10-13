@@ -85,7 +85,6 @@ static vk_label_t *mk_line(int w, const char *text)
 
     vk_widget_set_colors(VK_WIDGET(l), COL_TEXT, COL_MENU);
     vk_label_set_text(l, text ? text : "");
-    vk_label_redraw(l);
     return l;
 }
 
@@ -169,8 +168,6 @@ void mf_picker_show(const char *tag, const char *title,
     vk_window_set_child(g_win, VK_WIDGET(g_vbox), VK_INHERIT_NONE);
     mf_ui_attach(VK_WIDGET(g_win), x, y);
     vk_listbox_set_curr(g_list, 0);
-    vk_listbox_redraw(g_list);
-    vk_box_redraw(g_vbox);
     vk_window_redraw(g_win);
     g_open = 1;
     mf_ui_front_clear();
@@ -186,10 +183,6 @@ static void move_sel(int d)
         return;
     g_sel = s;
     vk_listbox_set_curr(g_list, g_sel);
-    /* Recomposite every level: the list sits in a box inside the window,
-       and a container only picks up a child's new pixels on its own update. */
-    vk_listbox_redraw(g_list);
-    vk_box_redraw(g_vbox);
     vk_window_redraw(g_win);
     mf_ui_refresh();
 }

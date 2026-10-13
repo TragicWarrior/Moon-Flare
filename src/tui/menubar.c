@@ -159,7 +159,6 @@ static void paint_clock(void)
     snprintf(buf, sizeof(buf), " %02d:%02d:%02d ",
              tm.tm_hour, tm.tm_min, tm.tm_sec);
     vk_label_set_text(g_clock, buf);
-    vk_label_redraw(g_clock);
     g_clock_sec = now;
 }
 
@@ -302,7 +301,6 @@ static void open_dropdown(int idx)
     if (item_x < 0)
         item_x = 0;
     mf_ui_attach(VK_WIDGET(win), bar_x + item_x, MF_MENUBAR_H);
-    vk_listbox_redraw(lb);
     vk_window_redraw(win);
     g_drop = win;
     g_drop_idx = idx;
@@ -339,7 +337,6 @@ void mf_menubar_init(void)
         vk_menubar_add_item(g_bar, (char *)titles[i], on_bar_activate,
                             (void *)(intptr_t)i);
     vk_menubar_set_focused(g_bar, false);
-    vk_menubar_redraw(g_bar);
 
     g_spacer = vk_filler_create();
     vk_widget_set_colors(VK_WIDGET(g_spacer), COL_TEXT, COL_BG);
@@ -359,7 +356,6 @@ void mf_menubar_init(void)
     g_pad = vk_label_create(PAD_W);
     vk_widget_set_colors(VK_WIDGET(g_pad), COL_TEXT, COLOR_CYAN);
     vk_label_set_text(g_pad, " ");
-    vk_label_redraw(g_pad);
 
     g_row = vk_box_create(cols, 1, VK_BOX_HORIZONTAL, 5);
     vk_box_set_homogeneous(g_row, false);
@@ -382,7 +378,6 @@ void mf_menubar_on_resize(void)
     {
         vk_widget_resize(VK_WIDGET(g_bar), menu_width(), 1);
         vk_menubar_set_focused(g_bar, false);
-        vk_menubar_redraw(g_bar);
     }
     if (g_row)
     {
@@ -495,7 +490,6 @@ int mf_menubar_key(wint_t c)
         if (c == KEY_UP && lb)
         {
             vk_listbox_set_prev(lb);
-            vk_listbox_redraw(lb);
             vk_window_redraw(g_drop);
             mf_ui_refresh();
             return 1;
@@ -503,7 +497,6 @@ int mf_menubar_key(wint_t c)
         if (c == KEY_DOWN && lb)
         {
             vk_listbox_set_next(lb);
-            vk_listbox_redraw(lb);
             vk_window_redraw(g_drop);
             mf_ui_refresh();
             return 1;
@@ -592,7 +585,6 @@ mf_menubar_mouse(int x, int y, mmask_t bstate)
                     vk_listbox_set_prev(lb);
                 else
                     vk_listbox_set_next(lb);
-                vk_listbox_redraw(lb);
                 vk_window_redraw(g_drop);
                 mf_ui_refresh();
             }
@@ -621,7 +613,6 @@ mf_menubar_mouse(int x, int y, mmask_t bstate)
                 if (row >= 0 && row < n)
                 {
                     vk_listbox_set_curr(lb, row);
-                    vk_listbox_redraw(lb);
                     vk_window_redraw(g_drop);
                     vk_listbox_exec_curr(lb);
                     return 1;

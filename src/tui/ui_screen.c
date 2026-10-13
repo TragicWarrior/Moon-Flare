@@ -297,7 +297,6 @@ static void style_set_input(vk_input_t *in, int focused)
     }
     vk_widget_set_relief_colors(VK_WIDGET(in), COLOR_WHITE, COLOR_BLACK);
     vk_input_show_cursor(in, focused ? true : false);
-    vk_input_redraw(in);
 }
 
 static const char *const k_scale_key[] = { "auto", "battery", "inverter", "fixed" };
@@ -336,43 +335,11 @@ int mf_ui_load_source(void)
 
 static void paint_settings(void)
 {
-    int pass, i;
+    int i;
 
-    for (pass = 0; pass < 2; pass++)
-    {
-        for (i = 0; i < SET_ROWS; i++)
-        {
-            if (g_set_lab[i])
-                vk_label_redraw(g_set_lab[i]);
-            if (g_set_hint[i])
-                vk_label_redraw(g_set_hint[i]);
-            style_set_input(g_set_in[i], i == g_set_focus);
-            if (g_set_fields[i])
-                vk_grid_redraw(g_set_fields[i]);
-            if (g_set_row[i])
-                vk_grid_redraw(g_set_row[i]);
-        }
-        if (g_set_info)
-            vk_label_redraw(g_set_info);
-        if (g_set_load_info)
-            vk_label_redraw(g_set_load_info);
-        if (g_set_form)
-            vk_box_redraw(g_set_form);
-        if (g_set_ok)
-            vk_button_redraw(g_set_ok);
-        if (g_set_reset)
-            vk_button_redraw(g_set_reset);
-        if (g_set_cancel)
-            vk_button_redraw(g_set_cancel);
-        if (g_set_bar)
-            vk_box_redraw(g_set_bar);
-        if (g_set_inner)
-            vk_box_redraw(g_set_inner);
-        if (g_set_mid)
-            vk_box_redraw(g_set_mid);
-        if (g_set_vbox)
-            vk_box_redraw(g_set_vbox);
-    }
+    /* Style what shows focus; redrawing the window repaints all it holds. */
+    for (i = 0; i < SET_ROWS; i++)
+        style_set_input(g_set_in[i], i == g_set_focus);
     if (g_set_win)
         vk_window_redraw(g_set_win);
     mf_ui_refresh();
@@ -546,7 +513,6 @@ static void mk_set_row(int i, int slot, int iw, const char *label, const char *h
     g_set_lab[i] = vk_label_create(12);
     vk_widget_set_colors(VK_WIDGET(g_set_lab[i]), COL_TEXT, COL_MENU);
     vk_label_set_text(g_set_lab[i], label);
-    vk_label_redraw(g_set_lab[i]);
     g_set_in[i] = vk_input_create(in_w);
     vk_input_set_border_style(g_set_in[i], VK_BORDER_SINGLE);
     vk_grid_set_widget(g_set_fields[i], 0, 0, VK_WIDGET(g_set_lab[i]), VK_INHERIT_NONE);
@@ -555,7 +521,6 @@ static void mk_set_row(int i, int slot, int iw, const char *label, const char *h
     g_set_hint[i] = vk_label_create(13);
     vk_widget_set_colors(VK_WIDGET(g_set_hint[i]), COL_TEXT, COL_MENU);
     vk_label_set_text(g_set_hint[i], hint);
-    vk_label_redraw(g_set_hint[i]);
 
     g_set_row[i] = vk_grid_create(iw - 2, 3, 2, 1);
     vk_grid_set_homogeneous(g_set_row[i], false);
@@ -899,7 +864,6 @@ void mf_ui_show_help(int about)
     vk_window_set_child(g_help_win, VK_WIDGET(lb), VK_INHERIT_NONE);
     mf_ui_attach(VK_WIDGET(g_help_win),
                  (mf_ui_cols() - w) / 2, 2);
-    vk_listbox_redraw(lb);
     vk_window_redraw(g_help_win);
     mf_ui_refresh();
 }
@@ -977,9 +941,6 @@ static void rebuild_connections_list(void)
         sel = 0;
     g_conn_sel = sel;
     vk_listbox_set_curr(g_conn_list, sel);
-    vk_listbox_redraw(g_conn_list);
-    if (g_conn_vbox)
-        vk_box_redraw(g_conn_vbox);
     if (g_conn_win)
         vk_window_redraw(g_conn_win);
     mf_ui_refresh();
@@ -1054,12 +1015,10 @@ void mf_ui_open_connections(void)
     g_conn_spacer = vk_label_create(inner_w);
     vk_widget_set_colors(VK_WIDGET(g_conn_spacer), COL_TEXT, COL_MENU);
     vk_label_set_text(g_conn_spacer, "");
-    vk_label_redraw(g_conn_spacer);
 
     g_conn_hint = vk_label_create(inner_w);
     vk_widget_set_colors(VK_WIDGET(g_conn_hint), COL_TEXT, COL_MENU);
     vk_label_set_text(g_conn_hint, hint);
-    vk_label_redraw(g_conn_hint);
 
     g_conn_vbox = vk_box_create(inner_w, list_h + 2, VK_BOX_VERTICAL, 3);
     vk_box_set_homogeneous(g_conn_vbox, false);
@@ -1074,8 +1033,6 @@ void mf_ui_open_connections(void)
     g_conn_list = lb;
     g_conn_sel = 0;
     vk_listbox_set_curr(lb, g_conn_sel);
-    vk_listbox_redraw(lb);
-    vk_box_redraw(g_conn_vbox);
     vk_window_redraw(g_conn_win);
     g_connections_open = 1;
     mf_ui_front_clear();
@@ -1101,8 +1058,6 @@ static int connections_key(wint_t c)
         {
             g_conn_sel--;
             vk_listbox_set_curr(g_conn_list, g_conn_sel);
-            vk_listbox_redraw(g_conn_list);
-            vk_box_redraw(g_conn_vbox);   /* list sits in a box */
             vk_window_redraw(g_conn_win);
             mf_ui_refresh();
         }
@@ -1115,8 +1070,6 @@ static int connections_key(wint_t c)
         {
             g_conn_sel++;
             vk_listbox_set_curr(g_conn_list, g_conn_sel);
-            vk_listbox_redraw(g_conn_list);
-            vk_box_redraw(g_conn_vbox);   /* list sits in a box */
             vk_window_redraw(g_conn_win);
             mf_ui_refresh();
         }
@@ -1238,7 +1191,6 @@ int mf_connections_mouse(int x, int y, mmask_t bstate)
                 vk_listbox_set_prev(lb);
             else
                 vk_listbox_set_next(lb);
-            vk_listbox_redraw(lb);
             vk_window_redraw(g_conn_win);
             mf_ui_refresh();
         }
@@ -1267,7 +1219,6 @@ int mf_connections_mouse(int x, int y, mmask_t bstate)
         {
             g_conn_sel = row;
             vk_listbox_set_curr(lb, row);
-            vk_listbox_redraw(lb);
             vk_window_redraw(g_conn_win);
             mf_ui_refresh();
             return 1;
@@ -1413,44 +1364,19 @@ static void close_editor(void)
 
 static void paint_editor(void)
 {
-    int pass, i;
-    for (pass = 0; pass < 2; pass++)
-    {
-        for (i = 0; i < 3; i++)
-        {
-            if (g_ed_lab[i])
-                vk_label_redraw(g_ed_lab[i]);
-            style_set_input(g_ed_in[i], i == g_ed_focus);
-            if (g_ed_fields[i])
-                vk_grid_redraw(g_ed_fields[i]);
-            if (g_ed_row[i])
-                vk_grid_redraw(g_ed_row[i]);
-        }
-        if (g_ed_form)
-            vk_box_redraw(g_ed_form);
-        if (g_ed_ok)
-        {
-            vk_widget_set_colors(VK_WIDGET(g_ed_ok),
-                                 g_ed_focus == 3 ? COLOR_YELLOW : COL_TEXT,
-                                 COL_MENU);
-            vk_button_redraw(g_ed_ok);
-        }
-        if (g_ed_cancel)
-        {
-            vk_widget_set_colors(VK_WIDGET(g_ed_cancel),
-                                 g_ed_focus == 4 ? COLOR_YELLOW : COL_TEXT,
-                                 COL_MENU);
-            vk_button_redraw(g_ed_cancel);
-        }
-        if (g_ed_bar)
-            vk_box_redraw(g_ed_bar);
-        if (g_ed_inner)
-            vk_box_redraw(g_ed_inner);
-        if (g_ed_mid)
-            vk_box_redraw(g_ed_mid);
-        if (g_ed_vbox)
-            vk_box_redraw(g_ed_vbox);
-    }
+    int i;
+
+    /* Style what shows focus; redrawing the window repaints all it holds. */
+    for (i = 0; i < 3; i++)
+        style_set_input(g_ed_in[i], i == g_ed_focus);
+    if (g_ed_ok)
+        vk_widget_set_colors(VK_WIDGET(g_ed_ok),
+                             g_ed_focus == 3 ? COLOR_YELLOW : COL_TEXT,
+                             COL_MENU);
+    if (g_ed_cancel)
+        vk_widget_set_colors(VK_WIDGET(g_ed_cancel),
+                             g_ed_focus == 4 ? COLOR_YELLOW : COL_TEXT,
+                             COL_MENU);
     if (g_ed_win)
         vk_window_redraw(g_ed_win);
     mf_ui_refresh();
@@ -1509,7 +1435,6 @@ static void open_editor(int idx)
         g_ed_lab[i] = vk_label_create(12);
         vk_widget_set_colors(VK_WIDGET(g_ed_lab[i]), COL_TEXT, COL_MENU);
         vk_label_set_text(g_ed_lab[i], names[i]);
-        vk_label_redraw(g_ed_lab[i]);
         g_ed_in[i] = vk_input_create(in_w);
         vk_input_set_border_style(g_ed_in[i], VK_BORDER_SINGLE);
         vk_grid_set_widget(g_ed_fields[i], 0, 0, VK_WIDGET(g_ed_lab[i]), VK_INHERIT_NONE);

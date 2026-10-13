@@ -13,11 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on the gpm socket, and it drains `vk_kmio_fetch` until the queue is
   empty. `vk_kmio_fetch` no longer pauses when nothing is pending.
   Closing the terminal exits the TUI instead of leaving it spinning.
-- Building the TUI requires libviper 11.0.0 or newer (`libvdk.so.11`).
+- Building the TUI requires libviper 11.1.0 or newer (`libvdk.so.11`).
   Console mouse support does not use libgpm.
 - The TUI uses libviper 11's names: `vk_<type>_redraw()` in place of
   `vk_<type>_update()`, and `vk_widget_blit()` in place of
   `vk_widget_draw()`. Behaviour is unchanged.
+- The TUI repaints a view or dialog with one redraw of its outermost
+  widget. libviper 11.1.0 has a container repaint what it holds, so the
+  TUI no longer redraws each label, meter and box by hand, innermost
+  first, before the window around them: 189 of its 243 redraw calls are
+  gone. What is on screen is unchanged.
 - The TUI shows its version in the bottom-right corner, one column in
   from the edge.
 
