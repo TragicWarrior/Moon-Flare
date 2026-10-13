@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   TUI no longer redraws each label, meter and box by hand, innermost
   first, before the window around them: 189 of its 243 redraw calls are
   gone. What is on screen is unchanged.
+- The module settings popups let libviper size their contents. They
+  cleared the "expand" flag on a popup's client to dodge a libviper
+  resize bug that dropped a widget's last column; since libviper 11 a
+  widget repaints itself after a resize, so the workaround is removed.
+  What is on screen is unchanged.
 - The TUI shows its version in the bottom-right corner, one column in
   from the edge.
 

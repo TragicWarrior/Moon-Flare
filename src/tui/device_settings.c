@@ -1107,11 +1107,8 @@ static vk_box_t *pop_lines(owned_t *o, int w, int fg, int bg, const char *l1,
 static void pop_show(vk_popup_t *p, vk_box_t *client, int w, int h)
 {
     int x, y;
-    uint32_t st;
 
     vk_popup_set_client(p, VK_WIDGET(client));
-    st = vk_widget_get_state(VK_WIDGET(client));
-    vk_widget_set_state(VK_WIDGET(client), st & ~(uint32_t)VK_STATE_EXPAND);
     center(w, h, &x, &y);
     mf_ui_attach(VK_WIDGET(p), x, y);
 }
