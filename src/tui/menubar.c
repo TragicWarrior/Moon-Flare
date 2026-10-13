@@ -264,7 +264,6 @@ static void open_dropdown(int idx)
     vk_listbox_set_wrap(lb, true);
     vk_listbox_set_highlight(lb, COL_DROP_HI_FG, COL_DROP_HI_BG);
     vk_listbox_set_highlight_attrs(lb, A_BOLD);
-    vk_widget_set_colors(VK_WIDGET(lb), COL_DROP_FG, COL_MENU_BG);
     vk_widget_set_attrs(VK_WIDGET(lb), A_BOLD);
     /* A phantom module's row carries the marker at its right edge. */
     vk_listbox_set_submenu_marker(lb, mf_ui_phantom_marker());
@@ -291,7 +290,7 @@ static void open_dropdown(int idx)
     vk_window_set_border_attrs(win, A_BOLD);
     vk_widget_set_colors(VK_WIDGET(win), COL_DROP_FG, COL_MENU_BG);
     vk_widget_set_attrs(VK_WIDGET(win), A_BOLD);
-    vk_window_set_child(win, VK_WIDGET(lb), VK_INHERIT_NONE);
+    vk_window_set_child(win, VK_WIDGET(lb), VK_INHERIT_AUTO);
 
     vk_widget_get_position(VK_WIDGET(g_bar), &bar_x, &bar_y);
     (void)bar_y;
@@ -331,7 +330,6 @@ void mf_menubar_init(void)
     int mw = menu_width();
 
     g_bar = vk_menubar_create(mw);
-    vk_widget_set_colors(VK_WIDGET(g_bar), COL_TEXT, COL_BG);
     vk_menubar_set_highlight(g_bar, COL_HI_FG, COL_HI_BG);
     for (i = 0; i < MB_COUNT; i++)
         vk_menubar_add_item(g_bar, (char *)titles[i], on_bar_activate,
@@ -339,7 +337,6 @@ void mf_menubar_init(void)
     vk_menubar_set_focused(g_bar, false);
 
     g_spacer = vk_filler_create();
-    vk_widget_set_colors(VK_WIDGET(g_spacer), COL_TEXT, COL_BG);
 
     g_clock = vk_label_create(CLOCK_W);
     vk_widget_set_colors(VK_WIDGET(g_clock), COL_TEXT, COLOR_CYAN);
@@ -360,8 +357,8 @@ void mf_menubar_init(void)
     g_row = vk_box_create(cols, 1, VK_BOX_HORIZONTAL, 5);
     vk_box_set_homogeneous(g_row, false);
     vk_widget_set_colors(VK_WIDGET(g_row), COL_TEXT, COL_BG);
-    vk_box_set_widget(g_row, 0, VK_WIDGET(g_bar), VK_INHERIT_NONE);
-    vk_box_set_widget(g_row, 1, VK_WIDGET(g_spacer), VK_INHERIT_NONE);
+    vk_box_set_widget(g_row, 0, VK_WIDGET(g_bar), VK_INHERIT_AUTO);
+    vk_box_set_widget(g_row, 1, VK_WIDGET(g_spacer), VK_INHERIT_AUTO);
     vk_box_set_widget(g_row, 2, VK_WIDGET(g_clock), VK_INHERIT_NONE);
     vk_box_set_widget(g_row, 3, VK_WIDGET(g_throb), VK_INHERIT_NONE);
     vk_box_set_widget(g_row, 4, VK_WIDGET(g_pad), VK_INHERIT_NONE);

@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on the gpm socket, and it drains `vk_kmio_fetch` until the queue is
   empty. `vk_kmio_fetch` no longer pauses when nothing is pending.
   Closing the terminal exits the TUI instead of leaving it spinning.
-- Building the TUI requires libviper 11.1.0 or newer (`libvdk.so.11`).
+- Building the TUI requires libviper 11.2.0 or newer (`libvdk.so.11`).
   Console mouse support does not use libgpm.
 - The TUI uses libviper 11's names: `vk_<type>_redraw()` in place of
   `vk_<type>_update()`, and `vk_widget_blit()` in place of
@@ -28,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resize bug that dropped a widget's last column; since libviper 11 a
   widget repaints itself after a resize, so the workaround is removed.
   What is on screen is unchanged.
+- Dialogs let their contents take the dialog's colors. libviper 11.2.0
+  has a widget follow its container's colors when it is attached with
+  `VK_INHERIT_AUTO`, so 41 widgets that were colored by hand to match
+  the box or window around them no longer are. The TUI also uses
+  libviper's property names (`vk_widget_hide()`,
+  `vk_widget_clear_expand()`) where it masked the widget state word by
+  hand. What is on screen is unchanged.
 - The TUI shows its version in the bottom-right corner, one column in
   from the edge.
 
