@@ -4,6 +4,15 @@
 #include <ncursesw/curses.h>
 #include <vdk.h>
 
+/* The TUI is written for libviper 12: a widget attached with
+   VK_INHERIT_AUTO follows its container's colors, and widget state is
+   set by property name.  An older vdk.h does not say its version. */
+#ifndef VDK_VERSION_MAJOR
+#error "Moon Flare's TUI needs libviper 12.0.0 or newer"
+#elif !VDK_VERSION_AT_LEAST(12, 0, 0)
+#error "Moon Flare's TUI needs libviper 12.0.0 or newer"
+#endif
+
 vk_screen_t *mf_ui_screen(void);
 void mf_ui_refresh(void);
 void mf_ui_resize(void);
