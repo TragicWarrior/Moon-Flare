@@ -318,6 +318,41 @@ static double num_or(const cJSON *n, double dflt)
     return n ? n->valuedouble : dflt;
 }
 
+/* The module's watermarks (its capture spec's "watermarks"): what each
+ * asks for, and the value and time it found, null while no sample in the
+ * window counts.  Nothing is added for a module without any. */
+static void add_watermarks(cJSON *obj, const char *uuid)
+{
+    mf_watermark_t mk[MF_HISTORY_MAX_MARKS];
+    int n = mf_history_watermarks(uuid, mk, MF_HISTORY_MAX_MARKS), i;
+    cJSON *arr;
+
+    if (n <= 0)
+        return;
+    arr = cJSON_AddArrayToObject(obj, "watermarks");
+    for (i = 0; i < n; i++)
+    {
+        cJSON *o = cJSON_CreateObject();
+
+        cJSON_AddStringToObject(o, "column", mk[i].column);
+        cJSON_AddStringToObject(o, "kind", mk[i].high ? "high" : "low");
+        cJSON_AddNumberToObject(o, "window_h", mk[i].window_s / 3600.0);
+        if (mk[i].when[0])
+            cJSON_AddStringToObject(o, "when", mk[i].when);
+        if (mk[i].have)
+        {
+            cJSON_AddNumberToObject(o, "value", mk[i].value);
+            cJSON_AddNumberToObject(o, "ts", mk[i].ts);
+        }
+        else
+        {
+            cJSON_AddNullToObject(o, "value");
+            cJSON_AddNullToObject(o, "ts");
+        }
+        cJSON_AddItemToArray(arr, o);
+    }
+}
+
 static int add_status_row(const mf_devinfo_t *d, void *arg)
 {
     status_ctx_t *ctx = arg;
@@ -345,6 +380,7 @@ static int add_status_row(const mf_devinfo_t *d, void *arg)
         if (cJSON_IsArray(of))
             cJSON_AddItemToObject(row, "phantom_of", cJSON_Duplicate(of, 1));
     }
+    add_watermarks(row, d->uuid);
 
     if (strcmp(d->kind, "charger") == 0)
     {
@@ -857,6 +893,7 @@ static int handle_device_get(const char *id, mf_rest_response_t *resp)
             cJSON_AddItemToArray(caps, cJSON_CreateString("history"));
         cJSON_AddItemToObject(obj, "caps", caps);
     }
+    add_watermarks(obj, info.uuid);
     data = cJSON_Parse(info.reading_json);
     if (data)
         cJSON_AddItemToObject(obj, "data", data);

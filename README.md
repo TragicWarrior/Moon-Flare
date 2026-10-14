@@ -190,6 +190,16 @@ Defaults:
 
 Change them per module in the settings form (Capture Interval, Keep History), or `PUT /api/v1/devices/{id}/settings` with `{"capture_interval_s": N}` (0 = off) or `{"retention_days": N}` (whole days, 0 = forever).
 
+**Watermarks.** The daemon also reports, from each module's history, the 24-hour extreme that matters for its kind:
+
+| Module | Watermark |
+| --- | --- |
+| Chargers | The highest `power_w` |
+| Batteries | The lowest `soc` (the BMS's SOC) |
+| Inverters (Magnum) | The highest `dc_power_w` while inverting, so grid charging at night doesn't count |
+
+The TUI shows it at the right end of a line in the module's view (`24 h high 3100 W at 13:42`), `moonflare-cli -q` prints it, and `GET /api/v1/devices/{id}` and the `/api/v1/status` rows carry it as `watermarks`. A plugin declares its own in its capture spec, so others (a low for inverters or chargers, another window) are a one-line change; see [PLUGINS.md](PLUGINS.md#history-capture-and-pruning).
+
 **Upgrading from 0.4 or earlier:** on its first start the daemon copies the old shared `/var/lib/moonflare/history.sqlite` into the per-module files, one transaction per module (so an interrupted run resumes), then renames it `history.sqlite.migrated`. Removed modules get a file too, marked retired. Delete `history.sqlite.migrated` once you are happy with the result. `history.dir` and `history.path` in `moonflared.json` move the per-module directory and the old file.
 
 ## Soak (batteryman)
