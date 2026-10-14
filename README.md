@@ -26,9 +26,9 @@ The TUI is built on [libviper](https://github.com/TragicWarrior/libviper) 12.0.0
 
 ```
 git clone https://github.com/TragicWarrior/libviper.git
-git clone https://github.com/TragicWarrior/Moon-Flare.git
+git clone https://github.com/TragicWarrior/moonflare.git
 (cd libviper && cmake . && make)
-cd Moon-Flare
+cd moonflare
 cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on-failure
 ```
 

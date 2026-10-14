@@ -48,7 +48,7 @@ get_filename_component(LIBVIPER_SOURCE_DIR "${LIBVIPER_SOURCE_DIR}" ABSOLUTE)
 if(NOT EXISTS "${LIBVIPER_SOURCE_DIR}/vdk.h" OR NOT EXISTS "${LIBVIPER_SOURCE_DIR}/vkmio.h")
     message(FATAL_ERROR
         "No libviper checkout at ${LIBVIPER_SOURCE_DIR}.  Clone it beside "
-        "Moon-Flare and build it there:\n"
+        "moonflare and build it there:\n"
         "  git clone https://github.com/TragicWarrior/libviper.git\n"
         "  cd libviper && cmake . && make\n"
         "or pass -DLIBVIPER_SOURCE_DIR=<path>.")
@@ -69,7 +69,7 @@ if(NOT LIBVIPER_VERSION)
 endif()
 if(LIBVIPER_VERSION VERSION_LESS MF_LIBVIPER_MIN)
     message(FATAL_ERROR
-        "libviper at ${LIBVIPER_SOURCE_DIR} is ${LIBVIPER_VERSION}; Moon-Flare "
+        "libviper at ${LIBVIPER_SOURCE_DIR} is ${LIBVIPER_VERSION}; moonflare "
         "needs ${MF_LIBVIPER_MIN} or newer.  Update and rebuild it:\n"
         "  cd ${LIBVIPER_SOURCE_DIR} && git pull && cmake . && make\n"
         "Check that git pull succeeded.  Before libviper 7.8.2, every build "
