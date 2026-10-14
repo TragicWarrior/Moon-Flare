@@ -465,6 +465,142 @@ static void test_migrate(void)
     rmtree(dir);
 }
 
+static void sample_at(const char *uuid, double ts, int online, const char *reading)
+{
+    mf_sample_t s;
+
+    memset(&s, 0, sizeof(s));
+    snprintf(s.uuid, sizeof(s.uuid), "%s", uuid);
+    s.ts = ts;
+    s.online = online;
+    s.capture_interval_s = 1.0;
+    snprintf(s.reading, sizeof(s.reading), "%s", reading);
+    mf_history_enqueue(&s);
+}
+
+/* The watermark of column `col` and kind (1 high, 0 low); NULL if absent. */
+static const mf_watermark_t *mark_of(const mf_watermark_t *mk, int n,
+                                     const char *col, int high, const char *when)
+{
+    int i;
+
+    for (i = 0; i < n; i++)
+        if (strcmp(mk[i].column, col) == 0 && mk[i].high == high &&
+            strcmp(mk[i].when, when ? when : "") == 0)
+            return &mk[i];
+    return NULL;
+}
+
+static void test_watermarks(void)
+{
+    char dir[64];
+    double now = (double)time(NULL);
+    mf_watermark_t mk[MF_HISTORY_MAX_MARKS];
+    const mf_watermark_t *hi, *lo, *on;
+    int n;
+    const char *spec =
+        "{\"interval_s\":1,\"retention_days\":0,\"columns\":{"
+        "\"power_w\":\"power_w\",\"soc\":\"soc_pct\",\"running\":\"running\","
+        "\"note\":{\"path\":\"note\",\"type\":\"text\"}},"
+        "\"watermarks\":["
+        "{\"column\":\"power_w\",\"kind\":\"high\",\"window_h\":1},"
+        "{\"column\":\"soc\",\"kind\":\"low\"},"
+        "{\"column\":\"power_w\",\"kind\":\"high\",\"when\":\"running\"},"
+        "{\"column\":\"nope\",\"kind\":\"high\"},"
+        "{\"column\":\"soc\",\"kind\":\"middle\"},"
+        "{\"column\":\"note\",\"kind\":\"high\"},"
+        "{\"column\":\"soc\",\"kind\":\"low\",\"when\":\"note\"}]}";
+
+    tmpdir(dir, sizeof(dir));
+    mf_history_open(dir);
+    CHECK(mf_history_register(UUID_A, "X", "charger", "x", spec) == 0, "register");
+    n = mf_history_watermarks(UUID_A, mk, MF_HISTORY_MAX_MARKS);
+    CHECK(n == 3, "three good watermarks; unknown column, kind, text kept out");
+    CHECK(mf_history_watermarks(UUID_C, mk, MF_HISTORY_MAX_MARKS) == -1,
+          "unknown module");
+    hi = mark_of(mk, n, "power_w", 1, NULL);
+    CHECK(hi && !hi->have && hi->window_s == 3600.0, "high: empty, 1 h window");
+    lo = mark_of(mk, n, "soc", 0, NULL);
+    CHECK(lo && lo->window_s == 86400.0, "low: 24 h by default");
+
+    sample_at(UUID_A, now - 7200, 1, "{\"power_w\":9000,\"soc_pct\":90,\"running\":true}");
+    sample_at(UUID_A, now - 600, 1, "{\"power_w\":500,\"soc_pct\":80,\"running\":true}");
+    sample_at(UUID_A, now - 300, 1, "{\"power_w\":800,\"soc_pct\":60,\"running\":false}");
+    sample_at(UUID_A, now - 200, 0, "{\"power_w\":99999,\"soc_pct\":1,\"running\":true}");
+    sample_at(UUID_A, now - 60, 1, "{\"power_w\":700,\"soc_pct\":70,\"running\":true}");
+    mf_history_flush_slice(16);
+
+    /* As the samples are written. */
+    n = mf_history_watermarks(UUID_A, mk, MF_HISTORY_MAX_MARKS);
+    hi = mark_of(mk, n, "power_w", 1, NULL);
+    lo = mark_of(mk, n, "soc", 0, NULL);
+    on = mark_of(mk, n, "power_w", 1, "running");
+    CHECK(hi && hi->have && hi->value == 800.0 && hi->ts == now - 300,
+          "live high: 9000 left the hour, offline 99999 ignored");
+    CHECK(lo && lo->have && lo->value == 60.0, "live low");
+    CHECK(on && on->have && on->value == 9000.0, "live high while on");
+
+    /* As read back from the file. */
+    CHECK(mf_history_watermark_slice(now) == 1, "slice reads the module");
+    CHECK(mf_history_watermark_slice(now) == 0, "then not again for a minute");
+    n = mf_history_watermarks(UUID_A, mk, MF_HISTORY_MAX_MARKS);
+    hi = mark_of(mk, n, "power_w", 1, NULL);
+    lo = mark_of(mk, n, "soc", 0, NULL);
+    on = mark_of(mk, n, "power_w", 1, "running");
+    CHECK(hi && hi->have && hi->value == 800.0 && hi->ts == now - 300, "file high");
+    CHECK(lo && lo->have && lo->value == 60.0 && lo->ts == now - 300, "file low");
+    CHECK(on && on->have && on->value == 9000.0 && on->ts == now - 7200,
+          "file high counts only samples with \"running\"");
+
+    /* Two hours on, the 1 h window is empty. */
+    CHECK(mf_history_watermark_slice(now + 7200) == 1, "slice later");
+    n = mf_history_watermarks(UUID_A, mk, MF_HISTORY_MAX_MARKS);
+    hi = mark_of(mk, n, "power_w", 1, NULL);
+    lo = mark_of(mk, n, "soc", 0, NULL);
+    CHECK(hi && !hi->have, "high gone once its window is empty");
+    CHECK(lo && lo->have && lo->value == 60.0, "low still inside 24 h");
+    mf_history_close();
+    rmtree(dir);
+}
+
+/* A column added by a newer spec is filled in from the stored readings of
+ * the last two days, so a watermark on it is whole at once. */
+static void test_watermark_backfill(void)
+{
+    char dir[64];
+    double now = (double)time(NULL);
+    mf_watermark_t mk[MF_HISTORY_MAX_MARKS];
+    sqlite3 *db;
+    const char *v1 = "{\"interval_s\":1,\"retention_days\":0,\"columns\":{"
+                     "\"dc_power_w\":\"dc_power_w\"}}";
+    const char *v2 = "{\"interval_s\":1,\"retention_days\":0,\"columns\":{"
+                     "\"dc_power_w\":\"dc_power_w\",\"inverting\":\"inverting\"},"
+                     "\"watermarks\":[{\"column\":\"dc_power_w\",\"kind\":\"high\","
+                     "\"when\":\"inverting\"}]}";
+
+    tmpdir(dir, sizeof(dir));
+    mf_history_open(dir);
+    mf_history_register(UUID_A, "Master", "inverter", "magnum", v1);
+    sample_at(UUID_A, now - 5 * 86400, 1, "{\"dc_power_w\":5000,\"inverting\":true}");
+    sample_at(UUID_A, now - 3600, 1, "{\"dc_power_w\":2100,\"inverting\":false}");
+    sample_at(UUID_A, now - 1800, 1, "{\"dc_power_w\":1200,\"inverting\":true}");
+    mf_history_flush_slice(8);
+    mf_history_close();
+
+    mf_history_open(dir);
+    CHECK(mf_history_register(UUID_A, "Master", "inverter", "magnum", v2) == 0,
+          "re-register with the new column");
+    db = mf_history_module_db(UUID_A);
+    CHECK(count_sql(db, "SELECT COUNT(*) FROM samples WHERE inverting IS NOT NULL") == 2,
+          "the last two days are backfilled, older rows are not");
+    CHECK(mf_history_watermark_slice(now) == 1, "slice");
+    CHECK(mf_history_watermarks(UUID_A, mk, MF_HISTORY_MAX_MARKS) == 1 &&
+          mk[0].have && mk[0].value == 1200.0,
+          "inverting-only high: grid charging (2100) left out");
+    mf_history_close();
+    rmtree(dir);
+}
+
 int main(void)
 {
     test_columns();
@@ -474,6 +610,8 @@ int main(void)
     test_query_step();
     test_prune();
     test_migrate();
+    test_watermarks();
+    test_watermark_backfill();
     if (g_fail)
     {
         fprintf(stderr, "%d failure(s)\n", g_fail);

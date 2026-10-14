@@ -1167,7 +1167,8 @@ static const char *jk_describe(void)
         "{\"key\":\"ble.password\",\"label\":\"App Passcode\",\"hint\":\"(optional)\",\"type\":\"string\"}"
         "],\"capture\":{\"interval_s\":10,\"min_s\":1,\"retention_days\":60,\"graph\":\"soc\",\"columns\":{"
         "\"pack_v\":\"pack_voltage_v\",\"current_a\":\"current_a\","
-        "\"power_w\":\"power_w\",\"soc\":\"soc_pct\"}}}";
+        "\"power_w\":\"power_w\",\"soc\":\"soc_pct\"},"
+        "\"watermarks\":[{\"column\":\"soc\",\"kind\":\"low\",\"window_h\":24}]}}";
 }
 
 static const mf_plugin_ops_t g_ops = {

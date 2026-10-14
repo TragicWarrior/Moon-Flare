@@ -390,7 +390,8 @@ static const char *demo_battery_describe(void)
         "{\"key\":\"poll_interval_s\",\"label\":\"Poll Interval\",\"hint\":\"(Seconds)\",\"type\":\"number\",\"default\":2.0}"
         "],\"capture\":{\"interval_s\":10,\"min_s\":1,\"retention_days\":60,\"graph\":\"soc\",\"columns\":{"
         "\"pack_v\":\"pack_voltage_v\",\"current_a\":\"current_a\","
-        "\"power_w\":\"power_w\",\"soc\":\"soc_pct\"}}}";
+        "\"power_w\":\"power_w\",\"soc\":\"soc_pct\"},"
+        "\"watermarks\":[{\"column\":\"soc\",\"kind\":\"low\",\"window_h\":24}]}}";
 }
 
 static const char *demo_charger_describe(void)
@@ -400,7 +401,8 @@ static const char *demo_charger_describe(void)
         "{\"key\":\"poll_interval_s\",\"label\":\"Poll Interval\",\"hint\":\"(Seconds)\",\"type\":\"number\",\"default\":2.0}"
         "],\"capture\":{\"interval_s\":10,\"min_s\":1,\"retention_days\":60,\"graph\":\"power_w\",\"columns\":{"
         "\"pack_v\":\"battery_voltage_v\",\"current_a\":\"battery_current_a\","
-        "\"power_w\":\"charging_watts\"}}}";
+        "\"power_w\":\"charging_watts\"},"
+        "\"watermarks\":[{\"column\":\"power_w\",\"kind\":\"high\",\"window_h\":24}]}}";
 }
 
 /* ── Plugin entries ── */

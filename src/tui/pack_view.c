@@ -5,6 +5,7 @@
 #include <cJSON.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <vdk.h>
 
 #define COL_BG   COLOR_BLUE
@@ -1195,7 +1196,84 @@ static void set_lab(vk_label_t *l, const char *text)
 
 /* The Inverter view's readout: the DC and power meters, then mode and
    fault, AC, temperatures, model, and the remote's charger settings. */
-static void inverter_fill(cJSON *data)
+/* A watermark's value with its column's unit: "3100 W", "61%". */
+static void fmt_mark_value(const char *col, double v, char *out, size_t cap)
+{
+    size_t n = strlen(col);
+
+    if (strcmp(col, "soc") == 0 || (n > 4 && strcmp(col + n - 4, "_pct") == 0))
+        snprintf(out, cap, "%.0f%%", v);
+    else if (n > 2 && strcmp(col + n - 2, "_w") == 0)
+        snprintf(out, cap, "%.0f W", v);
+    else if (n > 2 && strcmp(col + n - 2, "_v") == 0)
+        snprintf(out, cap, "%.1f V", v);
+    else if (n > 2 && strcmp(col + n - 2, "_a") == 0)
+        snprintf(out, cap, "%.1f A", v);
+    else
+        snprintf(out, cap, "%g", v);
+}
+
+/* The module's watermarks (the daemon's "watermarks") as one line:
+ * "24 h high 3100 W at 13:42", or "24 h low --" before any sample counts.
+ * Empty when the daemon sends none. */
+static void fmt_marks(cJSON *root, char *out, size_t cap)
+{
+    cJSON *marks = cJSON_GetObjectItemCaseSensitive(root, "watermarks");
+    cJSON *mk;
+    size_t off = 0;
+
+    out[0] = '\0';
+    cJSON_ArrayForEach(mk, marks)
+    {
+        const char *col = jstr(mk, "column", "");
+        const char *kind = jstr(mk, "kind", "");
+        cJSON *v = cJSON_GetObjectItemCaseSensitive(mk, "value");
+        cJSON *ts = cJSON_GetObjectItemCaseSensitive(mk, "ts");
+        char val[24], when[16] = "";
+
+        if (off >= cap)
+            break;
+        if (cJSON_IsNumber(v))
+        {
+            fmt_mark_value(col, v->valuedouble, val, sizeof(val));
+            if (cJSON_IsNumber(ts))
+            {
+                time_t t = (time_t)ts->valuedouble;
+                struct tm tmv;
+
+                if (localtime_r(&t, &tmv))
+                    strftime(when, sizeof(when), " at %H:%M", &tmv);
+            }
+        }
+        else
+            snprintf(val, sizeof(val), "--");
+        off += (size_t)snprintf(out + off, cap - off, "%s%g h %s %s%s",
+                                off ? "   " : "", jnum(mk, "window_h", 24),
+                                kind, val, when);
+    }
+}
+
+/* left, then right flush with the label's right edge (or three spaces on
+ * when they don't both fit). */
+static void set_lab_lr(vk_label_t *l, const char *left, const char *right)
+{
+    char line[256];
+    int w = 0, h = 0, pad;
+
+    if (!right || !right[0])
+    {
+        vk_label_set_text(l, left);
+        return;
+    }
+    vk_widget_get_metrics(VK_WIDGET(l), &w, &h);
+    pad = w - (int)strlen(left) - (int)strlen(right) - 1;  /* a space at the edge */
+    if (pad < 3)
+        pad = 3;
+    snprintf(line, sizeof(line), "%s%*s%s", left, pad, "", right);
+    vk_label_set_text(l, line);
+}
+
+static void inverter_fill(cJSON *root, cJSON *data)
 {
     char line[192], a[16], b[16], c[16], d[16], e[16];
     double rated = jnum(data, "rated_w", 0);
@@ -1229,7 +1307,12 @@ static void inverter_fill(cJSON *data)
              numstr(a, sizeof(a), data, "bat_temp_c", "%.0f"),
              numstr(b, sizeof(b), data, "tfmr_temp_c", "%.0f"),
              numstr(c, sizeof(c), data, "fet_temp_c", "%.0f"));
-    set_lab(g_lb_itemp, line);
+    {
+        char marks[96];
+
+        fmt_marks(root, marks, sizeof(marks));
+        set_lab_lr(g_lb_itemp, line, marks);
+    }
     snprintf(line, sizeof(line), "%s  %s W  %s  rev %s",
              jstr(data, "model_text", "--"),
              numstr(a, sizeof(a), data, "rated_w", "%.0f"),
@@ -1334,7 +1417,12 @@ void mf_pack_update(const char *json)
         snprintf(line, sizeof(line), "%+.2f A", cur);
         vk_label_set_text(g_lb_cur, line);
         fmt_temps(data, line, sizeof(line), "MOS --  T1 --  T2 --");
-        vk_label_set_text(g_lb_temp, line);
+        {
+            char marks[96];
+
+            fmt_marks(root, marks, sizeof(marks));
+            set_lab_lr(g_lb_temp, line, marks);
+        }
         g_chg_on = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(data, "charge_mosfet_on"));
         g_dsg_on = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(data, "discharge_mosfet_on"));
         g_bal_on = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(data, "balancer_switch"));
@@ -1434,7 +1522,7 @@ void mf_pack_update(const char *json)
         vk_label_set_text(g_lb_spread, line);
     }
     else if (g_kind == MF_VIEW_INVERTER)
-        inverter_fill(data);
+        inverter_fill(root, data);
     else
     {
         double bv = jnum(data, "battery_voltage_v", 0);
@@ -1449,7 +1537,12 @@ void mf_pack_update(const char *json)
         vk_label_set_text(g_lb_stage, line);
         snprintf(line, sizeof(line), "kWh today %.1f   Ah today %.0f",
                  jnum(data, "kwh_today", 0), jnum(data, "ah_today", 0));
-        vk_label_set_text(g_lb_energy, line);
+        {
+            char marks[96];
+
+            fmt_marks(root, marks, sizeof(marks));
+            set_lab_lr(g_lb_energy, line, marks);
+        }
         fmt_temps(data, line, sizeof(line), "FET --  Batt --  PCB --");
         vk_label_set_text(g_lb_ctemp, line);
     }

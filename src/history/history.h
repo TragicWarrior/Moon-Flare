@@ -24,7 +24,18 @@
  * A column maps a name ([a-z0-9_], up to 31 chars) to a dotted path in the
  * reading; numeric unless "type" is "text".  The whole reading is always
  * kept in "reading" as JSON.  Columns a newer plugin declares are added to
- * an existing file. */
+ * an existing file, and filled in from the stored readings of the last
+ * MF_HISTORY_BACKFILL_S seconds.
+ *
+ * "watermarks" (optional) asks for the highest or lowest value of a numeric
+ * column over a trailing window, from online samples:
+ *
+ *   "watermarks": [{"column": "dc_power_w", "kind": "high", "window_h": 24,
+ *                   "when": "inverting"}]
+ *
+ * "kind" is "high" or "low"; "window_h" defaults to 24; "when" (optional)
+ * names another numeric column that must be non-zero for a sample to
+ * count. */
 
 #include <stddef.h>
 
@@ -32,6 +43,20 @@
 #define MF_HISTORY_MAX_MODULES 32
 #define MF_HISTORY_MAX_COLS    16
 #define MF_HISTORY_PRUNE_EVERY_S 3600.0   /* a module re-checks its policy */
+#define MF_HISTORY_MAX_MARKS   4
+#define MF_HISTORY_MARK_EVERY_S 60.0      /* watermarks re-read from the file */
+#define MF_HISTORY_BACKFILL_S  (2 * 86400.0)  /* a new column's filled span */
+
+/* One watermark: the spec's ask, and what it found. */
+typedef struct {
+    char   column[32];
+    char   when[32];                 /* "" or a column that must be non-zero */
+    int    high;                     /* 1: highest; 0: lowest */
+    double window_s;
+    int    have;                     /* value and ts hold a sample */
+    double value;
+    double ts;
+} mf_watermark_t;
 
 typedef struct {
     char   uuid[40];
@@ -68,6 +93,14 @@ double mf_history_retention(const char *uuid);
 /* Let each due module delete up to max_rows (in total) of its samples
  * older than its policy; call from the main loop.  Returns rows deleted. */
 int    mf_history_prune_slice(double now, int max_rows);
+
+/* Copy up to max of the module's watermarks into out.  Returns how many
+ * (0 when it declares none), or -1 when the module is unknown. */
+int  mf_history_watermarks(const char *uuid, mf_watermark_t *out, int max);
+/* Re-read due modules' watermarks from their files (each about once a
+ * minute, so values that left the window drop out); call from the main
+ * loop.  Returns how many modules were read. */
+int  mf_history_watermark_slice(double now);
 
 /* The column the module's graph shows ("graph" in its spec), or NULL. */
 const char *mf_history_graph_column(const char *uuid);

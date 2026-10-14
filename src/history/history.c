@@ -32,6 +32,9 @@ typedef struct {
     double        keep_default;     /* spec "retention_days" */
     double        keep_days;        /* user's; < 0: keep_default; 0: forever */
     double        next_prune;       /* when this module next prunes itself */
+    int           nmarks;
+    mf_watermark_t marks[MF_HISTORY_MAX_MARKS];
+    double        next_mark;        /* when the watermarks are next re-read */
 } hist_mod_t;
 
 static char        g_dir[256];
@@ -151,15 +154,71 @@ static sqlite3 *open_module_file(const char *uuid)
     return db;
 }
 
-/* Parse a capture spec into m->cols / m->graph / m->keep_default.  0 ok
- * (possibly no columns), -1 when the module does not capture: no spec, or
- * one without the required "retention_days" pruning policy. */
+/* The declared column called name, or NULL. */
+static const hist_col_t *find_col(const hist_mod_t *m, const char *name)
+{
+    int i;
+
+    for (i = 0; name && i < m->ncols; i++)
+        if (strcmp(m->cols[i].name, name) == 0)
+            return &m->cols[i];
+    return NULL;
+}
+
+/* The spec's "watermarks": each names a declared numeric column, and a
+ * "when" column must be one too.  Others are skipped. */
+static void parse_marks(hist_mod_t *m, const cJSON *list)
+{
+    const cJSON *w;
+
+    m->nmarks = 0;
+    cJSON_ArrayForEach(w, list)
+    {
+        const cJSON *col = cJSON_GetObjectItemCaseSensitive(w, "column");
+        const cJSON *kind = cJSON_GetObjectItemCaseSensitive(w, "kind");
+        const cJSON *win = cJSON_GetObjectItemCaseSensitive(w, "window_h");
+        const cJSON *when = cJSON_GetObjectItemCaseSensitive(w, "when");
+        const hist_col_t *hc, *wc = NULL;
+        mf_watermark_t *mk;
+
+        if (m->nmarks >= MF_HISTORY_MAX_MARKS || !cJSON_IsString(col) ||
+            !cJSON_IsString(kind))
+            continue;
+        hc = find_col(m, col->valuestring);
+        if (!hc || hc->is_text)
+            continue;
+        if (strcmp(kind->valuestring, "high") != 0 &&
+            strcmp(kind->valuestring, "low") != 0)
+            continue;
+        if (cJSON_IsString(when))
+        {
+            wc = find_col(m, when->valuestring);
+            if (!wc || wc->is_text)
+                continue;
+        }
+        if (win && (!cJSON_IsNumber(win) || win->valuedouble <= 0.0))
+            continue;
+        mk = &m->marks[m->nmarks++];
+        memset(mk, 0, sizeof(*mk));
+        snprintf(mk->column, sizeof(mk->column), "%s", hc->name);
+        if (wc)
+            snprintf(mk->when, sizeof(mk->when), "%s", wc->name);
+        mk->high = strcmp(kind->valuestring, "high") == 0;
+        mk->window_s = (win ? win->valuedouble : 24.0) * 3600.0;
+    }
+}
+
+/* Parse a capture spec into m->cols / m->graph / m->keep_default /
+ * m->marks.  0 ok (possibly no columns), -1 when the module does not
+ * capture: no spec, or one without the required "retention_days" pruning
+ * policy. */
 static int parse_spec(hist_mod_t *m, const char *spec)
 {
     cJSON *s = spec && spec[0] ? cJSON_Parse(spec) : NULL;
     const cJSON *cols, *c, *g, *keep;
 
     m->ncols = 0;
+    m->nmarks = 0;
     m->graph[0] = '\0';
     keep = cJSON_GetObjectItemCaseSensitive(s, "retention_days");
     if (!cJSON_IsObject(s) || !cJSON_IsNumber(keep) || keep->valuedouble < 0.0)
@@ -199,6 +258,7 @@ static int parse_spec(hist_mod_t *m, const char *spec)
     g = cJSON_GetObjectItemCaseSensitive(s, "graph");
     if (cJSON_IsString(g) && safe_name(g->valuestring, sizeof(m->graph)))
         snprintf(m->graph, sizeof(m->graph), "%s", g->valuestring);
+    parse_marks(m, cJSON_GetObjectItemCaseSensitive(s, "watermarks"));
     cJSON_Delete(s);
     return 0;
 }
@@ -227,6 +287,22 @@ static int sync_columns(hist_mod_t *m)
                      m->cols[i].name, m->cols[i].is_text ? "TEXT" : "REAL");
             if (sqlite3_exec(m->db, sql, NULL, NULL, NULL) != SQLITE_OK)
                 return -1;
+            /* Fill it from the stored readings of the last two days, so a
+             * watermark on it is whole at once.  Older rows stay NULL, and
+             * a SQLite without JSON support leaves them all NULL. */
+            snprintf(sql, sizeof(sql), "UPDATE samples SET %s ="
+                     " json_extract(reading, ?) WHERE ts >= ?", m->cols[i].name);
+            st = NULL;
+            if (sqlite3_prepare_v2(m->db, sql, -1, &st, NULL) == SQLITE_OK)
+            {
+                char jp[80];
+
+                snprintf(jp, sizeof(jp), "$.%s", m->cols[i].path);
+                sqlite3_bind_text(st, 1, jp, -1, SQLITE_TRANSIENT);
+                sqlite3_bind_double(st, 2, (double)time(NULL) - MF_HISTORY_BACKFILL_S);
+                (void)sqlite3_step(st);
+                sqlite3_finalize(st);
+            }
         }
     }
     if (m->ins)
@@ -269,6 +345,38 @@ static const cJSON *at_path(const cJSON *root, const char *path)
     return cur;
 }
 
+/* A new online sample may beat a watermark, or replace one that has left
+ * its window; the minute's re-read from the file settles the rest. */
+static void feed_marks(hist_mod_t *m, double ts, const cJSON *r)
+{
+    int k;
+
+    for (k = 0; k < m->nmarks; k++)
+    {
+        mf_watermark_t *mk = &m->marks[k];
+        const hist_col_t *hc = find_col(m, mk->column);
+        const cJSON *v = hc ? at_path(r, hc->path) : NULL;
+
+        if (!cJSON_IsNumber(v))
+            continue;
+        if (mk->when[0])
+        {
+            const hist_col_t *wc = find_col(m, mk->when);
+            const cJSON *w = wc ? at_path(r, wc->path) : NULL;
+
+            if (!(cJSON_IsTrue(w) || (cJSON_IsNumber(w) && w->valuedouble != 0.0)))
+                continue;
+        }
+        if (!mk->have || mk->ts < ts - mk->window_s ||
+            (mk->high ? v->valuedouble > mk->value : v->valuedouble < mk->value))
+        {
+            mk->have = 1;
+            mk->value = v->valuedouble;
+            mk->ts = ts;
+        }
+    }
+}
+
 /* Insert one sample.  fallback (optional): old-table row values, used for a
  * same-named column the reading does not have (migration only). */
 static int insert_sample(hist_mod_t *m, double ts, int online,
@@ -304,8 +412,10 @@ static int insert_sample(hist_mod_t *m, double ts, int online,
                     sqlite3_bind_value(m->ins, slot, sqlite3_column_value(fallback, k));
         }
     }
-    cJSON_Delete(r);
     rc = sqlite3_step(m->ins);
+    if (rc == SQLITE_DONE && online && !fallback)
+        feed_marks(m, ts, r);
+    cJSON_Delete(r);
     return rc == SQLITE_DONE ? 0 : -1;
 }
 
@@ -385,6 +495,7 @@ int mf_history_register(const char *uuid, const char *name, const char *kind,
     set_meta(m->db, "capture", capture_json && capture_json[0] ? capture_json : NULL);
     set_meta(m->db, "retired_ts", NULL);
     m->next_prune = 0.0;                /* policy may have changed: check */
+    m->next_mark = 0.0;                 /* so may the watermarks: read them */
     if (!get_meta(m->db, "created_ts", buf, sizeof(buf)))
     {
         snprintf(buf, sizeof(buf), "%.3f", (double)time(NULL));
@@ -541,6 +652,78 @@ int mf_history_prune_slice(double now, int max_rows)
         done += prune_module(m, now, max_rows - done);
     }
     return done;
+}
+
+/* ---- watermarks ---------------------------------------------------- */
+
+/* Read one module's watermarks from its file: the highest or lowest value
+ * in each window, from online samples (and only those where the "when"
+ * column is non-zero). */
+static void read_marks(hist_mod_t *m, double now)
+{
+    int k;
+
+    for (k = 0; k < m->nmarks; k++)
+    {
+        mf_watermark_t *mk = &m->marks[k];
+        sqlite3_stmt *st = NULL;
+        char sql[320];
+
+        /* Names are declared columns (safe_name), so they may go in the
+         * SQL.  SQLite returns the max/min row's ts beside the aggregate. */
+        snprintf(sql, sizeof(sql),
+                 "SELECT ts, %s(%s) FROM samples WHERE ts >= ? AND online = 1"
+                 " AND %s IS NOT NULL%s%s%s",
+                 mk->high ? "MAX" : "MIN", mk->column, mk->column,
+                 mk->when[0] ? " AND " : "", mk->when,
+                 mk->when[0] ? " != 0" : "");
+        mk->have = 0;
+        if (sqlite3_prepare_v2(m->db, sql, -1, &st, NULL) != SQLITE_OK)
+            continue;
+        sqlite3_bind_double(st, 1, now - mk->window_s);
+        if (sqlite3_step(st) == SQLITE_ROW &&
+            sqlite3_column_type(st, 1) != SQLITE_NULL)
+        {
+            mk->have = 1;
+            mk->ts = sqlite3_column_double(st, 0);
+            mk->value = sqlite3_column_double(st, 1);
+        }
+        sqlite3_finalize(st);
+    }
+    m->next_mark = now + MF_HISTORY_MARK_EVERY_S;
+}
+
+int mf_history_watermark_slice(double now)
+{
+    int i;
+
+    if (!g_open)
+        return 0;
+    /* One module a call keeps each pass of the main loop short. */
+    for (i = 0; i < MF_HISTORY_MAX_MODULES; i++)
+    {
+        hist_mod_t *m = &g_mod[i];
+
+        if (!m->used || !m->captures || m->nmarks == 0 || now < m->next_mark)
+            continue;
+        read_marks(m, now);
+        return 1;
+    }
+    return 0;
+}
+
+int mf_history_watermarks(const char *uuid, mf_watermark_t *out, int max)
+{
+    hist_mod_t *m = find_mod(uuid);
+    int k;
+
+    if (!m)
+        return -1;
+    if (!m->captures)
+        return 0;
+    for (k = 0; k < m->nmarks && k < max; k++)
+        out[k] = m->marks[k];
+    return k;
 }
 
 /* ---- queries ------------------------------------------------------- */

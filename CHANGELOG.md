@@ -5,7 +5,30 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.17.0] - 2026-10-14
+
+### Added
+
+- **Watermarks:** the 24-hour high or low of a module's history, kept by
+  the daemon and shown in the TUI's module views at the right end of a
+  line (`24 h high 3100 W at 13:42`).
+  - Chargers: the highest `power_w`.
+  - Batteries: the lowest `soc`, the BMS's own SOC.
+  - Magnum inverters: the highest `dc_power_w` while inverting, so grid
+    charging at night is left out. A new history column, `inverting`,
+    carries the mode.
+- A plugin declares watermarks in its capture spec (`"watermarks":
+  [{"column", "kind": "high"|"low", "window_h", "when"}]`), so another
+  one (a low for inverters, a different window) is a spec change only.
+  The daemon updates them as samples are written and re-reads them from
+  the history file about once a minute, so they survive restarts.
+- `GET /api/v1/devices/{id}` and each `/api/v1/status` row carry
+  `watermarks`: `[{"column", "kind", "window_h", "when", "value", "ts"}]`,
+  with `value` and `ts` null until a sample in the window counts.
+  `moonflare-cli -q` prints them, and the MCP tool descriptions name
+  them.
+- A history column added by a newer plugin is filled in from the stored
+  readings of the last two days, so a watermark on it is whole at once.
 
 ### Changed
 

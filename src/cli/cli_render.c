@@ -124,6 +124,52 @@ int cli_render_list_drivers(const cJSON *drivers, int raw)
 
 /* ── --query ─────────────────────────────────────────────────────────── */
 
+/* One line per watermark the daemon reports for the module ("watermarks"):
+ * "  24 h high  3100 W at 13:42 (while inverting)".  Units come from the
+ * column name. */
+static void print_watermarks(const cJSON *mod)
+{
+    const cJSON *marks = cJSON_GetObjectItemCaseSensitive(mod, "watermarks");
+    const cJSON *mk;
+
+    cJSON_ArrayForEach(mk, marks)
+    {
+        const cJSON *col = cJSON_GetObjectItemCaseSensitive(mk, "column");
+        const cJSON *kind = cJSON_GetObjectItemCaseSensitive(mk, "kind");
+        const cJSON *win = cJSON_GetObjectItemCaseSensitive(mk, "window_h");
+        const cJSON *when = cJSON_GetObjectItemCaseSensitive(mk, "when");
+        const cJSON *v = cJSON_GetObjectItemCaseSensitive(mk, "value");
+        const cJSON *ts = cJSON_GetObjectItemCaseSensitive(mk, "ts");
+        const char *c = cJSON_IsString(col) ? col->valuestring : "";
+        size_t n = strlen(c);
+        char head[32];
+
+        snprintf(head, sizeof(head), "%g h %s", cJSON_IsNumber(win) ? win->valuedouble : 24.0,
+                 cJSON_IsString(kind) ? kind->valuestring : "");
+        printf("  %-10s ", head);
+        if (!cJSON_IsNumber(v))
+            printf("--");
+        else if (strcmp(c, "soc") == 0 || (n > 4 && strcmp(c + n - 4, "_pct") == 0))
+            printf("%.0f%%", v->valuedouble);
+        else if (n > 2 && strcmp(c + n - 2, "_w") == 0)
+            printf("%.0f W", v->valuedouble);
+        else
+            printf("%g %s", v->valuedouble, c);
+        if (cJSON_IsNumber(v) && cJSON_IsNumber(ts))
+        {
+            time_t t = (time_t)ts->valuedouble;
+            struct tm tmv;
+            char hm[8];
+
+            if (localtime_r(&t, &tmv) && strftime(hm, sizeof(hm), "%H:%M", &tmv))
+                printf(" at %s", hm);
+        }
+        if (cJSON_IsString(when))
+            printf(" (while %s)", when->valuestring);
+        printf("\n");
+    }
+}
+
 int cli_render_query_module(const cJSON *mod, int raw)
 {
     char *s;
@@ -355,6 +401,7 @@ int cli_render_query_module(const cJSON *mod, int raw)
     {
         printf("  (%s module)\n", kind->valuestring);
     }
+    print_watermarks(mod);
 
     return 0;
 }

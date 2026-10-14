@@ -421,6 +421,7 @@ int main(int argc, char **argv)
         {
             mf_history_flush_slice(32);
             mf_history_prune_slice((double)time(NULL), 500);
+            mf_history_watermark_slice((double)time(NULL));
         }
         while (waitpid(-1, NULL, WNOHANG) > 0)
             ;

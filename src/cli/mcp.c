@@ -443,7 +443,14 @@ static cJSON *build_tools_list(void)
     cJSON_AddItemToObject(schema, "required", req);
     cJSON_AddFalseToObject(schema, "additionalProperties");
     cJSON_AddItemToArray(tools, make_tool("query_module",
-        "Get the full live reading for one module by id or exact name.",
+        "Get the full live reading for one module by id or exact name. A module "
+        "that records history may carry \"watermarks\": the highest or lowest value "
+        "of a history column over a trailing window, each {column, kind (\"high\" or "
+        "\"low\"), window_h, when (optional: a column that must be non-zero for a "
+        "sample to count), value, ts (Unix time)}; value and ts are null until a "
+        "sample in the window counts. Chargers report the 24 h high of power_w, "
+        "batteries the 24 h low of soc, Magnum inverters the 24 h high of "
+        "dc_power_w while inverting.",
         schema));
 
     /* module_history - id required. */
@@ -483,7 +490,8 @@ static cJSON *build_tools_list(void)
         "using: the counted inverters' DC draw while inverting (load_inverter_w, "
         "phantoms included) when every counted inverter reports it, else input + "
         "discharge - charge, never below 0 (load_net_w); load_source says which "
-        "(\"inverters\" or \"net\"). Modules marked "
+        "(\"inverters\" or \"net\"). A module row may carry \"watermarks\" (24 h high "
+        "or low of a history column; see query_module). Modules marked "
         "\"active\": false still report readings but are left out of the totals. "
         "A module with driver \"phantom\" is an estimate, not a measurement: it "
         "stands in for a unit moonflared cannot reach and reports the average of "

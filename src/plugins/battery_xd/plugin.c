@@ -621,7 +621,8 @@ static const char *xd_describe(void)
         "{\"key\":\"usb.addr\",\"label\":\"USB Addr\",\"hint\":\"(addr)\",\"type\":\"number\",\"default\":1}"
         "],\"capture\":{\"interval_s\":10,\"min_s\":1,\"retention_days\":60,\"graph\":\"soc\",\"columns\":{"
         "\"pack_v\":\"pack_voltage_v\",\"current_a\":\"current_a\","
-        "\"power_w\":\"power_w\",\"soc\":\"soc_pct\"}}}";
+        "\"power_w\":\"power_w\",\"soc\":\"soc_pct\"},"
+        "\"watermarks\":[{\"column\":\"soc\",\"kind\":\"low\",\"window_h\":24}]}}";
 }
 
 static const mf_plugin_ops_t g_ops = {

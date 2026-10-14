@@ -285,9 +285,11 @@ A tap records its reading every 10 s (minimum 1 s) and keeps 60 days, like the o
 - `dc_voltage_v`, `dc_current_a`, `dc_power_w`;
 - `ac_out_v`, `ac_out_a`, `ac_in_v`, `ac_in_a`, `freq_hz`;
 - `bat_temp_c`, `tfmr_temp_c`, `fet_temp_c`;
-- `mode`, `fault`, `stackmode`, and `mode_text` as text.
+- `mode`, `fault`, `stackmode`, `inverting` (1 or 0), and `mode_text` as text.
 
-The graph shows `dc_power_w`. The whole reading is stored with each sample too, so a column added later can be backfilled.
+The graph shows `dc_power_w`. The whole reading is stored with each sample too; a column added later is filled in for the last two days.
+
+The watermark is the 24-hour high of `dc_power_w` while `inverting`: a Magnum's DC watts read positive while it charges from the grid too, and that time is left out.
 
 ## mf_magnum_dump
 

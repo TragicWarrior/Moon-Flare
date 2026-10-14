@@ -532,7 +532,10 @@ static const char *mag_describe(void)
         "\"freq_hz\":\"freq_hz\",\"bat_temp_c\":\"bat_temp_c\","
         "\"tfmr_temp_c\":\"tfmr_temp_c\",\"fet_temp_c\":\"fet_temp_c\","
         "\"mode\":\"mode\",\"fault\":\"fault\",\"stackmode\":\"stackmode\","
-        "\"mode_text\":{\"path\":\"mode_text\",\"type\":\"text\"}}}}";
+        "\"inverting\":\"inverting\","
+        "\"mode_text\":{\"path\":\"mode_text\",\"type\":\"text\"}},"
+        "\"watermarks\":[{\"column\":\"dc_power_w\",\"kind\":\"high\","
+        "\"window_h\":24,\"when\":\"inverting\"}]}}";
 }
 
 static const mf_plugin_ops_t g_ops = {
